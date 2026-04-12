@@ -1,0 +1,94 @@
+{% extends "sqladmin/layout.html" %}
+{% block title %}系统设置{% endblock %}
+{% block content %}
+<style>
+  .settings-card { background: #fff; border-radius: 8px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); max-width: 600px; }
+  .setting-item { display: flex; align-items: center; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid #e9ecef; }
+  .setting-item:last-child { border-bottom: none; }
+  .setting-item label { font-weight: 500; min-width: 200px; }
+  .setting-item .desc { font-size: 12px; color: #868e96; margin-top: 4px; }
+  .setting-item input { width: 120px; text-align: right; }
+</style>
+
+<div class="container-fluid">
+  <h2 class="page-title">系统设置</h2>
+  <div class="settings-card mt-4">
+    <div id="settingsList">加载中...</div>
+    <div class="mt-3">
+      <button class="btn btn-primary" onclick="saveAll()">保存全部</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let settingsData = {};
+
+async function loadSettings() {
+  try {
+    const resp = await fetch('/admin/api/settings');
+    settingsData = await resp.json();
+    renderSettings();
+  } catch (e) {
+    document.getElementById('settingsList').innerHTML = '<p class="text-danger">加载失败: ' + e.message + '</p>';
+  }
+}
+
+function renderSettings() {
+  const container = document.getElementById('settingsList');
+  const descriptions = {
+    batch_size: '批量解析交易数量（越大越快，但有 API 限制）',
+    concurrent_requests: '并发请求数（越高越快，但可能触发限流）',
+    request_interval: '批次间隔秒数（降低可提速，但可能触发限流）',
+    ws_max_connections: 'WebSocket 最大连接数',
+    trade_page_size: '前端显示最大交易行数',
+    helius_api_key: 'Helius API 密钥（用于回填历史交易和实时流订阅）',
+  };
+
+  const sensitiveKeys = ['helius_api_key'];
+
+  let html = '';
+  for (const [key, value] of Object.entries(settingsData)) {
+    const desc = descriptions[key] || '';
+    const isSensitive = sensitiveKeys.includes(key);
+    const inputType = isSensitive ? 'password' : 'text';
+    const displayValue = isSensitive && value ? '••••••••' : value;
+    html += `
+      <div class="setting-item">
+        <div>
+          <label>${key}</label>
+          <div class="desc">${desc}</div>
+        </div>
+        <input type="${inputType}" id="setting_${key}" value="${displayValue}" class="form-control form-control-sm" data-raw="${isSensitive ? value : ''}" onfocus="this.type='text'" onblur="if(!this.value)this.type='password'" />
+      </div>
+    `;
+  }
+  container.innerHTML = html;
+}
+
+async function saveAll() {
+  const inputs = document.querySelectorAll('.setting-item input');
+  let success = 0;
+  for (const input of inputs) {
+    const key = input.id.replace('setting_', '');
+    let value = input.value;
+    // 敏感字段如果显示的是掩码，跳过保存（保持原值）
+    if (value === '••••••••') continue;
+    try {
+      await fetch(`/admin/api/settings`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: key, value: value }),
+      });
+      success++;
+    } catch (e) {
+      console.error(`保存 ${key} 失败:`, e);
+    }
+  }
+  alert(`已保存 ${success}/${inputs.length} 项设置`);
+  // 保存后重新加载以恢复掩码显示
+  await loadSettings();
+}
+
+window.addEventListener('DOMContentLoaded', loadSettings);
+</script>
+{% endblock %}
