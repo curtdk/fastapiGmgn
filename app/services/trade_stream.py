@@ -153,23 +153,19 @@ class TradeStream:
                     tx_record = Transaction(**tx_detail)
                     db.add(tx_record)
                     db.commit()
+                    db.close()
 
-                    # 异步处理
-                    asyncio.create_task(process_trade(db, tx_detail))
+                    # 处理并推送到前端（用新 session，确保 db 可用）
+                    db2 = SessionLocal()
+                    try:
+                        await process_trade(db2, tx_detail)
+                    finally:
+                        db2.close()
             except Exception as e:
                 logger.warning(f"[实时流] 入库失败: {e}")
                 db.rollback()
             finally:
                 db.close()
-
-            # 推送到前端
-            if existing:
-                return  # 已存在，跳过
-
-            await ws_manager.broadcast(self.mint, {
-                "type": "trade",
-                "data": tx_detail,
-            })
 
         except Exception as e:
             logger.error(f"[实时流] 消息处理失败: {e}", exc_info=True)
@@ -193,6 +189,12 @@ class TradeStream:
             message = tx_data.get("transaction", {}).get("message", {})
             account_keys = message.get("accountKeys", [])
 
+            # 获取 signer（交易发起者）
+            signer = ""
+            if account_keys:
+                first_key = account_keys[0]
+                signer = first_key.get("pubkey", "") if isinstance(first_key, dict) else first_key
+
             # 从 pre/postTokenBalances 计算 token 变化
             pre_balances = {b["mint"]: b for b in meta.get("preTokenBalances", [])}
             post_balances = {b["mint"]: b for b in meta.get("postTokenBalances", [])}
@@ -201,7 +203,7 @@ class TradeStream:
             post = post_balances.get(self.mint)
 
             amount = 0.0
-            from_addr = ""
+            from_addr = signer
             to_addr = ""
             tx_type = "TRANSFER"
             dex = ""
@@ -211,13 +213,22 @@ class TradeStream:
             if pre and post:
                 pre_amt = pre["uiTokenAmount"].get("uiAmount", 0) or 0
                 post_amt = post["uiTokenAmount"].get("uiAmount", 0) or 0
-                amount = abs(post_amt - pre_amt)
-                if post_amt > pre_amt:
+                delta = post_amt - pre_amt
+                amount = abs(delta)
+
+                if delta > 0:
+                    # signer 的 token 增加 → BUY
                     tx_type = "BUY"
+                    from_addr = signer
                     to_addr = post.get("owner", "")
-                else:
+                elif delta < 0:
+                    # signer 的 token 减少 → SELL
                     tx_type = "SELL"
-                    from_addr = pre.get("owner", "")
+                    from_addr = signer
+                    to_addr = ""
+                else:
+                    # 无变化，可能是 transfer
+                    tx_type = "TRANSFER"
 
             # 从 inner instructions 中提取 DEX 信息
             inner_instructions = meta.get("innerInstructions", [])

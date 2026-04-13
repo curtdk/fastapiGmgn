@@ -318,16 +318,22 @@ class TradeBackfill:
             message = tx.get("transaction", {}).get("message", {})
             account_keys = message.get("accountKeys", [])
 
+            # 获取 signer（交易发起者）
+            signer = ""
+            if account_keys:
+                first_key = account_keys[0]
+                signer = first_key.get("pubkey", "") if isinstance(first_key, dict) else first_key
+
             # 从 pre/postTokenBalances 计算 token 变化
             pre_balances = {b["mint"]: b for b in meta.get("preTokenBalances", [])}
             post_balances = {b["mint"]: b for b in meta.get("postTokenBalances", [])}
 
-            # 找到我们关心的 mint 的余额变化
+            # 找到 signer 的 token 余额变化
             pre = pre_balances.get(self.mint)
             post = post_balances.get(self.mint)
 
             amount = 0.0
-            from_addr = ""
+            from_addr = signer
             to_addr = ""
             tx_type = "TRANSFER"
             dex = ""
@@ -337,19 +343,21 @@ class TradeBackfill:
             if pre and post:
                 pre_amt = pre["uiTokenAmount"].get("uiAmount", 0) or 0
                 post_amt = post["uiTokenAmount"].get("uiAmount", 0) or 0
-                amount = abs(post_amt - pre_amt)
-                from_addr = pre.get("owner", "")
-                to_addr = post.get("owner", "")
-                if post_amt > pre_amt:
-                    # 买入：token 增加
+                delta = post_amt - pre_amt
+                amount = abs(delta)
+
+                if delta > 0:
+                    # signer 的 token 增加 → BUY
                     tx_type = "BUY"
-                    from_addr = message.get("accountKeys", [{}])[0].get("pubkey", "") if account_keys else ""
+                    from_addr = signer
                     to_addr = post.get("owner", "")
-                else:
-                    # 卖出：token 减少
+                elif delta < 0:
+                    # signer 的 token 减少 → SELL
                     tx_type = "SELL"
-                    from_addr = pre.get("owner", "")
+                    from_addr = signer
                     to_addr = ""
+                else:
+                    tx_type = "TRANSFER"
 
             # 从 inner instructions 中提取 DEX 信息
             inner_instructions = meta.get("innerInstructions", [])
