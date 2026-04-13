@@ -2,10 +2,22 @@
 import asyncio
 import json
 import logging
+from datetime import datetime
 from typing import Dict, Set, Any
 from fastapi import WebSocket
 
 logger = logging.getLogger(__name__)
+
+
+def _serialize(obj: Any) -> Any:
+    """递归将 datetime 等对象转为 JSON 可序列化格式"""
+    if isinstance(obj, datetime):
+        return obj.isoformat()
+    if isinstance(obj, dict):
+        return {k: _serialize(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_serialize(i) for i in obj]
+    return obj
 
 
 class WebSocketManager:
@@ -38,7 +50,7 @@ class WebSocketManager:
     async def send_personal(self, websocket: WebSocket, message: dict):
         """发送消息给单个连接"""
         try:
-            await websocket.send_json(message)
+            await websocket.send_text(json.dumps(_serialize(message)))
         except Exception as e:
             logger.warning(f"[WS] 发送失败: {e}")
 
@@ -49,7 +61,7 @@ class WebSocketManager:
         disconnected = set()
         for ws in self.active_connections[mint]:
             try:
-                await ws.send_json(message)
+                await ws.send_text(json.dumps(_serialize(message)))
             except Exception as e:
                 logger.warning(f"[WS] 广播失败: {e}")
                 disconnected.add(ws)

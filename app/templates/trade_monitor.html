@@ -91,7 +91,9 @@ const MAX_ROWS = 50;
 // 格式化时间
 function fmtTime(ts) {
   if (!ts) return '-';
-  const d = new Date(ts);
+  // 兼容 ISO 字符串和时间戳
+  const d = typeof ts === 'string' ? new Date(ts.replace('T', ' ').replace('Z', '')) : new Date(ts);
+  if (isNaN(d.getTime())) return '-';
   return d.toLocaleTimeString('zh-CN', { hour12: false });
 }
 
@@ -164,11 +166,13 @@ function connectWS() {
   if (ws) { ws.close(); ws = null; }
 
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const wsUrl = `${protocol}//${location.host}/admin/ws/trades/${currentMint}`;
+  const wsUrl = `${protocol}//${location.host}/ws/trades/${currentMint}`;
   ws = new WebSocket(wsUrl);
 
   ws.onopen = () => {
     console.log('WS 已连接');
+    // 连接成功后立即获取历史数据
+    fetchHistory();
   };
 
   ws.onmessage = (evt) => {
@@ -217,11 +221,13 @@ async function fetchHistory() {
   try {
     const resp = await fetch(`/admin/api/trades?mint=${currentMint}&page=1&page_size=${MAX_ROWS}`);
     const data = await resp.json();
+    console.log('历史数据:', data);
     // 清空表格
     document.getElementById('tradeBody').innerHTML = '';
     tradeCount = 0;
     // 反转：最新在前
     data.trades.reverse().forEach(trade => addTradeRow(trade, false));
+    console.log('已渲染', data.trades.length, '条历史交易');
     updateMetrics({ trade_count: data.total });
   } catch (e) {
     console.error('获取历史失败:', e);
@@ -247,11 +253,8 @@ async function startMonitor() {
     const data = await resp.json();
     console.log('启动响应:', data);
 
-    // 连接 WS
+    // 连接 WS（历史数据会在 WS onopen 时自动加载）
     connectWS();
-
-    // 加载已有数据
-    setTimeout(fetchHistory, 2000);
   } catch (e) {
     alert('启动失败: ' + e.message);
     document.getElementById('startBtn').disabled = false;

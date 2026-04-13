@@ -126,7 +126,7 @@ class TradeMonitorView(BaseView):
     async def api_get_trades(self, request: Request):
         mint = request.query_params.get("mint", "")
         page = int(request.query_params.get("page", 1))
-        page_size = int(request.query_params.get("page_size", 50))
+        page_size = int(request.query_params.get("page_size", 300))
         db = SessionLocal()
         try:
             from app.models.models import Transaction
@@ -136,7 +136,7 @@ class TradeMonitorView(BaseView):
                 db.query(Transaction, TradeAnalysis)
                 .outerjoin(TradeAnalysis, Transaction.sig == TradeAnalysis.sig)
                 .filter(Transaction.token_mint == mint)
-                .order_by(Transaction.block_time.desc())
+                .order_by(Transaction.slot.desc(), Transaction.block_time.desc())
                 .offset((page - 1) * page_size)
                 .limit(page_size)
                 .all()
@@ -295,7 +295,7 @@ admin.add_view(TradeAnalysisAdmin)
 admin.add_base_view(TradeMonitorView)
 
 # ========== WebSocket 路由 ==========
-@app.websocket("/admin/ws/trades/{mint}")
+@app.websocket("/ws/trades/{mint}")
 async def admin_ws(websocket: WebSocket, mint: str):
     """管理后台 WebSocket 端点"""
     await ws_manager.connect(websocket, mint)
