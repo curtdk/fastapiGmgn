@@ -136,7 +136,7 @@ class TradeMonitorView(BaseView):
                 db.query(Transaction, TradeAnalysis)
                 .outerjoin(TradeAnalysis, Transaction.sig == TradeAnalysis.sig)
                 .filter(Transaction.token_mint == mint)
-                .order_by(Transaction.slot.desc(), Transaction.block_time.desc())
+                .order_by(Transaction.slot.desc(), Transaction.block_time.desc(), Transaction.id.desc())
                 .offset((page - 1) * page_size)
                 .limit(page_size)
                 .all()

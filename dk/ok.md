@@ -1,4 +1,6 @@
-                                                                                                                      
+
+lsof -ti :8000 | xargs kill -9
+
   1. 排序改用 slot — main.py:139、trades.py:55、trade_processor.py:98 全部改为 .order_by(Transaction.slot.desc(),              
   Transaction.block_time.desc())                                                                                               
   2. 前端 fmtTime 兼容 ISO 字符串 — 原来 new Date(ts) 对 ISO 字符串解析可能失败                                                

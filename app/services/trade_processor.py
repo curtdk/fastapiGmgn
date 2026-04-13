@@ -95,7 +95,7 @@ async def calculate_metrics(db: Session, mint: str) -> Dict[str, float]:
         db.query(Transaction, TradeAnalysis)
         .join(TradeAnalysis, Transaction.sig == TradeAnalysis.sig)
         .filter(Transaction.token_mint == mint)
-        .order_by(Transaction.slot.desc(), Transaction.block_time.desc())
+        .order_by(Transaction.slot.desc(), Transaction.block_time.desc(), Transaction.id.desc())
         .all()
     )
 
