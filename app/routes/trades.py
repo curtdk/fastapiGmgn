@@ -125,32 +125,32 @@ def get_monitor_status(mint: str):
 
 @router.post("/{mint}/start")
 async def start_monitor(mint: str, db: Session = Depends(get_db)):
-    """启动监听（回填 + 实时流）"""
+    """启动监听（实时流 + 回填接力）"""
     # 如果已在运行，先停止
     if mint in active_monitors:
         await stop_monitor(mint)
 
-    backfill = TradeBackfill(db=db, mint=mint)
     stream = TradeStream(mint=mint)
+    backfill = TradeBackfill(db=db, mint=mint, stream=stream)
 
     active_monitors[mint] = {
         "backfill": backfill,
         "stream": stream,
     }
 
-    # 先启动回填（回填完成后会自动启动实时流）
     import asyncio
-    asyncio.create_task(backfill.run())
 
-    # 回填完成后启动实时流
-    async def start_stream_after_backfill():
-        while backfill.running:
-            import asyncio
-            await asyncio.sleep(1)
-        if backfill.running is False and stream.running is False:
-            await stream.start()
+    # 先启动实时流
+    asyncio.create_task(stream.start())
 
-    asyncio.create_task(start_stream_after_backfill())
+    # 实时流启动后立即启动回填（回填会等待 sync_point）
+    async def start_backfill_after_stream():
+        # 等待 stream 启动完成
+        while not stream.running:
+            await asyncio.sleep(0.2)
+        await backfill.run()
+
+    asyncio.create_task(start_backfill_after_stream())
 
     return {"message": f"已开始监听 {mint}"}
 

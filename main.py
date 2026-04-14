@@ -196,19 +196,20 @@ class TradeMonitorView(BaseView):
         try:
             from app.services.settings_service import get_setting
             api_key = get_setting(db, "helius_api_key") or ""
-            backfill = TradeBackfill(db=db, mint=mint)
             stream = TradeStream(mint=mint, api_key=api_key)
+            backfill = TradeBackfill(db=db, mint=mint, stream=stream)
             active_monitors[mint] = {"backfill": backfill, "stream": stream}
 
-            asyncio.create_task(backfill.run())
+            # 先启动实时流
+            asyncio.create_task(stream.start())
 
-            async def start_stream_after():
-                while backfill.running:
-                    await asyncio.sleep(0.5)
-                if not stream.running:
-                    await stream.start()
+            # 实时流启动后立即启动回填
+            async def start_backfill_after():
+                while not stream.running:
+                    await asyncio.sleep(0.2)
+                await backfill.run()
 
-            asyncio.create_task(start_stream_after())
+            asyncio.create_task(start_backfill_after())
             return JSONResponse({"message": f"已开始监听 {mint}"})
         finally:
             db.close()

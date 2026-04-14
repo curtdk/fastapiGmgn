@@ -1,4 +1,4 @@
-"""历史交易回填服务 - 高效批量获取并入库"""
+"""历史交易回填服务 - 接力模式：占位创建 + 批量填充"""
 import asyncio
 import logging
 from datetime import datetime
@@ -19,14 +19,14 @@ HELIUS_RPC_URL = "https://mainnet.helius-rpc.com"
 
 
 class TradeBackfill:
-    """历史交易回填引擎"""
+    """历史交易回填引擎（接力模式）"""
 
-    def __init__(self, db: Session, mint: str):
+    def __init__(self, db: Session, mint: str, stream=None):
         self.db = db
         self.mint = mint
+        self.stream = stream  # TradeStream 引用，用于访问 sync_point
         self.running = False
         self.total_fetched = 0
-        self.start_slot: Optional[int] = None
         self.earliest_slot: Optional[int] = None
 
     def _get_api_key(self) -> str:
@@ -40,28 +40,35 @@ class TradeBackfill:
         return os.getenv("HELIUS_NETWORK", "mainnet-beta")
 
     async def run(self):
-        """执行回填流程"""
+        """执行回填流程（接力模式）"""
         self.running = True
         self.total_fetched = 0
 
         try:
-            # 1. 记录当前 slot 作为分界点
-            current_slot = await self._get_current_slot()
-            self.start_slot = current_slot
-            logger.info(f"[回填] 起始 slot: {current_slot}")
+            # 1. 等待 TradeStream 的 sync_point 就绪
             await ws_manager.broadcast(self.mint, {
                 "type": "status",
                 "data": {
                     "mint": self.mint,
-                    "status": "BACKFILLING",
-                    "message": f"开始回填，分界 slot: {current_slot}",
-                    "current_slot": current_slot,
+                    "status": "WAITING_SYNC",
+                    "message": "等待实时流 sync_point...",
                 }
             })
 
-            # 2. 分页获取历史签名（从新到旧）
-            signatures = await self._fetch_all_signatures()
-            logger.info(f"[回填] 共获取 {len(signatures)} 条签名")
+            sync_point = await self._wait_for_sync_point()
+            if not sync_point:
+                logger.error("[回填] 等待 sync_point 超时")
+                await ws_manager.broadcast(self.mint, {
+                    "type": "error",
+                    "data": {"mint": self.mint, "message": "等待 sync_point 超时"}
+                })
+                return
+
+            logger.info(f"[回填] sync_point 已就绪: {sync_point}")
+
+            # 2. 使用 before=sync_point 分页获取历史签名
+            signatures = await self._fetch_all_signatures_before(sync_point)
+            logger.info(f"[回填] 共获取 {len(signatures)} 条历史签名")
 
             if not signatures:
                 await ws_manager.broadcast(self.mint, {
@@ -79,35 +86,27 @@ class TradeBackfill:
             signatures.reverse()
             self.earliest_slot = signatures[0].get("slot")
 
-            # 3. 批量解析交易详情
-            await self._batch_parse_transactions(signatures)
+            # 3. 创建占位记录
+            placeholder_count = await self._create_placeholders(signatures)
+            logger.info(f"[回填] 创建占位记录 {placeholder_count} 条")
 
-            # 4. 回填完成，进入补漏阶段
+            # 4. 批量解析并填充占位记录
+            await self._batch_parse_and_fill(signatures)
+
+            # 5. 回填完成，触发指数计算
             await ws_manager.broadcast(self.mint, {
                 "type": "status",
                 "data": {
                     "mint": self.mint,
-                    "status": "CATCHING_UP",
-                    "message": f"回填完成，共 {self.total_fetched} 条，正在补漏...",
+                    "status": "DATA_READY",
+                    "message": f"回填完成，共 {self.total_fetched} 条历史数据，开始计算指标...",
                     "total_trades": self.total_fetched,
                     "progress": 100.0,
                 }
             })
 
-            # 5. 补漏：获取回填期间可能遗漏的数据
-            await self._catch_up(current_slot)
-
-            # 6. 切换到实时流
-            await ws_manager.broadcast(self.mint, {
-                "type": "status",
-                "data": {
-                    "mint": self.mint,
-                    "status": "STREAMING",
-                    "message": f"回填完成，共 {self.total_fetched} 条，开始实时监听",
-                    "total_trades": self.total_fetched,
-                    "progress": 100.0,
-                }
-            })
+            # 6. 触发全量指数计算
+            await self._trigger_full_calculation()
 
         except Exception as e:
             logger.error(f"[回填] 异常: {e}", exc_info=True)
@@ -118,28 +117,26 @@ class TradeBackfill:
         finally:
             self.running = False
 
-    async def _get_current_slot(self) -> int:
-        """获取当前 slot"""
-        api_key = self._get_api_key()
-        async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.post(
-                f"{HELIUS_RPC_URL}/?api-key={api_key}",
-                json={"jsonrpc": "2.0", "id": 1, "method": "getSlot"}
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            return data["result"]
+    async def _wait_for_sync_point(self, timeout: float = 30.0) -> Optional[str]:
+        """等待 TradeStream 的 sync_point 就绪"""
+        start = asyncio.get_event_loop().time()
+        while asyncio.get_event_loop().time() - start < timeout:
+            if self.stream and self.stream.sync_point:
+                return self.stream.sync_point
+            await asyncio.sleep(0.5)
+        return None
 
-    async def _fetch_all_signatures(self) -> List[Dict[str, Any]]:
+    async def _fetch_all_signatures_before(self, sync_point: str) -> List[Dict[str, Any]]:
         """
-        分页获取该 mint 的所有交易签名
-        从新到旧排列
+        使用 before=sync_point 分页获取历史签名
+        从新到旧排列，上限 50,000 条
         """
         all_sigs = []
         before_sig = None
-        batch_size = 1000  # getSignaturesForAddress 最大 1000
+        batch_size = 1000
+        max_total = 50000
 
-        while self.running:
+        while self.running and len(all_sigs) < max_total:
             body = {
                 "jsonrpc": "2.0",
                 "id": 1,
@@ -149,6 +146,7 @@ class TradeBackfill:
                     {
                         "limit": batch_size,
                         "commitment": "confirmed",
+                        "before": sync_point,
                     }
                 ]
             }
@@ -175,8 +173,8 @@ class TradeBackfill:
                 "type": "status",
                 "data": {
                     "mint": self.mint,
-                    "status": "BACKFILLING",
-                    "message": f"已获取 {len(all_sigs)} 条签名...",
+                    "status": "FETCHING_HISTORY",
+                    "message": f"已获取 {len(all_sigs)} 条历史签名...",
                     "total_trades": len(all_sigs),
                 }
             })
@@ -189,10 +187,51 @@ class TradeBackfill:
 
         return all_sigs
 
-    async def _batch_parse_transactions(self, signatures: List[Dict[str, Any]]):
+    async def _create_placeholders(self, signatures: List[Dict[str, Any]]) -> int:
         """
-        批量解析交易详情
-        每批 batch_size 个，并发 concurrent_requests 路
+        创建占位记录（只存 sig + slot + block_time，source='rpc_fill'）
+        遍历签名（从旧到新），使用 INSERT OR IGNORE 防止重复
+        """
+        count = 0
+        from app.utils.database import SessionLocal
+
+        for sig_info in signatures:
+            sig = sig_info["signature"]
+            slot = sig_info.get("slot", 0)
+            block_time_raw = sig_info.get("blockTime")
+            block_time = datetime.utcfromtimestamp(block_time_raw) if block_time_raw else None
+
+            try:
+                db = SessionLocal()
+                # 先检查是否已存在
+                existing = db.query(Transaction).filter(Transaction.sig == sig).first()
+                if existing:
+                    db.close()
+                    continue
+
+                stmt = insert(Transaction).values(
+                    sig=sig,
+                    slot=slot,
+                    block_time=block_time,
+                    source="rpc_fill",
+                    token_mint=self.mint,
+                )
+                stmt = stmt.prefix_with("OR IGNORE")
+                db.execute(stmt)
+                db.commit()
+                count += 1
+            except Exception as e:
+                logger.warning(f"[回填] 创建占位失败 {sig}: {e}")
+                db.rollback()
+            finally:
+                db.close()
+
+        return count
+
+    async def _batch_parse_and_fill(self, signatures: List[Dict[str, Any]]):
+        """
+        批量解析交易详情并填充占位记录
+        使用 UPDATE 填充 source='rpc_fill' 的记录，不 INSERT 新记录
         """
         batch_size = get_int_setting(self.db, "batch_size", 100)
         concurrent = get_int_setting(self.db, "concurrent_requests", 3)
@@ -205,14 +244,14 @@ class TradeBackfill:
         semaphore = asyncio.Semaphore(concurrent)
 
         async def parse_batch(batch_idx: int, batch_sigs: List[Dict[str, Any]]):
-            """解析一批交易"""
+            """解析一批交易并填充"""
             async with semaphore:
                 sig_list = [s["signature"] for s in batch_sigs]
                 tx_details = await self._parse_transactions(sig_list)
 
-                # 入库
+                # 填充占位记录（UPDATE）
                 if tx_details:
-                    await self._bulk_insert(tx_details)
+                    await self._fill_placeholders(tx_details)
 
                 # 更新进度
                 self.total_fetched += len(tx_details)
@@ -222,18 +261,12 @@ class TradeBackfill:
                     "type": "status",
                     "data": {
                         "mint": self.mint,
-                        "status": "BACKFILLING",
-                        "message": f"回填进度 {progress:.1f}% ({self.total_fetched}/{len(signatures)})",
+                        "status": "FILLING",
+                        "message": f"填充进度 {progress:.1f}% ({self.total_fetched}/{len(signatures)})",
                         "progress": round(progress, 1),
                         "total_trades": self.total_fetched,
                     }
                 })
-
-                # 触发异步处理
-                for detail in tx_details:
-                    asyncio.create_task(
-                        self._process_single_trade(detail)
-                    )
 
         # 并发执行所有批次
         tasks = []
@@ -275,7 +308,6 @@ class TradeBackfill:
                         result = data.get("result")
                         if result is None:
                             return None
-                        # 附加 signature 方便后续使用
                         result["_signature"] = sig
                         return result
                 except Exception as e:
@@ -301,11 +333,6 @@ class TradeBackfill:
             if not sig:
                 return None
 
-            # 检查是否已存在
-            existing = self.db.query(Transaction).filter(Transaction.sig == sig).first()
-            if existing:
-                return None
-
             meta = tx.get("meta", {})
             if meta.get("err"):
                 return None  # 跳过失败的交易
@@ -328,7 +355,6 @@ class TradeBackfill:
             pre_balances = {b["mint"]: b for b in meta.get("preTokenBalances", [])}
             post_balances = {b["mint"]: b for b in meta.get("postTokenBalances", [])}
 
-            # 找到 signer 的 token 余额变化
             pre = pre_balances.get(self.mint)
             post = post_balances.get(self.mint)
 
@@ -347,12 +373,10 @@ class TradeBackfill:
                 amount = abs(delta)
 
                 if delta > 0:
-                    # signer 的 token 增加 → BUY
                     tx_type = "BUY"
                     from_addr = signer
                     to_addr = post.get("owner", "")
                 elif delta < 0:
-                    # signer 的 token 减少 → SELL
                     tx_type = "SELL"
                     from_addr = signer
                     to_addr = ""
@@ -364,29 +388,15 @@ class TradeBackfill:
             for ix_group in inner_instructions:
                 for ix in ix_group.get("instructions", []):
                     program_id = ix.get("programId", "")
-                    # Pump.fun 相关
                     if "pump" in program_id.lower() or "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P" in program_id:
                         dex = "pump.fun"
                         tx_type = tx_type or "SWAP"
-                    # Raydium
                     elif "raydium" in program_id.lower() or "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8" in program_id:
                         dex = "raydium"
                         tx_type = tx_type or "SWAP"
-                    # Orca
                     elif "orca" in program_id.lower():
                         dex = "orca"
                         tx_type = tx_type or "SWAP"
-
-            # 从 SOL 余额变化计算 net SOL flow
-            pre_sol = meta.get("preBalances", [])
-            post_sol = meta.get("postBalances", [])
-            fee = meta.get("fee", 0)
-            if pre_sol and post_sol and len(pre_sol) > 0 and len(post_sol) > 0:
-                signer_sol_pre = pre_sol[0] / 1e9
-                signer_sol_post = post_sol[0] / 1e9
-                net_sol = signer_sol_post - signer_sol_pre + fee / 1e9
-            else:
-                net_sol = 0.0
 
             return {
                 "sig": sig,
@@ -407,54 +417,55 @@ class TradeBackfill:
             logger.warning(f"[回填] 解析交易失败: {e}")
             return None
 
-    async def _bulk_insert(self, tx_list: List[Dict[str, Any]]):
-        """批量插入交易（去重）"""
+    async def _fill_placeholders(self, tx_list: List[Dict[str, Any]]):
+        """
+        填充占位记录（UPDATE source='rpc_fill' 的记录）
+        不触碰 source='helius_ws' 的记录
+        """
         if not tx_list:
             return
 
-        # 使用 INSERT OR IGNORE 去重
-        for tx in tx_list:
-            try:
-                stmt = insert(Transaction).values(**tx)
-                stmt = stmt.prefix_with("OR IGNORE")
-                self.db.execute(stmt)
-            except Exception as e:
-                logger.warning(f"[回填] 插入失败 {tx.get('sig', '?')}: {e}")
+        from app.utils.database import SessionLocal
+        db = SessionLocal()
+        try:
+            filled_count = 0
+            for tx in tx_list:
+                sig = tx.get("sig")
+                if not sig:
+                    continue
 
-        self.db.commit()
-        logger.info(f"[回填] 批量入库 {len(tx_list)} 条")
+                # 只更新 source='rpc_fill' 的占位记录
+                result = db.query(Transaction).filter(
+                    Transaction.sig == sig,
+                    Transaction.source == "rpc_fill"
+                ).update(tx, synchronize_session=False)
 
-    async def _catch_up(self, start_slot: int):
-        """补漏：获取回填期间可能遗漏的数据"""
-        # 获取从回填开始到现在的增量数据
-        body = {
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "getSignaturesForAddress",
-            "params": [self.mint, {"limit": 100, "commitment": "confirmed"}]
-        }
+                if result > 0:
+                    filled_count += 1
 
-        api_key = self._get_api_key()
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.post(
-                f"{HELIUS_RPC_URL}/?api-key={api_key}",
-                json=body
-            )
-            resp.raise_for_status()
-            data = resp.json()
+            db.commit()
+            logger.info(f"[回填] 填充占位记录 {filled_count} 条")
+        except Exception as e:
+            logger.error(f"[回填] 填充失败: {e}")
+            db.rollback()
+        finally:
+            db.close()
 
-        sigs = data.get("result", [])
-        # 过滤出 slot >= start_slot 的新数据
-        new_sigs = [s for s in sigs if s.get("slot", 0) >= start_slot]
-
-        if new_sigs:
-            new_sigs.reverse()  # 从旧到新
-            await self._batch_parse_transactions(new_sigs)
-
-    async def _process_single_trade(self, tx_detail: Dict[str, Any]):
-        """异步处理单条交易（调用处理引擎）"""
-        from app.services.trade_processor import process_trade
-        await process_trade(self.db, tx_detail)
+    async def _trigger_full_calculation(self):
+        """触发全量指数计算"""
+        from app.services.trade_processor import run_full_calculation
+        try:
+            await run_full_calculation(self.db, self.mint)
+            await ws_manager.broadcast(self.mint, {
+                "type": "status",
+                "data": {
+                    "mint": self.mint,
+                    "status": "CALCULATION_DONE",
+                    "message": "指标计算完成",
+                }
+            })
+        except Exception as e:
+            logger.error(f"[回填] 触发计算失败: {e}")
 
     def stop(self):
         """停止回填"""

@@ -4,9 +4,11 @@ from datetime import datetime
 from typing import Dict, Any, Optional
 
 from sqlalchemy.orm import Session
+from sqlalchemy import case
 from sqlalchemy.dialects.sqlite import insert
 
 from app.models.trade import TradeAnalysis
+from app.models.models import Transaction
 from app.websocket.manager import ws_manager
 
 logger = logging.getLogger(__name__)
@@ -82,6 +84,57 @@ async def process_trade(db: Session, tx_detail: Dict[str, Any]):
         db.rollback()
 
 
+async def run_full_calculation(db: Session, mint: str):
+    """
+    全量指数计算
+    按全量排序顺序（rpc_fill 在前，helius_ws 在后，各自 id ASC）逐个处理交易
+    用于 Backfill 完成后触发
+    """
+    logger.info(f"[全量计算] 开始计算 mint={mint}")
+
+    # 按全量排序获取所有交易
+    trades = (
+        db.query(Transaction)
+        .filter(Transaction.token_mint == mint)
+        .order_by(
+            case((Transaction.source == "rpc_fill", 0), else_=1),
+            Transaction.id.asc()
+        )
+        .all()
+    )
+
+    logger.info(f"[全量计算] 共 {len(trades)} 条交易待处理")
+
+    for tx in trades:
+        try:
+            # 检查是否已处理
+            existing = db.query(TradeAnalysis).filter(TradeAnalysis.sig == tx.sig).first()
+            if existing:
+                continue
+
+            # 构建 tx_detail
+            tx_detail = {
+                "sig": tx.sig,
+                "slot": tx.slot,
+                "block_time": tx.block_time,
+                "from_address": tx.from_address,
+                "to_address": tx.to_address,
+                "amount": tx.amount,
+                "token_mint": tx.token_mint,
+                "token_symbol": tx.token_symbol,
+                "transaction_type": tx.transaction_type,
+                "dex": tx.dex,
+                "pool_address": tx.pool_address,
+            }
+
+            await process_trade(db, tx_detail)
+
+        except Exception as e:
+            logger.error(f"[全量计算] 处理 {tx.sig[:8]}... 失败: {e}")
+
+    logger.info(f"[全量计算] 完成 mint={mint}")
+
+
 async def calculate_metrics(db: Session, mint: str) -> Dict[str, float]:
     """
     计算四个核心指标
@@ -89,13 +142,15 @@ async def calculate_metrics(db: Session, mint: str) -> Dict[str, float]:
     """
     # 获取该 mint 的所有已处理交易
     from sqlalchemy import func
-    from app.models.models import Transaction
 
     trades = (
         db.query(Transaction, TradeAnalysis)
         .join(TradeAnalysis, Transaction.sig == TradeAnalysis.sig)
         .filter(Transaction.token_mint == mint)
-        .order_by(Transaction.slot.desc(), Transaction.block_time.desc(), Transaction.id.desc())
+        .order_by(
+            case((Transaction.source == "rpc_fill", 0), else_=1),
+            Transaction.id.asc()
+        )
         .all()
     )
 

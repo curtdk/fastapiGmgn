@@ -78,13 +78,17 @@ async def fetch_rpc_signatures(mint: str) -> list[dict]:
 
 
 def get_db_signatures(mint: str) -> list[dict]:
-    """从数据库获取签名列表（按 slot 降序，同 slot 按 id 降序）"""
+    """从数据库获取签名列表（按全量排序：rpc_fill 在前 id ASC，helius_ws 在后 id ASC）"""
+    from sqlalchemy import case
     db = SessionLocal()
     try:
         txs = (
             db.query(Transaction)
             .filter(Transaction.token_mint == mint)
-            .order_by(Transaction.slot.desc(), Transaction.id.desc())
+            .order_by(
+                case((Transaction.source == "rpc_fill", 0), else_=1),
+                Transaction.id.asc()
+            )
             .all()
         )
         return [{"sig": tx.sig, "slot": tx.slot, "block_time": tx.block_time, "source": tx.source, "id": tx.id} for tx in txs]
@@ -93,13 +97,17 @@ def get_db_signatures(mint: str) -> list[dict]:
 
 
 def get_db_signatures_asc(mint: str) -> list[dict]:
-    """从数据库获取签名列表（按 slot 升序，即从旧到新）"""
+    """从数据库获取签名列表（按全量排序升序，同 get_db_signatures）"""
+    from sqlalchemy import case
     db = SessionLocal()
     try:
         txs = (
             db.query(Transaction)
             .filter(Transaction.token_mint == mint)
-            .order_by(Transaction.slot.asc(), Transaction.id.asc())
+            .order_by(
+                case((Transaction.source == "rpc_fill", 0), else_=1),
+                Transaction.id.asc()
+            )
             .all()
         )
         return [{"sig": tx.sig, "slot": tx.slot, "block_time": tx.block_time, "source": tx.source, "id": tx.id} for tx in txs]
@@ -108,12 +116,34 @@ def get_db_signatures_asc(mint: str) -> list[dict]:
 
 
 async def run_backfill(mint: str):
-    """运行回填引擎"""
+    """运行回填引擎（测试模式：无 TradeStream，直接设置 sync_point）"""
     from app.services.trade_backfill import TradeBackfill
+    from app.services.trade_stream import TradeStream
 
     db = SessionLocal()
     try:
-        backfill = TradeBackfill(db=db, mint=mint)
+        stream = TradeStream(mint=mint)
+        # 测试模式：手动设置一个 sync_point 让 backfill 能继续
+        # 先获取第一条 RPC 签名作为 sync_point
+        api_key = get_api_key()
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(
+                f"{HELIUS_RPC_URL}/?api-key={api_key}",
+                json={
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "getSignaturesForAddress",
+                    "params": [mint, {"limit": 1, "commitment": "confirmed"}],
+                }
+            )
+            resp.raise_for_status()
+            data = resp.json()
+        sigs = data.get("result", [])
+        if sigs:
+            stream.sync_point = sigs[0]["signature"]
+            logger.info(f"测试模式: 设置 sync_point = {stream.sync_point}")
+
+        backfill = TradeBackfill(db=db, mint=mint, stream=stream)
         await backfill.run()
         logger.info(f"回填完成: 共 {backfill.total_fetched} 条")
         return backfill.total_fetched
@@ -229,7 +259,9 @@ def compare_order(rpc_sigs: list[dict], db_sigs: list[dict], db_sigs_asc: list[d
     results.append("  按 source 分类:")
     ws_sigs = [s for s in db_sigs if s.get("source") == "helius_ws"]
     rpc_sigs_source = [s for s in db_sigs if s.get("source") == "solana_rpc"]
-    results.append(f"  回填入库记录数 (solana_rpc): {len(rpc_sigs_source)}")
+    fill_sigs_source = [s for s in db_sigs if s.get("source") == "rpc_fill"]
+    results.append(f"  回填占位记录数 (rpc_fill): {len(fill_sigs_source)}")
+    results.append(f"  回填填充后记录数 (solana_rpc): {len(rpc_sigs_source)}")
     results.append(f"  WSS 入库记录数 (helius_ws): {len(ws_sigs)}")
 
     if ws_sigs:

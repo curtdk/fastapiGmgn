@@ -28,6 +28,7 @@ class TradeStream:
         self.running = False
         self.ws: Optional[Any] = None
         self._task: Optional[asyncio.Task] = None
+        self.sync_point: Optional[str] = None  # 第一条 WS 交易的 signature
 
     async def start(self):
         """启动实时流"""
@@ -73,6 +74,7 @@ class TradeStream:
                                 "commitment": "confirmed",
                                 "encoding": "jsonParsed",
                                 "transactionDetails": "full",
+                                "maxSupportedTransactionVersion": 0
                             }
                         ]
                     }
@@ -153,6 +155,12 @@ class TradeStream:
                     tx_record = Transaction(**tx_detail)
                     db.add(tx_record)
                     db.commit()
+
+                    # 记录第一条 WS 交易作为 sync_point
+                    if self.sync_point is None:
+                        self.sync_point = sig
+                        logger.info(f"[实时流] sync_point 已设置: {sig}")
+
                     db.close()
 
                     # 处理并推送到前端（用新 session，确保 db 可用）
