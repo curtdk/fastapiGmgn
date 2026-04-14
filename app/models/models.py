@@ -16,7 +16,7 @@ class User(Base):
 
 class Transaction(Base):
     __tablename__ = "transactions"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     sig = Column(String, unique=True, index=True, nullable=False)
     slot = Column(Integer, index=True)
@@ -29,8 +29,10 @@ class Transaction(Base):
     transaction_type = Column(String)  # SWAP, TRANSFER, MINT, etc
     dex = Column(String)  # raydium, orca, etc
     pool_address = Column(String, index=True)
+    sol_spent = Column(Float)  # 消耗 SOL
+    fee = Column(Float)  # 交易费
     raw_data = Column(Text)
-    source = Column(String)  # helius, gmgn
+    source = Column(String)  # helius_ws, solana_rpc, rpc_fill
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

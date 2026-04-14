@@ -118,27 +118,51 @@ class TradeStream:
                 await asyncio.sleep(3)
 
     async def _handle_message(self, msg: str):
-        """处理收到的 WebSocket 消息"""
+        """处理收到的 WebSocket 消息
+
+        实际消息格式:
+        {
+          "jsonrpc": "2.0",
+          "method": "transactionNotification",
+          "params": {
+            "subscription": 8811454,
+            "result": {
+              "slot": 413098808,
+              "signature": "jzbUx...",
+              "transaction": { "transaction": { "signatures": [...], "message": {...} } },
+              "meta": { "preBalances": [...], "postBalances": [...], ... }
+            }
+          }
+        }
+        """
         try:
             data = json.loads(msg)
 
             # 跳过订阅确认和心跳
-            if "result" in data or data.get("method") == "subscriptionNotification":
+            if "result" in data and "params" not in data:
+                return
+            if data.get("method") == "subscriptionNotification":
                 return
 
-            # 解析交易数据 — 标准 Solana WS 格式
-            # params.result.value 包含完整交易数据
+            # 解析交易数据 — Helius WS 实际格式
             params = data.get("params", {})
-            tx_data = params.get("result", {}).get("value", {})
-            if not tx_data:
+            result = params.get("result", {})
+            if not result:
                 return
 
-            # 附加 signature（从交易本身提取）
-            sigs = tx_data.get("transaction", {}).get("signatures", [])
-            if sigs:
-                tx_data["_signature"] = sigs[0]
-            else:
+            # 提取 signature
+            sig = result.get("signature", "")
+            if not sig:
                 return
+
+            # 构建 tx_data 结构，与 _extract_trade_info 期望的格式一致
+            tx_data = {
+                "_signature": sig,
+                "slot": result.get("slot", 0),
+                "blockTime": result.get("blockTime"),
+                "transaction": result.get("transaction", {}),
+                "meta": result.get("meta", {}),
+            }
 
             tx_detail = self._extract_trade_info(tx_data)
             if not tx_detail:
@@ -179,7 +203,16 @@ class TradeStream:
             logger.error(f"[实时流] 消息处理失败: {e}", exc_info=True)
 
     def _extract_trade_info(self, tx_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """从标准 Solana RPC 交易数据中提取交易信息"""
+        """从 Helius WS 交易数据中提取交易信息
+
+        提取字段:
+        - sig, slot, block_time
+        - signer (用户地址)
+        - 交易类型 (BUY/SELL/TRANSFER)
+        - token 数量变化
+        - 消耗 SOL (preBalances - postBalances)
+        - DEX 信息
+        """
         try:
             sig = tx_data.get("_signature", "")
             if not sig:
@@ -194,21 +227,36 @@ class TradeStream:
                 block_time = datetime.utcfromtimestamp(block_time)
 
             slot = tx_data.get("slot", 0)
-            message = tx_data.get("transaction", {}).get("message", {})
+
+            # 获取 accountKeys — 注意嵌套结构: transaction.transaction.message.accountKeys
+            inner_tx = tx_data.get("transaction", {}).get("transaction", {})
+            if not inner_tx:
+                # 兼容旧格式: transaction.message.accountKeys
+                inner_tx = tx_data.get("transaction", {})
+
+            message = inner_tx.get("message", {})
             account_keys = message.get("accountKeys", [])
 
-            # 获取 signer（交易发起者）
+            # 获取 signer（交易发起者，第一个 signer=true 的 key）
             signer = ""
-            if account_keys:
-                first_key = account_keys[0]
-                signer = first_key.get("pubkey", "") if isinstance(first_key, dict) else first_key
+            for key in account_keys:
+                if isinstance(key, dict) and key.get("signer"):
+                    signer = key.get("pubkey", "")
+                    break
+                elif isinstance(key, str):
+                    # 兼容旧格式（纯字符串列表）
+                    signer = key
+                    break
+
+            if not signer:
+                return None
 
             # 从 pre/postTokenBalances 计算 token 变化
-            pre_balances = {b["mint"]: b for b in meta.get("preTokenBalances", [])}
-            post_balances = {b["mint"]: b for b in meta.get("postTokenBalances", [])}
+            pre_token_balances = {b["mint"]: b for b in meta.get("preTokenBalances", [])}
+            post_token_balances = {b["mint"]: b for b in meta.get("postTokenBalances", [])}
 
-            pre = pre_balances.get(self.mint)
-            post = post_balances.get(self.mint)
+            pre = pre_token_balances.get(self.mint)
+            post = post_token_balances.get(self.mint)
 
             amount = 0.0
             from_addr = signer
@@ -235,7 +283,6 @@ class TradeStream:
                     from_addr = signer
                     to_addr = ""
                 else:
-                    # 无变化，可能是 transfer
                     tx_type = "TRANSFER"
 
             # 从 inner instructions 中提取 DEX 信息
@@ -250,6 +297,14 @@ class TradeStream:
                     elif "orca" in program_id.lower():
                         dex = "orca"
 
+            # 计算消耗 SOL: preBalances[0] - postBalances[0]
+            pre_balances = meta.get("preBalances", [])
+            post_balances = meta.get("postBalances", [])
+            fee = meta.get("fee", 0)
+            sol_spent = 0.0
+            if pre_balances and post_balances and len(pre_balances) > 0 and len(post_balances) > 0:
+                sol_spent = (pre_balances[0] - post_balances[0]) / 1e9
+
             return {
                 "sig": sig,
                 "slot": slot,
@@ -262,6 +317,8 @@ class TradeStream:
                 "transaction_type": tx_type,
                 "dex": dex,
                 "pool_address": pool_address,
+                "sol_spent": sol_spent,
+                "fee": fee / 1e9,
                 "raw_data": str(tx_data)[:5000],
                 "source": "helius_ws",
             }

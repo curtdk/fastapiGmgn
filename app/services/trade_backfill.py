@@ -398,6 +398,14 @@ class TradeBackfill:
                         dex = "orca"
                         tx_type = tx_type or "SWAP"
 
+            # 计算消耗 SOL: preBalances[0] - postBalances[0]
+            pre_sol_balances = meta.get("preBalances", [])
+            post_sol_balances = meta.get("postBalances", [])
+            fee = meta.get("fee", 0)
+            sol_spent = 0.0
+            if pre_sol_balances and post_sol_balances and len(pre_sol_balances) > 0 and len(post_sol_balances) > 0:
+                sol_spent = (pre_sol_balances[0] - post_sol_balances[0]) / 1e9
+
             return {
                 "sig": sig,
                 "slot": slot,
@@ -410,6 +418,8 @@ class TradeBackfill:
                 "transaction_type": tx_type,
                 "dex": dex,
                 "pool_address": pool_address,
+                "sol_spent": sol_spent,
+                "fee": fee / 1e9,
                 "raw_data": str(tx)[:5000],
                 "source": "solana_rpc",
             }

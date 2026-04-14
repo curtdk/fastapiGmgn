@@ -46,6 +46,9 @@ class TradeData(BaseModel):
     transaction_type: Optional[str] = None
     dex: Optional[str] = None
     pool_address: Optional[str] = None
+    sol_spent: Optional[float] = None  # 消耗 SOL
+    fee: Optional[float] = None  # 交易费
+    source: Optional[str] = None  # helius_ws, solana_rpc, rpc_fill
     # 分析结果
     net_sol_flow: float = 0.0
     net_token_flow: float = 0.0
