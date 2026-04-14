@@ -155,13 +155,19 @@ class TradeStream:
             if not sig:
                 return
 
+            # 提前检查 meta.err，有错误的 sig 直接跳过
+            meta = result.get("meta", {})
+            if meta.get("err"):
+                logger.debug(f"[实时流] 跳过错误 sig: {sig[:8]}... err={meta['err']}")
+                return
+
             # 构建 tx_data 结构，与 _extract_trade_info 期望的格式一致
             tx_data = {
                 "_signature": sig,
                 "slot": result.get("slot", 0),
                 "blockTime": result.get("blockTime"),
                 "transaction": result.get("transaction", {}),
-                "meta": result.get("meta", {}),
+                "meta": meta,
             }
 
             tx_detail = self._extract_trade_info(tx_data)

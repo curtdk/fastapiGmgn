@@ -5,6 +5,7 @@ from typing import Optional
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends, HTTPException
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
+from sqlalchemy import case
 
 from app.utils.database import get_db, SessionLocal
 from app.models.models import Transaction
@@ -52,7 +53,12 @@ def get_trades(
         db.query(Transaction, TradeAnalysis)
         .outerjoin(TradeAnalysis, Transaction.sig == TradeAnalysis.sig)
         .filter(Transaction.token_mint == mint)
-        .order_by(Transaction.slot.desc(), Transaction.block_time.desc(), Transaction.id.desc())
+        .order_by(
+            case((Transaction.source == "rpc_fill", 0), else_=1),  # rpc_fill 先显示
+            Transaction.slot.desc(),
+            Transaction.block_time.desc(),
+            Transaction.id.desc(),
+        )
         .offset((page - 1) * page_size)
         .limit(page_size)
         .all()

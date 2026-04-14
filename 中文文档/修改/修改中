@@ -15,3 +15,18 @@
     - sol_spent < 0 + Token 减少 → SELL                                                                                                                                                                                                                                          
     - abs(sol_spent) <= 0.01 + Token 有变动 → TRANSFER                                                                                                                                                                                                                           
     - 兜底：Token 增加 → BUY，Token 减少 → SELL 
+
+
+
+/Users/curtdk/.openclaw/workspace/fastapiGmgn/app/services/trade_stream.py
+    _handle_message 
+    /Users/curtdk/.openclaw/workspace/fastapiGmgn/中文文档/测试说明/tx.md
+
+     # 构建 tx_data 结构，与 _extract_trade_info 期望的格式一致
+            tx_data = {
+                "_signature": sig,
+                "slot": result.get("slot", 0),
+                "blockTime": result.get("blockTime"),
+                "transaction": result.get("transaction", {}),
+                "meta": meta,
+            }
