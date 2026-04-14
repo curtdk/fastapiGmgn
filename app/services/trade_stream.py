@@ -203,14 +203,14 @@ class TradeStream:
             logger.error(f"[实时流] 消息处理失败: {e}", exc_info=True)
 
     def _extract_trade_info(self, tx_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """从 Helius WS 交易数据中提取交易信息
+        """从 Helius WS 交易数据中提取交易信息（资金流向优先协议）
 
         提取字段:
         - sig, slot, block_time
         - signer (用户地址)
-        - 交易类型 (BUY/SELL/TRANSFER)
-        - token 数量变化
-        - 消耗 SOL (preBalances - postBalances)
+        - 交易类型 (BUY/SELL/TRANSFER) — SOL 流向 + Token 变化双重校验
+        - token 数量变化（遍历所有 ATA，找 signer 拥有的）
+        - 消耗 SOL 净值 (preBalances - postBalances - fee)
         - DEX 信息
         """
         try:
@@ -251,41 +251,63 @@ class TradeStream:
             if not signer:
                 return None
 
-            # 从 pre/postTokenBalances 计算 token 变化
-            pre_token_balances = {b["mint"]: b for b in meta.get("preTokenBalances", [])}
-            post_token_balances = {b["mint"]: b for b in meta.get("postTokenBalances", [])}
+            # ===== SOL 流向计算（净值） =====
+            pre_sol_balances = meta.get("preBalances", [])
+            post_sol_balances = meta.get("postBalances", [])
+            fee_lamports = meta.get("fee", 0)
+            sol_spent = 0.0
+            if pre_sol_balances and post_sol_balances and len(pre_sol_balances) > 0 and len(post_sol_balances) > 0:
+                sol_spent = (pre_sol_balances[0] - post_sol_balances[0] - fee_lamports) / 1e9
 
-            pre = pre_token_balances.get(self.mint)
-            post = post_token_balances.get(self.mint)
+            # ===== Token 余额变化（遍历所有 ATA，找 signer 拥有的） =====
+            pre_token_list = meta.get("preTokenBalances", [])
+            post_token_list = meta.get("postTokenBalances", [])
 
-            amount = 0.0
+            # 构建 signer 在该 mint 下的 pre/post 余额
+            pre_amt = 0.0
+            post_amt = 0.0
+            to_owner = ""
+
+            for b in post_token_list:
+                if b.get("mint") == self.mint and b.get("owner") == signer:
+                    post_amt = b.get("uiTokenAmount", {}).get("uiAmount", 0) or 0.0
+                    to_owner = b.get("owner", "")
+                    break
+
+            for b in pre_token_list:
+                if b.get("mint") == self.mint and b.get("owner") == signer:
+                    pre_amt = b.get("uiTokenAmount", {}).get("uiAmount", 0) or 0.0
+                    break
+
+            delta = post_amt - pre_amt
+            amount = abs(delta)
+
+            # ===== 交易类型判定（资金流向优先） =====
+            tx_type = "TRANSFER"
             from_addr = signer
             to_addr = ""
-            tx_type = "TRANSFER"
+
+            if sol_spent > 0.01 and delta > 0:
+                # SOL 净流出 + Token 增加 → BUY
+                tx_type = "BUY"
+                to_addr = to_owner
+            elif sol_spent < 0 and delta < 0:
+                # SOL 净流入 + Token 减少 → SELL
+                tx_type = "SELL"
+            elif abs(sol_spent) <= 0.01 and delta != 0:
+                # SOL 变化极小 + Token 有变动 → TRANSFER
+                tx_type = "TRANSFER"
+            elif delta > 0:
+                # 兜底：Token 增加 → BUY
+                tx_type = "BUY"
+                to_addr = to_owner
+            elif delta < 0:
+                # 兜底：Token 减少 → SELL
+                tx_type = "SELL"
+
+            # ===== DEX 检测 =====
             dex = ""
             pool_address = ""
-            token_symbol = ""
-
-            if pre and post:
-                pre_amt = pre["uiTokenAmount"].get("uiAmount", 0) or 0
-                post_amt = post["uiTokenAmount"].get("uiAmount", 0) or 0
-                delta = post_amt - pre_amt
-                amount = abs(delta)
-
-                if delta > 0:
-                    # signer 的 token 增加 → BUY
-                    tx_type = "BUY"
-                    from_addr = signer
-                    to_addr = post.get("owner", "")
-                elif delta < 0:
-                    # signer 的 token 减少 → SELL
-                    tx_type = "SELL"
-                    from_addr = signer
-                    to_addr = ""
-                else:
-                    tx_type = "TRANSFER"
-
-            # 从 inner instructions 中提取 DEX 信息
             inner_instructions = meta.get("innerInstructions", [])
             for ix_group in inner_instructions:
                 for ix in ix_group.get("instructions", []):
@@ -297,14 +319,6 @@ class TradeStream:
                     elif "orca" in program_id.lower():
                         dex = "orca"
 
-            # 计算消耗 SOL: preBalances[0] - postBalances[0]
-            pre_balances = meta.get("preBalances", [])
-            post_balances = meta.get("postBalances", [])
-            fee = meta.get("fee", 0)
-            sol_spent = 0.0
-            if pre_balances and post_balances and len(pre_balances) > 0 and len(post_balances) > 0:
-                sol_spent = (pre_balances[0] - post_balances[0]) / 1e9
-
             return {
                 "sig": sig,
                 "slot": slot,
@@ -313,12 +327,12 @@ class TradeStream:
                 "to_address": to_addr,
                 "amount": amount,
                 "token_mint": self.mint,
-                "token_symbol": token_symbol,
+                "token_symbol": "",
                 "transaction_type": tx_type,
                 "dex": dex,
                 "pool_address": pool_address,
                 "sol_spent": sol_spent,
-                "fee": fee / 1e9,
+                "fee": fee_lamports / 1e9,
                 "raw_data": str(tx_data)[:5000],
                 "source": "helius_ws",
             }

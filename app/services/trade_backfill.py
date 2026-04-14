@@ -280,12 +280,13 @@ class TradeBackfill:
         """
         批量解析交易
         使用标准 Solana RPC getTransaction（并发请求）
+        返回包含成功和失败 sig 的结果，失败 sig 标记 _error=True
         """
         api_key = self._get_api_key()
         concurrent = get_int_setting(self.db, "concurrent_requests", 3)
         semaphore = asyncio.Semaphore(concurrent)
 
-        async def fetch_tx(sig: str) -> Optional[Dict[str, Any]]:
+        async def fetch_tx(sig: str) -> Dict[str, Any]:
             async with semaphore:
                 try:
                     async with httpx.AsyncClient(timeout=30) as client:
@@ -302,19 +303,26 @@ class TradeBackfill:
                         data = resp.json()
                         result = data.get("result")
                         if result is None:
-                            return None
+                            return {"sig": sig, "_error": True, "_reason": "result_is_none"}
+                        # 检查 meta.err
+                        meta = result.get("meta", {})
+                        if meta.get("err"):
+                            return {"sig": sig, "_error": True, "_reason": f"meta_err: {meta['err']}"}
                         result["_signature"] = sig
                         return result
                 except Exception as e:
                     logger.warning(f"[回填] getTransaction 失败 {sig}: {e}")
-                    return None
+                    return {"sig": sig, "_error": True, "_reason": str(e)}
 
         tasks = [fetch_tx(sig) for sig in signatures]
         results = await asyncio.gather(*tasks)
 
         tx_details = []
         for tx in results:
-            if tx is not None:
+            if tx.get("_error"):
+                # 失败的交易也加入列表，后续 fill 阶段会删除占位记录
+                tx_details.append(tx)
+            else:
                 detail = self._extract_trade_info(tx)
                 if detail:
                     tx_details.append(detail)
@@ -322,7 +330,7 @@ class TradeBackfill:
         return tx_details
 
     def _extract_trade_info(self, tx: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """从标准 Solana RPC 交易数据中提取关键信息"""
+        """从标准 Solana RPC 交易数据中提取关键信息（资金流向优先协议）"""
         try:
             sig = tx.get("_signature", "")
             if not sig:
@@ -346,60 +354,76 @@ class TradeBackfill:
                 first_key = account_keys[0]
                 signer = first_key.get("pubkey", "") if isinstance(first_key, dict) else first_key
 
-            # 从 pre/postTokenBalances 计算 token 变化
-            pre_balances = {b["mint"]: b for b in meta.get("preTokenBalances", [])}
-            post_balances = {b["mint"]: b for b in meta.get("postTokenBalances", [])}
+            if not signer:
+                return None
 
-            pre = pre_balances.get(self.mint)
-            post = post_balances.get(self.mint)
+            # ===== SOL 流向计算（净值） =====
+            pre_sol_balances = meta.get("preBalances", [])
+            post_sol_balances = meta.get("postBalances", [])
+            fee_lamports = meta.get("fee", 0)
+            sol_spent = 0.0
+            if pre_sol_balances and post_sol_balances and len(pre_sol_balances) > 0 and len(post_sol_balances) > 0:
+                sol_spent = (pre_sol_balances[0] - post_sol_balances[0] - fee_lamports) / 1e9
 
-            amount = 0.0
+            # ===== Token 余额变化（遍历所有 ATA，找 signer 拥有的） =====
+            pre_token_list = meta.get("preTokenBalances", [])
+            post_token_list = meta.get("postTokenBalances", [])
+
+            # 构建 signer 在该 mint 下的 pre/post 余额
+            pre_amt = 0.0
+            post_amt = 0.0
+            to_owner = ""
+
+            for b in post_token_list:
+                if b.get("mint") == self.mint and b.get("owner") == signer:
+                    post_amt = b.get("uiTokenAmount", {}).get("uiAmount", 0) or 0.0
+                    to_owner = b.get("owner", "")
+                    break
+
+            for b in pre_token_list:
+                if b.get("mint") == self.mint and b.get("owner") == signer:
+                    pre_amt = b.get("uiTokenAmount", {}).get("uiAmount", 0) or 0.0
+                    break
+
+            delta = post_amt - pre_amt
+            amount = abs(delta)
+
+            # ===== 交易类型判定（资金流向优先） =====
+            tx_type = "TRANSFER"
             from_addr = signer
             to_addr = ""
-            tx_type = "TRANSFER"
+
+            if sol_spent > 0.01 and delta > 0:
+                # SOL 净流出 + Token 增加 → BUY
+                tx_type = "BUY"
+                to_addr = to_owner
+            elif sol_spent < 0 and delta < 0:
+                # SOL 净流入 + Token 减少 → SELL
+                tx_type = "SELL"
+            elif abs(sol_spent) <= 0.01 and delta != 0:
+                # SOL 变化极小 + Token 有变动 → TRANSFER
+                tx_type = "TRANSFER"
+            elif delta > 0:
+                # 兜底：Token 增加 → BUY
+                tx_type = "BUY"
+                to_addr = to_owner
+            elif delta < 0:
+                # 兜底：Token 减少 → SELL
+                tx_type = "SELL"
+
+            # ===== DEX 检测 =====
             dex = ""
             pool_address = ""
-            token_symbol = ""
-
-            if pre and post:
-                pre_amt = pre["uiTokenAmount"].get("uiAmount", 0) or 0
-                post_amt = post["uiTokenAmount"].get("uiAmount", 0) or 0
-                delta = post_amt - pre_amt
-                amount = abs(delta)
-
-                if delta > 0:
-                    tx_type = "BUY"
-                    from_addr = signer
-                    to_addr = post.get("owner", "")
-                elif delta < 0:
-                    tx_type = "SELL"
-                    from_addr = signer
-                    to_addr = ""
-                else:
-                    tx_type = "TRANSFER"
-
-            # 从 inner instructions 中提取 DEX 信息
             inner_instructions = meta.get("innerInstructions", [])
             for ix_group in inner_instructions:
                 for ix in ix_group.get("instructions", []):
                     program_id = ix.get("programId", "")
                     if "pump" in program_id.lower() or "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P" in program_id:
                         dex = "pump.fun"
-                        tx_type = tx_type or "SWAP"
                     elif "raydium" in program_id.lower() or "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8" in program_id:
                         dex = "raydium"
-                        tx_type = tx_type or "SWAP"
                     elif "orca" in program_id.lower():
                         dex = "orca"
-                        tx_type = tx_type or "SWAP"
-
-            # 计算消耗 SOL: preBalances[0] - postBalances[0]
-            pre_sol_balances = meta.get("preBalances", [])
-            post_sol_balances = meta.get("postBalances", [])
-            fee = meta.get("fee", 0)
-            sol_spent = 0.0
-            if pre_sol_balances and post_sol_balances and len(pre_sol_balances) > 0 and len(post_sol_balances) > 0:
-                sol_spent = (pre_sol_balances[0] - post_sol_balances[0]) / 1e9
 
             return {
                 "sig": sig,
@@ -409,12 +433,12 @@ class TradeBackfill:
                 "to_address": to_addr,
                 "amount": amount,
                 "token_mint": self.mint,
-                "token_symbol": token_symbol,
+                "token_symbol": "",
                 "transaction_type": tx_type,
                 "dex": dex,
                 "pool_address": pool_address,
                 "sol_spent": sol_spent,
-                "fee": fee / 1e9,
+                "fee": fee_lamports / 1e9,
                 "raw_data": str(tx)[:5000],
                 "source": "solana_rpc",
             }
@@ -426,6 +450,7 @@ class TradeBackfill:
         """
         填充占位记录（UPDATE source='rpc_fill' 的记录）
         不触碰 source='helius_ws' 的记录
+        对于有错误的 sig（_error=True），删除其占位记录
         """
         if not tx_list:
             return
@@ -434,9 +459,22 @@ class TradeBackfill:
         db = SessionLocal()
         try:
             filled_count = 0
+            deleted_count = 0
             for tx in tx_list:
                 sig = tx.get("sig")
                 if not sig:
+                    continue
+
+                # 有错误的 sig：删除占位记录
+                if tx.get("_error"):
+                    reason = tx.get("_reason", "unknown")
+                    result = db.query(Transaction).filter(
+                        Transaction.sig == sig,
+                        Transaction.source == "rpc_fill"
+                    ).delete(synchronize_session=False)
+                    if result > 0:
+                        deleted_count += 1
+                        logger.debug(f"[回填] 删除错误占位 {sig[:8]}... 原因: {reason}")
                     continue
 
                 # 只更新 source='rpc_fill' 的占位记录
@@ -449,7 +487,7 @@ class TradeBackfill:
                     filled_count += 1
 
             db.commit()
-            logger.info(f"[回填] 填充占位记录 {filled_count} 条")
+            logger.info(f"[回填] 填充占位记录 {filled_count} 条，删除错误占位 {deleted_count} 条")
         except Exception as e:
             logger.error(f"[回填] 填充失败: {e}")
             db.rollback()
