@@ -57,11 +57,7 @@ class TradeBackfill:
 
             sync_point = await self._wait_for_sync_point()
             if not sync_point:
-                logger.error("[回填] 等待 sync_point 超时")
-                await ws_manager.broadcast(self.mint, {
-                    "type": "error",
-                    "data": {"mint": self.mint, "message": "等待 sync_point 超时"}
-                })
+                logger.info("[回填] 等待 sync_point 被中断（停止信号）")
                 return
 
             logger.info(f"[回填] sync_point 已就绪: {sync_point}")
@@ -118,9 +114,8 @@ class TradeBackfill:
             self.running = False
 
     async def _wait_for_sync_point(self, timeout: float = 30.0) -> Optional[str]:
-        """等待 TradeStream 的 sync_point 就绪"""
-        start = asyncio.get_event_loop().time()
-        while asyncio.get_event_loop().time() - start < timeout:
+        """等待 TradeStream 的 sync_point 就绪，超时后继续等待，不返回"""
+        while self.running:
             if self.stream and self.stream.sync_point:
                 return self.stream.sync_point
             await asyncio.sleep(0.5)
