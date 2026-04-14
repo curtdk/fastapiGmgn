@@ -39,6 +39,10 @@ logger = logging.getLogger(__name__)
 # 创建数据库表
 Base.metadata.create_all(bind=engine)
 
+# 迁移 transactions 表（添加新列）
+from app.utils.database import migrate_transactions_table
+migrate_transactions_table()
+
 SESSION_SECRET = "your-secret-key-change-in-production"
 
 app = FastAPI(title="GMGN API", version="1.0.0")

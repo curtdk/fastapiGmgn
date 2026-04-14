@@ -133,7 +133,10 @@ async def start_monitor(mint: str, db: Session = Depends(get_db)):
     if mint in active_monitors:
         await stop_monitor(mint)
 
-    stream = TradeStream(mint=mint)
+    from app.services.settings_service import get_setting
+    api_key = get_setting(db, "helius_api_key") or ""
+
+    stream = TradeStream(mint=mint, api_key=api_key)
     backfill = TradeBackfill(db=db, mint=mint, stream=stream)
 
     active_monitors[mint] = {
