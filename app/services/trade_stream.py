@@ -430,7 +430,7 @@ class TradeStream:
                 "pool_address": pool_address,
                 "sol_spent": sol_spent,
                 "fee": fee_lamports / 1e9,
-                "raw_data": str(tx_data),
+                "raw_data": str(tx_data)[:20000],
                 "source": "helius_ws",
             }
         except Exception as e:

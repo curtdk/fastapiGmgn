@@ -1,4 +1,4 @@
-"""历史交易回填服务 - 接力模式：占位创建 + 批量填充"""
+"""历史交易回填服务 - getTransactionsForAddress 一步获取签名+交易详情"""
 import asyncio
 import logging
 from datetime import datetime
@@ -19,7 +19,7 @@ HELIUS_RPC_URL = "https://mainnet.helius-rpc.com"
 
 
 class TradeBackfill:
-    """历史交易回填引擎（接力模式）"""
+    """历史交易回填引擎（getTransactionsForAddress 一步到位）"""
 
     def __init__(self, db: Session, mint: str, stream=None):
         self.db = db
@@ -40,7 +40,7 @@ class TradeBackfill:
         return os.getenv("HELIUS_NETWORK", "mainnet-beta")
 
     async def run(self):
-        """执行回填流程（接力模式）"""
+        """执行回填流程"""
         self.running = True
         self.total_fetched = 0
 
@@ -62,11 +62,11 @@ class TradeBackfill:
 
             logger.info(f"[回填] sync_point 已就绪: {sync_point}")
 
-            # 2. 使用 before=sync_point 分页获取历史签名
-            signatures = await self._fetch_all_signatures_before(sync_point)
-            logger.info(f"[回填] 共获取 {len(signatures)} 条历史签名")
+            # 2. 使用 getTransactionsForAddress 分页获取历史交易（含详情）
+            all_tx_details = await self._fetch_all_transactions_before(sync_point)
+            logger.info(f"[回填] 共获取 {len(all_tx_details)} 条有效交易")
 
-            if not signatures:
+            if not all_tx_details:
                 await ws_manager.broadcast(self.mint, {
                     "type": "status",
                     "data": {
@@ -78,18 +78,10 @@ class TradeBackfill:
                 })
                 return
 
-            # 反转：从旧到新
-            signatures.reverse()
-            self.earliest_slot = signatures[0].get("slot")
+            # 3. 批量入库（去重后直接 INSERT）
+            await self._batch_insert(all_tx_details)
 
-            # 3. 创建占位记录
-            placeholder_count = await self._create_placeholders(signatures)
-            logger.info(f"[回填] 创建占位记录 {placeholder_count} 条")
-
-            # 4. 批量解析并填充占位记录
-            await self._batch_parse_and_fill(signatures)
-
-            # 5. 回填完成，触发指数计算
+            # 4. 回填完成，触发指数计算
             await ws_manager.broadcast(self.mint, {
                 "type": "status",
                 "data": {
@@ -101,7 +93,7 @@ class TradeBackfill:
                 }
             })
 
-            # 6. 触发全量指数计算
+            # 5. 触发全量指数计算
             await self._trigger_full_calculation()
 
         except Exception as e:
@@ -121,35 +113,41 @@ class TradeBackfill:
             await asyncio.sleep(0.5)
         return None
 
-    async def _fetch_all_signatures_before(self, sync_point: str) -> List[Dict[str, Any]]:
+    async def _fetch_all_transactions_before(self, sync_point: str) -> List[Dict[str, Any]]:
         """
-        使用 before=sync_point 分页获取历史签名
-        从新到旧排列，上限 50,000 条
+        使用 getTransactionsForAddress 分页获取历史交易（含完整详情）
+        通过 filters.signature.lt=sync_point 获取该签名之前的交易
+        使用 paginationToken 分页，返回解析后的 trade_info 列表（从旧到新）
         """
-        all_sigs = []
-        before_sig = None
-        batch_size = 1000
+        all_details = []
+        pagination_token = None
+        batch_size = 100  # transactionDetails: "full" 最大 100
         max_total = 50000
+        total_fetched = 0
 
-        while self.running and len(all_sigs) < max_total:
+        while self.running and total_fetched < max_total:
+            params = {
+                "limit": batch_size,
+                "commitment": "confirmed",
+                "transactionDetails": "full",
+                "encoding": "jsonParsed",
+                "maxSupportedTransactionVersion": 0,
+                "filters": {
+                    "signature": {"lt": sync_point},
+                },
+            }
+            if pagination_token:
+                params["paginationToken"] = pagination_token
+
             body = {
                 "jsonrpc": "2.0",
                 "id": 1,
-                "method": "getSignaturesForAddress",
-                "params": [
-                    self.mint,
-                    {
-                        "limit": batch_size,
-                        "commitment": "confirmed",
-                        "before": sync_point,
-                    }
-                ]
+                "method": "getTransactionsForAddress",
+                "params": [self.mint, params],
             }
-            if before_sig:
-                body["params"][1]["before"] = before_sig
 
             api_key = self._get_api_key()
-            async with httpx.AsyncClient(timeout=30) as client:
+            async with httpx.AsyncClient(timeout=60) as client:
                 resp = await client.post(
                     f"{HELIUS_RPC_URL}/?api-key={api_key}",
                     json=body
@@ -157,15 +155,37 @@ class TradeBackfill:
                 resp.raise_for_status()
                 data = resp.json()
 
-            sigs = data.get("result", [])
-            if not sigs:
+            result = data.get("result", {})
+            txs = result.get("data", [])
+            if not txs:
                 break
 
-            # --- 修改开始：过滤掉有错误 (err 不为 None) 的签名 ---
-            valid_sigs = [s for s in sigs if s.get("err") is None]
-            all_sigs.extend(valid_sigs)
+            # 解析每笔交易
+            for tx in txs:
+                # 从 transaction.signatures 获取签名
+                sig = tx.get("transaction", {}).get("signatures", [""])[0]
+                if not sig:
+                    continue
 
-            # all_sigs.extend(sigs)
+                # 跳过失败的交易
+                meta = tx.get("meta", {})
+                if meta.get("err"):
+                    continue
+
+                # 构建与 _extract_trade_info 兼容的结构
+                tx_data = {
+                    "_signature": sig,
+                    "slot": tx.get("slot", 0),
+                    "blockTime": tx.get("blockTime"),
+                    "transaction": tx.get("transaction", {}),
+                    "meta": meta,
+                }
+
+                detail = self._extract_trade_info(tx_data)
+                if detail:
+                    all_details.append(detail)
+
+            total_fetched += len(txs)
 
             # 进度通知
             await ws_manager.broadcast(self.mint, {
@@ -173,169 +193,90 @@ class TradeBackfill:
                 "data": {
                     "mint": self.mint,
                     "status": "FETCHING_HISTORY",
-                    "message": f"已获取 {len(all_sigs)} 条历史签名...",
-                    "total_trades": len(all_sigs),
+                    "message": f"已获取 {len(all_details)} 条有效交易...",
+                    "total_trades": len(all_details),
                 }
             })
 
-            # 如果返回不足 batch_size，说明到头了
-            if len(sigs) < batch_size:
+            # 分页：使用 paginationToken
+            pagination_token = result.get("paginationToken")
+            if not pagination_token:
                 break
 
-            before_sig = sigs[-1]["signature"]
+        # 数据已从新到旧返回，反转成从旧到新
+        all_details.reverse()
+        if all_details:
+            self.earliest_slot = all_details[0].get("slot")
 
-        return all_sigs
+        return all_details
 
-    async def _create_placeholders(self, signatures: List[Dict[str, Any]]) -> int:
+    async def _batch_insert(self, tx_details: List[Dict[str, Any]]):
         """
-        创建占位记录（只存 sig + slot + block_time，source='rpc_fill'）
-        遍历签名（从旧到新），使用 INSERT OR IGNORE 防止重复
+        批量入库（去重后直接 INSERT）
+        按 batch_size 分批处理，每批完成后更新进度
         """
-        count = 0
+        batch_size = get_int_setting(self.db, "batch_size", 100)
+        interval = get_float_setting(self.db, "request_interval", 0.5)
+
+        # 按 batch_size 分组
+        batches = [tx_details[i:i + batch_size] for i in range(0, len(tx_details), batch_size)]
+        total_batches = len(batches)
+
         from app.utils.database import SessionLocal
 
-        for sig_info in signatures:
-            sig = sig_info["signature"]
-            slot = sig_info.get("slot", 0)
-            block_time_raw = sig_info.get("blockTime")
-            block_time = datetime.utcfromtimestamp(block_time_raw) if block_time_raw else None
+        for batch_idx, batch in enumerate(batches):
+            if not self.running:
+                break
 
-            # # 1. 过滤掉失败的交易
-            # if sig_info.get('err') is not None:
-            #     continue
-
+            db = SessionLocal()
             try:
-                db = SessionLocal()
-                # 先检查是否已存在
-                existing = db.query(Transaction).filter(Transaction.sig == sig).first()
-                if existing:
-                    db.close()
-                    continue
+                inserted = 0
+                skipped = 0
+                for detail in batch:
+                    sig = detail.get("sig", "")
+                    if not sig:
+                        continue
 
-                stmt = insert(Transaction).values(
-                    sig=sig,
-                    slot=slot,
-                    block_time=block_time,
-                    source="rpc_fill",
-                    token_mint=self.mint,
-                )
-                stmt = stmt.prefix_with("OR IGNORE")
-                db.execute(stmt)
+                    # 去重检查
+                    existing = db.query(Transaction).filter(Transaction.sig == sig).first()
+                    if existing:
+                        skipped += 1
+                        continue
+
+                    try:
+                        stmt = insert(Transaction).values(**detail)
+                        db.execute(stmt)
+                        inserted += 1
+                    except Exception as e:
+                        logger.warning(f"[回填] 入库失败 {sig}: {e}")
+                        db.rollback()
+
                 db.commit()
-                count += 1
+                self.total_fetched += inserted
+                logger.info(f"[回填] 批次 {batch_idx+1}/{total_batches}: 插入 {inserted} 条，跳过 {skipped} 条")
+
             except Exception as e:
-                logger.warning(f"[回填] 创建占位失败 {sig}: {e}")
+                logger.error(f"[回填] 批次入库异常: {e}")
                 db.rollback()
             finally:
                 db.close()
 
-        return count
+            # 进度通知
+            progress = ((batch_idx + 1) / total_batches) * 100
+            await ws_manager.broadcast(self.mint, {
+                "type": "status",
+                "data": {
+                    "mint": self.mint,
+                    "status": "FILLING",
+                    "message": f"入库进度 {progress:.1f}% ({self.total_fetched}/{len(tx_details)})",
+                    "progress": round(progress, 1),
+                    "total_trades": self.total_fetched,
+                }
+            })
 
-    async def _batch_parse_and_fill(self, signatures: List[Dict[str, Any]]):
-        """
-        批量解析交易详情并填充占位记录
-        使用 UPDATE 填充 source='rpc_fill' 的记录，不 INSERT 新记录
-        """
-        batch_size = get_int_setting(self.db, "batch_size", 100)
-        concurrent = get_int_setting(self.db, "concurrent_requests", 3)
-        interval = get_float_setting(self.db, "request_interval", 0.5)
-
-        # 按 batch_size 分组
-        batches = [signatures[i:i + batch_size] for i in range(0, len(signatures), batch_size)]
-        total_batches = len(batches)
-
-        semaphore = asyncio.Semaphore(concurrent)
-
-        async def parse_batch(batch_idx: int, batch_sigs: List[Dict[str, Any]]):
-            """解析一批交易并填充"""
-            async with semaphore:
-                sig_list = [s["signature"] for s in batch_sigs]
-                tx_details = await self._parse_transactions(sig_list)
-
-                # 填充占位记录（UPDATE）
-                if tx_details:
-                    await self._fill_placeholders(tx_details)
-
-                # 更新进度
-                self.total_fetched += len(tx_details)
-                progress = ((batch_idx + 1) / total_batches) * 100
-
-                await ws_manager.broadcast(self.mint, {
-                    "type": "status",
-                    "data": {
-                        "mint": self.mint,
-                        "status": "FILLING",
-                        "message": f"填充进度 {progress:.1f}% ({self.total_fetched}/{len(signatures)})",
-                        "progress": round(progress, 1),
-                        "total_trades": self.total_fetched,
-                    }
-                })
-
-        # 并发执行所有批次
-        tasks = []
-        for idx, batch in enumerate(batches):
-            tasks.append(parse_batch(idx, batch))
-            # 每发 concurrent 个任务，等一下
-            if (idx + 1) % concurrent == 0:
-                await asyncio.gather(*tasks[-concurrent:])
+            # 批次间间隔，避免请求过快
+            if interval > 0:
                 await asyncio.sleep(interval)
-
-        # 等待剩余任务
-        if tasks:
-            await asyncio.gather(*tasks)
-
-    async def _parse_transactions(self, signatures: List[str]) -> List[Dict[str, Any]]:
-        """
-        批量解析交易
-        使用标准 Solana RPC getTransaction（并发请求）
-        返回包含成功和失败 sig 的结果，失败 sig 标记 _error=True
-        """
-        api_key = self._get_api_key()
-        concurrent = get_int_setting(self.db, "concurrent_requests", 3)
-        semaphore = asyncio.Semaphore(concurrent)
-
-        async def fetch_tx(sig: str) -> Dict[str, Any]:
-            async with semaphore:
-                try:
-                    async with httpx.AsyncClient(timeout=30) as client:
-                        resp = await client.post(
-                            f"{HELIUS_RPC_URL}/?api-key={api_key}",
-                            json={
-                                "jsonrpc": "2.0",
-                                "id": 1,
-                                "method": "getTransaction",
-                                "params": [sig, {"encoding": "jsonParsed", "maxSupportedTransactionVersion": 0}]
-                            }
-                        )
-                        resp.raise_for_status()
-                        data = resp.json()
-                        result = data.get("result")
-                        if result is None:
-                            return {"sig": sig, "_error": True, "_reason": "result_is_none"}
-                        # 检查 meta.err
-                        meta = result.get("meta", {})
-                        if meta.get("err"):
-                            return {"sig": sig, "_error": True, "_reason": f"meta_err: {meta['err']}"}
-                        result["_signature"] = sig
-                        return result
-                except Exception as e:
-                    logger.warning(f"[回填] getTransaction 失败 {sig}: {e}")
-                    return {"sig": sig, "_error": True, "_reason": str(e)}
-
-        tasks = [fetch_tx(sig) for sig in signatures]
-        results = await asyncio.gather(*tasks)
-
-        tx_details = []
-        for tx in results:
-            if tx.get("_error"):
-                # 失败的交易也加入列表，后续 fill 阶段会删除占位记录
-                tx_details.append(tx)
-            else:
-                detail = self._extract_trade_info(tx)
-                if detail:
-                    tx_details.append(detail)
-
-        return tx_details
 
     def _extract_trade_info(self, tx: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """从标准 Solana RPC 交易数据中提取关键信息（资金流向优先协议）"""
@@ -358,9 +299,17 @@ class TradeBackfill:
 
             # 获取 signer（交易发起者）
             signer = ""
-            if account_keys:
-                first_key = account_keys[0]
-                signer = first_key.get("pubkey", "") if isinstance(first_key, dict) else first_key
+            signer_index = 0
+            for i, key in enumerate(account_keys):
+                if isinstance(key, dict):
+                    if key.get("signer"):
+                        signer = key.get("pubkey", "")
+                        signer_index = i
+                        break
+                elif isinstance(key, str):
+                    signer = key
+                    signer_index = i
+                    break
 
             if not signer:
                 return None
@@ -370,8 +319,10 @@ class TradeBackfill:
             post_sol_balances = meta.get("postBalances", [])
             fee_lamports = meta.get("fee", 0)
             sol_spent = 0.0
-            if pre_sol_balances and post_sol_balances and len(pre_sol_balances) > 0 and len(post_sol_balances) > 0:
-                sol_spent = (pre_sol_balances[0] - post_sol_balances[0] - fee_lamports) / 1e9
+            if (pre_sol_balances and post_sol_balances
+                    and len(pre_sol_balances) > signer_index
+                    and len(post_sol_balances) > signer_index):
+                sol_spent = (pre_sol_balances[signer_index] - post_sol_balances[signer_index] - fee_lamports) / 1e9
 
             # ===== Token 余额变化（遍历所有 ATA，找 signer 拥有的） =====
             pre_token_list = meta.get("preTokenBalances", [])
@@ -440,60 +391,12 @@ class TradeBackfill:
                 "pool_address": pool_address,
                 "sol_spent": sol_spent,
                 "fee": fee_lamports / 1e9,
-                "raw_data": str(tx),
+                "raw_data": str(tx)[:20000],
                 "source": "rpc_fill",
             }
         except Exception as e:
             logger.warning(f"[回填] 解析交易失败: {e}")
             return None
-
-    async def _fill_placeholders(self, tx_list: List[Dict[str, Any]]):
-        """
-        填充占位记录（UPDATE source='rpc_fill' 的记录）
-        不触碰 source='helius_ws' 的记录
-        对于有错误的 sig（_error=True），删除其占位记录
-        """
-        if not tx_list:
-            return
-
-        from app.utils.database import SessionLocal
-        db = SessionLocal()
-        try:
-            filled_count = 0
-            deleted_count = 0
-            for tx in tx_list:
-                sig = tx.get("sig")
-                if not sig:
-                    continue
-
-                # # 有错误的 sig：删除占位记录
-                # if tx.get("_error"):
-                #     reason = tx.get("_reason", "unknown")
-                #     result = db.query(Transaction).filter(
-                #         Transaction.sig == sig,
-                #         Transaction.source == "rpc_fill"
-                #     ).delete(synchronize_session=False)
-                #     if result > 0:
-                #         deleted_count += 1
-                #         logger.debug(f"[回填] 删除错误占位 {sig[:8]}... 原因: {reason}")
-                #     continue
-
-                # 只更新 source='rpc_fill' 的占位记录
-                result = db.query(Transaction).filter(
-                    Transaction.sig == sig,
-                    Transaction.source == "rpc_fill"
-                ).update(tx, synchronize_session=False)
-
-                if result > 0:
-                    filled_count += 1
-
-            db.commit()
-            logger.info(f"[回填] 填充占位记录 {filled_count} 条，删除错误占位 {deleted_count} 条")
-        except Exception as e:
-            logger.error(f"[回填] 填充失败: {e}")
-            db.rollback()
-        finally:
-            db.close()
 
     async def _trigger_full_calculation(self):
         """触发全量指数计算"""
