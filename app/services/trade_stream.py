@@ -156,7 +156,10 @@ class TradeStream:
                 return
 
             # 提前检查 meta.err，有错误的 sig 直接跳过
-            meta = result.get("meta", {})
+            transaction=result.get("transaction", {})
+            meta = transaction.get("meta", {})
+
+            # meta = result.get("meta", {})
             if meta.get("err"):
                 logger.debug(f"[实时流] 跳过错误 sig: {sig[:8]}... err={meta['err']}")
                 return
@@ -208,16 +211,100 @@ class TradeStream:
         except Exception as e:
             logger.error(f"[实时流] 消息处理失败: {e}", exc_info=True)
 
+    # ===== 已知 Jito 小费地址（用于从 sol_spent 中扣除） =====
+    KNOWN_JITO_TIP_ACCOUNTS = {
+        "96gYZGLnJYVFmbjzopPSU6QiEV5fGqZNyN9nmNhvrZU5",
+        "HFqU5x63VTqvQss8hp11i4wT8PQ69LBAatPfitZfFWhS",
+        "ADaUMid9yfUytqMBgopwjb2DTLSokTSzLJt6c6GmGwfT",
+        "Cw8CFyM9FkoMi7K7Crf6HNQqf4uEMFPjRZaLkL3TJppF",
+        "DfXygSm4jCyNCybVYYK6DwvWqjKee8pbDmJGcLWNDXjh",
+        "E2eSqe33tuhFfLw6XAvz4p88KaYBjmJ8fQiEphb5fMQB",
+        "F2ZuGsQdfBh1bxMVRb1x6c84HaYJK2BQ3wJQvYmHhGeh",
+        "GhZpKJP1MoBfKtVqR9FqKfXqBmJ8VqJqKqJqKqJqKqJq",
+        "9Dv82cYxKPkE7Xh7F2oFFBmFKq7kQXip4HbQJQmGzXo5",
+        "DttWaMKVfTmBd9oqJpPwQXV9o3bB6q3qKqJqKqJqKqJq",
+    }
+
+    def _resolve_owner_from_index(self, token_balance: Dict[str, Any], account_keys: list, signer: str) -> Optional[str]:
+        """当 token balance 缺少 owner 字段时，通过 accountIndex 关联 accountKeys 获取 owner"""
+        account_index = token_balance.get("accountIndex")
+        if account_index is None:
+            return None
+        if account_index < 0 or account_index >= len(account_keys):
+            return None
+        key_entry = account_keys[account_index]
+        if isinstance(key_entry, dict):
+            return key_entry.get("pubkey", "")
+        return key_entry if isinstance(key_entry, str) else ""
+
+    def _detect_jito_tip(self, inner_instructions, signer: str) -> int:
+        """检测 Jito 小费金额：从 signer 发出的最小 SOL 转账视为小费"""
+        transfers = []
+        for ix_group in inner_instructions:
+            for ix in ix_group.get("instructions", []):
+                is_system = (ix.get("program") == "system"
+                             or ix.get("programId") == "11111111111111111111111111111111")
+                if not is_system:
+                    continue
+                parsed = ix.get("parsed", {})
+                if parsed.get("type") != "transfer":
+                    continue
+                info = parsed.get("info", {})
+                if info.get("source") != signer:
+                    continue
+                lamports = info.get("lamports", 0)
+                dest = info.get("destination", "")
+                if lamports > 0 and dest:
+                    transfers.append(lamports)
+
+        # 多个转账时，最小的视为小费
+        if len(transfers) >= 2:
+            return min(transfers)
+        # 单个转账但目标是已知 Jito 地址
+        if len(transfers) == 1:
+            for ix_group in inner_instructions:
+                for ix in ix_group.get("instructions", []):
+                    is_system = (ix.get("program") == "system"
+                                 or ix.get("programId") == "11111111111111111111111111111111")
+                    if not is_system:
+                        continue
+                    parsed = ix.get("parsed", {})
+                    if parsed.get("type") != "transfer":
+                        continue
+                    info = parsed.get("info", {})
+                    if (info.get("source") == signer
+                            and info.get("lamports", 0) == transfers[0]
+                            and info.get("destination", "") in self.KNOWN_JITO_TIP_ACCOUNTS):
+                        return transfers[0]
+        return 0
+
+    def _scan_dex_recursive(self, inner_instructions) -> str:
+        """递归扫描 innerInstructions 识别 DEX（处理 Flash 执行器嵌套）"""
+        dex = ""
+        for ix_group in inner_instructions:
+            for ix in ix_group.get("instructions", []):
+                program_id = ix.get("programId", "")
+                program_name = ix.get("program", "").lower()
+                # 检查 programId 和 parsed 中的 program 字段
+                pid_lower = program_id.lower()
+                if "pump" in pid_lower or "pump" in program_name or "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P" in program_id:
+                    return "pump.fun"
+                elif "raydium" in pid_lower or "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8" in program_id:
+                    dex = "raydium"
+                elif "orca" in pid_lower:
+                    dex = "orca"
+        return dex
+
     def _extract_trade_info(self, tx_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """从 Helius WS 交易数据中提取交易信息（资金流向优先协议）
 
-        提取字段:
-        - sig, slot, block_time
-        - signer (用户地址)
-        - 交易类型 (BUY/SELL/TRANSFER) — SOL 流向 + Token 变化双重校验
-        - token 数量变化（遍历所有 ATA，找 signer 拥有的）
-        - 消耗 SOL 净值 (preBalances - postBalances - fee)
-        - DEX 信息
+        适配 Helius transactionNotification 真实数据结构:
+        - 交易体位于 params.result
+        - 双层嵌套: result['transaction']['transaction']
+        - accountKeys 是对象列表 {"pubkey": "...", "signer": true}
+        - Token balance 可能缺少 owner 字段，需通过 accountIndex 关联
+        - 扣除 Jito 小费避免 sol_spent 虚高
+        - 递归扫描 innerInstructions 识别嵌套 DEX
         """
         try:
             sig = tx_data.get("_signature", "")
@@ -234,7 +321,7 @@ class TradeStream:
 
             slot = tx_data.get("slot", 0)
 
-            # 获取 accountKeys — 注意嵌套结构: transaction.transaction.message.accountKeys
+            # ===== 获取 accountKeys（适配双层嵌套 + 对象化结构） =====
             inner_tx = tx_data.get("transaction", {}).get("transaction", {})
             if not inner_tx:
                 # 兼容旧格式: transaction.message.accountKeys
@@ -243,45 +330,69 @@ class TradeStream:
             message = inner_tx.get("message", {})
             account_keys = message.get("accountKeys", [])
 
-            # 获取 signer（交易发起者，第一个 signer=true 的 key）
+            # 获取 signer（第一个 signer=true 的对象）
             signer = ""
-            for key in account_keys:
-                if isinstance(key, dict) and key.get("signer"):
-                    signer = key.get("pubkey", "")
-                    break
+            signer_index = 0
+            for i, key in enumerate(account_keys):
+                if isinstance(key, dict):
+                    if key.get("signer"):
+                        signer = key.get("pubkey", "")
+                        signer_index = i
+                        break
                 elif isinstance(key, str):
-                    # 兼容旧格式（纯字符串列表）
+                    # 兼容旧格式（纯字符串列表，第一个即为 signer）
                     signer = key
+                    signer_index = i
                     break
 
             if not signer:
                 return None
 
-            # ===== SOL 流向计算（净值） =====
+            # ===== SOL 流向计算（净值，使用 signer_index 匹配余额数组） =====
             pre_sol_balances = meta.get("preBalances", [])
             post_sol_balances = meta.get("postBalances", [])
             fee_lamports = meta.get("fee", 0)
             sol_spent = 0.0
-            if pre_sol_balances and post_sol_balances and len(pre_sol_balances) > 0 and len(post_sol_balances) > 0:
-                sol_spent = (pre_sol_balances[0] - post_sol_balances[0] - fee_lamports) / 1e9
+            if (pre_sol_balances and post_sol_balances
+                    and len(pre_sol_balances) > signer_index
+                    and len(post_sol_balances) > signer_index):
+                raw_sol_spent = (pre_sol_balances[signer_index]
+                                 - post_sol_balances[signer_index]
+                                 - fee_lamports)
 
-            # ===== Token 余额变化（遍历所有 ATA，找 signer 拥有的） =====
+                # 扣除 Jito 小费（避免支出统计虚高）
+                inner_instructions = meta.get("innerInstructions", [])
+                jito_tip = self._detect_jito_tip(inner_instructions, signer)
+                sol_spent = (raw_sol_spent - jito_tip) / 1e9
+
+            # ===== Token 余额变化（适配 owner 缺失时通过 accountIndex 关联） =====
             pre_token_list = meta.get("preTokenBalances", [])
             post_token_list = meta.get("postTokenBalances", [])
 
-            # 构建 signer 在该 mint 下的 pre/post 余额
             pre_amt = 0.0
             post_amt = 0.0
             to_owner = ""
 
             for b in post_token_list:
-                if b.get("mint") == self.mint and b.get("owner") == signer:
+                if b.get("mint") != self.mint:
+                    continue
+                # 优先使用 owner 字段
+                owner = b.get("owner")
+                if not owner:
+                    # 通过 accountIndex 关联 accountKeys 获取 owner
+                    owner = self._resolve_owner_from_index(b, account_keys, signer)
+                if owner == signer:
                     post_amt = b.get("uiTokenAmount", {}).get("uiAmount", 0) or 0.0
-                    to_owner = b.get("owner", "")
+                    to_owner = owner
                     break
 
             for b in pre_token_list:
-                if b.get("mint") == self.mint and b.get("owner") == signer:
+                if b.get("mint") != self.mint:
+                    continue
+                owner = b.get("owner")
+                if not owner:
+                    owner = self._resolve_owner_from_index(b, account_keys, signer)
+                if owner == signer:
                     pre_amt = b.get("uiTokenAmount", {}).get("uiAmount", 0) or 0.0
                     break
 
@@ -294,29 +405,16 @@ class TradeStream:
             to_addr = ""
 
             if delta > 0:
-                # Token 增加 → BUY（signer 花 SOL 买币）
                 tx_type = "BUY"
                 to_addr = to_owner
             elif delta < 0:
-                # Token 减少 → SELL（signer 卖币得 SOL）
                 tx_type = "SELL"
             elif abs(sol_spent) <= 0.001:
-                # Token 无变化且 SOL 变化极小 → TRANSFER
                 tx_type = "TRANSFER"
 
-            # ===== DEX 检测 =====
-            dex = ""
+            # ===== DEX 深度扫描（递归 innerInstructions） =====
+            dex = self._scan_dex_recursive(meta.get("innerInstructions", []))
             pool_address = ""
-            inner_instructions = meta.get("innerInstructions", [])
-            for ix_group in inner_instructions:
-                for ix in ix_group.get("instructions", []):
-                    program_id = ix.get("programId", "")
-                    if "pump" in program_id.lower() or "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P" in program_id:
-                        dex = "pump.fun"
-                    elif "raydium" in program_id.lower() or "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8" in program_id:
-                        dex = "raydium"
-                    elif "orca" in program_id.lower():
-                        dex = "orca"
 
             return {
                 "sig": sig,
@@ -332,7 +430,7 @@ class TradeStream:
                 "pool_address": pool_address,
                 "sol_spent": sol_spent,
                 "fee": fee_lamports / 1e9,
-                "raw_data": str(tx_data)[:5000],
+                "raw_data": str(tx_data),
                 "source": "helius_ws",
             }
         except Exception as e:

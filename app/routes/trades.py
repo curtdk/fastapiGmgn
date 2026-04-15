@@ -78,7 +78,7 @@ def get_trades(
             transaction_type=tx.transaction_type,
             dex=tx.dex,
             pool_address=tx.pool_address,
-            sol_spent=tx.sol_spent,
+            sol_spent=round(tx.sol_spent, 6) if tx.sol_spent is not None else None,
             fee=tx.fee,
             source=tx.source,
             net_sol_flow=analysis.net_sol_flow if analysis else 0.0,

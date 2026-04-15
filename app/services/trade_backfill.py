@@ -432,7 +432,7 @@ class TradeBackfill:
                 "pool_address": pool_address,
                 "sol_spent": sol_spent,
                 "fee": fee_lamports / 1e9,
-                "raw_data": str(tx)[:5000],
+                "raw_data": str(tx),
                 "source": "solana_rpc",
             }
         except Exception as e:
