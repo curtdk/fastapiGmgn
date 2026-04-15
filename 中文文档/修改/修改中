@@ -18,8 +18,9 @@
 
 
 
+下面文件 _handle_message 方法 获取tx_data  结构获取数据不对 导致获取数据不全 ，买卖 判断不出来 。data = json.loads(msg)。msg 结构是下面文件 
 /Users/curtdk/.openclaw/workspace/fastapiGmgn/app/services/trade_stream.py
-    _handle_message 
+    
     /Users/curtdk/.openclaw/workspace/fastapiGmgn/中文文档/测试说明/tx.md
 
      # 构建 tx_data 结构，与 _extract_trade_info 期望的格式一致
@@ -30,3 +31,9 @@
                 "transaction": result.get("transaction", {}),
                 "meta": meta,
             }
+
+
+
+当前项目 通过 /Users/curtdk/.openclaw/workspace/fastapiGmgn/app/services/trade_backfill.py 对 获取数据的处理 我检测过都是正确的，这是他获取的数据结构。
+但是通过/Users/curtdk/.openclaw/workspace/fastapiGmgn/app/services/trade_stream.py 对数据处理 _extract_trade_info。结果是不对的。这是他的获取的数据结构 
+/Users/curtdk/.openclaw/workspace/fastapiGmgn/中文文档/测试说明/kuHelius.md  修复一下 

@@ -214,11 +214,9 @@ amount = abs(delta)
 
 | 条件 | 类型 |
 |------|------|
-| `sol_spent > 0.01` 且 `delta > 0` | **BUY**（花 SOL 买币） |
-| `sol_spent < 0` 且 `delta < 0` | **SELL**（卖币得 SOL） |
-| `abs(sol_spent) <= 0.01` 且 `delta != 0` | **TRANSFER**（SOL 几乎无变化，Token 有变动） |
-| `delta > 0`（兜底） | **BUY** |
-| `delta < 0`（兜底） | **SELL** |
+| `delta > 0` | **BUY**（signer 的 Token 增加 = 买入） |
+| `delta < 0` | **SELL**（signer 的 Token 减少 = 卖出） |
+| `delta == 0` 且 `abs(sol_spent) <= 0.001` | **TRANSFER**（Token 无变化，SOL 变化极小） |
 
 ### 6.4 DEX 检测
 

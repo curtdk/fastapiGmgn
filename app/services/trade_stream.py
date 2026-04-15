@@ -293,23 +293,16 @@ class TradeStream:
             from_addr = signer
             to_addr = ""
 
-            if sol_spent > 0.01 and delta > 0:
-                # SOL 净流出 + Token 增加 → BUY
-                tx_type = "BUY"
-                to_addr = to_owner
-            elif sol_spent < 0 and delta < 0:
-                # SOL 净流入 + Token 减少 → SELL
-                tx_type = "SELL"
-            elif abs(sol_spent) <= 0.01 and delta != 0:
-                # SOL 变化极小 + Token 有变动 → TRANSFER
-                tx_type = "TRANSFER"
-            elif delta > 0:
-                # 兜底：Token 增加 → BUY
+            if delta > 0:
+                # Token 增加 → BUY（signer 花 SOL 买币）
                 tx_type = "BUY"
                 to_addr = to_owner
             elif delta < 0:
-                # 兜底：Token 减少 → SELL
+                # Token 减少 → SELL（signer 卖币得 SOL）
                 tx_type = "SELL"
+            elif abs(sol_spent) <= 0.001:
+                # Token 无变化且 SOL 变化极小 → TRANSFER
+                tx_type = "TRANSFER"
 
             # ===== DEX 检测 =====
             dex = ""
