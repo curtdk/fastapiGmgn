@@ -15,3 +15,14 @@ before 参数：
 用途：实现向后分页浏览交易历史
 当您使用 before 参数时，返回的交易列表不会包含您指定的那个签名对应的交易
 查询只会返回在指定签名之前（时间上更早）发生的交易
+
+单独获取sig 使用下面每次 1000条
+getSignaturesForAddress
+
+
+getTransactionsForAddress 方法：
+
+获取详细交易信息：
+
+设置 transactionDetails: "full" 参数
+返回完整的交易数据，包括指令、账户变化、日志等

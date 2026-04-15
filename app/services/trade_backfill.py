@@ -161,7 +161,11 @@ class TradeBackfill:
             if not sigs:
                 break
 
-            all_sigs.extend(sigs)
+            # --- 修改开始：过滤掉有错误 (err 不为 None) 的签名 ---
+            valid_sigs = [s for s in sigs if s.get("err") is None]
+            all_sigs.extend(valid_sigs)
+
+            # all_sigs.extend(sigs)
 
             # 进度通知
             await ws_manager.broadcast(self.mint, {
@@ -195,6 +199,10 @@ class TradeBackfill:
             slot = sig_info.get("slot", 0)
             block_time_raw = sig_info.get("blockTime")
             block_time = datetime.utcfromtimestamp(block_time_raw) if block_time_raw else None
+
+            # # 1. 过滤掉失败的交易
+            # if sig_info.get('err') is not None:
+            #     continue
 
             try:
                 db = SessionLocal()
@@ -433,7 +441,7 @@ class TradeBackfill:
                 "sol_spent": sol_spent,
                 "fee": fee_lamports / 1e9,
                 "raw_data": str(tx),
-                "source": "solana_rpc",
+                "source": "rpc_fill",
             }
         except Exception as e:
             logger.warning(f"[回填] 解析交易失败: {e}")
@@ -458,17 +466,17 @@ class TradeBackfill:
                 if not sig:
                     continue
 
-                # 有错误的 sig：删除占位记录
-                if tx.get("_error"):
-                    reason = tx.get("_reason", "unknown")
-                    result = db.query(Transaction).filter(
-                        Transaction.sig == sig,
-                        Transaction.source == "rpc_fill"
-                    ).delete(synchronize_session=False)
-                    if result > 0:
-                        deleted_count += 1
-                        logger.debug(f"[回填] 删除错误占位 {sig[:8]}... 原因: {reason}")
-                    continue
+                # # 有错误的 sig：删除占位记录
+                # if tx.get("_error"):
+                #     reason = tx.get("_reason", "unknown")
+                #     result = db.query(Transaction).filter(
+                #         Transaction.sig == sig,
+                #         Transaction.source == "rpc_fill"
+                #     ).delete(synchronize_session=False)
+                #     if result > 0:
+                #         deleted_count += 1
+                #         logger.debug(f"[回填] 删除错误占位 {sig[:8]}... 原因: {reason}")
+                #     continue
 
                 # 只更新 source='rpc_fill' 的占位记录
                 result = db.query(Transaction).filter(
