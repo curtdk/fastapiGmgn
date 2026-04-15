@@ -82,4 +82,7 @@ _create_placeholders
 下面是要求，你先分析一下告诉我修改计划，可以保持更换后可用。我确认后再修改代码。
 _parse_transactions 方法获取tx 详细信息，使用getTransaction 每次一个太慢了，更换为下面方法gettransactionsforaddress 下面是教程，
 https://www.helius.dev/docs/api-reference/rpc/http/gettransactionsforaddress
+
+
+网页端 实时交易列表 sol 字段 还是不显示。后台数据库是有数据的
  

@@ -115,7 +115,7 @@ function addTradeRow(data, isNew) {
   const tr = document.createElement('tr');
   if (isNew) tr.classList.add('new-row');
 
-  const netFlow = data.net_sol_flow || 0;
+  const netFlow = data.sol_spent || 0;
   const netClass = netFlow > 0 ? 'text-success' : (netFlow < 0 ? 'text-danger' : '');
 
   tr.innerHTML = `
