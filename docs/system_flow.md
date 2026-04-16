@@ -1,317 +1,527 @@
-# GMGN 交易系统 - 运转流程文档
+# GMGN 交易监控系统运行流程
 
-## 一、系统概述
+## 一、项目概述
 
-本系统是一个基于 Solana 链上数据的代币交易监控与分析平台。通过 Helius RPC 服务，实现对指定代币 mint 地址的**实时交易订阅**和**历史交易回填**，并对交易数据进行类型判定（BUY/SELL/TRANSFER）和指标计算。
+GMGN 是一个基于 FastAPI 的 Solana 代币交易监控系统，核心功能：
+- 实时监控指定代币（mint）的链上交易
+- 回填历史交易数据
+- 计算交易指标（BUY/SELL/TRANSFER）
+- 识别庄家（Dealer）地址
+- 通过 WebSocket 实时推送交易数据
 
-## 二、技术栈
+## 二、系统架构
 
-| 层级 | 技术 |
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                         FastAPI 应用                            │
+├─────────────────────────────────────────────────────────────────┤
+│  路由层 (routes)                                                │
+│  ├── /api/auth - 用户认证                                       │
+│  ├── /api/users - 用户管理                                      │
+│  ├── /api/trades - 交易监控 API                                 │
+│  │     ├── GET  /{mint}      - 获取交易列表                     │
+│  │     ├── GET  /{mint}/metrics - 获取指标                      │
+│  │     ├── GET  /{mint}/status - 获取监听状态                   │
+│  │     ├── POST /{mint}/start  - 启动监听                      │
+│  │     ├── POST /{mint}/stop   - 停止监听                      │
+│  │     └── WS   /ws/{mint}    - WebSocket 实时推送             │
+│  └── /api/settings - 系统设置                                   │
+├─────────────────────────────────────────────────────────────────┤
+│  服务层 (services)                                              │
+│  ├── trade_stream.py    - 实时交易流（Helius WebSocket）        │
+│  ├── trade_backfill.py  - 历史交易回填（Helius RPC）            │
+│  ├── trade_processor.py - 交易处理引擎（指数计算、队列消费）     │
+│  ├── dealer_detector.py - 庄家地址检测                          │
+│  └── settings_service.py - 设置管理                             │
+├─────────────────────────────────────────────────────────────────┤
+│  WebSocket 管理器 (websocket/manager.py)                        │
+│  └── 管理所有客户端连接，按 mint 广播消息                         │
+├─────────────────────────────────────────────────────────────────┤
+│  数据层 (models + database)                                     │
+│  ├── Transaction  - 交易记录表                                  │
+│  ├── TradeAnalysis - 交易分析表（指标计算结果）                 │
+│  ├── Token        - 代币信息表                                  │
+│  ├── User         - 用户表                                      │
+│  └── Setting      - 系统设置表                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+## 三、启动流程
+
+### 1. 应用启动 (main.py)
+
+```
+python main.py
+     │
+     ▼
+┌────────────────────────────────────────┐
+│ 1. 配置日志 (RotatingFileHandler)      │
+│ 2. 创建数据库表 (Base.metadata.create_all)│
+│ 3. 迁移 transactions 表                │
+│ 4. 创建 FastAPI 实例                    │
+│ 5. 添加中间件 (Session, CORS)           │
+│ 6. 注册路由                            │
+│ 7. 配置 SQLAdmin 后台                  │
+│ 8. 初始化超级管理员 (admin/admin123)    │
+│ 9. 初始化默认设置                       │
+│ 10. 启动事件 → 初始化庄家检测服务        │
+└────────────────────────────────────────┘
+     │
+     ▼
+┌────────────────────────────────────────┐
+│ 启动完成，等待请求                       │
+│ 访问 http://localhost:8000/admin        │
+│ 自动重定向到 /admin/trade-monitor       │
+└────────────────────────────────────────┘
+```
+
+## 四、交易监听启动流程
+
+当用户在前端点击「开始监听」时：
+
+```
+POST /api/trades/{mint}/start
+          │
+          ▼
+┌──────────────────────────────────────────────────────┐
+│ 1. 停止该 mint 的现有监听（如果存在）                  │
+│ 2. 创建 TradeStream 实例（Helius WebSocket）         │
+│ 3. 创建 TradeBackfill 实例（历史回填）               │
+│ 4. 保存到 active_monitors[mint]                      │
+│ 5. 异步启动 TradeStream.start()                      │
+│ 6. 异步启动 TradeBackfill.run()（等待 sync_point）   │
+└──────────────────────────────────────────────────────┘
+```
+
+## 五、实时交易流 (TradeStream)
+
+```
+TradeStream.start()
+      │
+      ▼
+┌────────────────────────────────────────────────────────┐
+│ 连接 Helius WebSocket                                    │
+│ wss://mainnet.helius-rpc.com?api-key=xxx                │
+│                                                          │
+│ 发送订阅请求:                                             │
+│ {                                                       │
+│   "method": "transactionSubscribe",                    │
+│   "params": [{"accountInclude": [mint]}]               │
+│ }                                                        │
+└────────────────────────────────────────────────────────┘
+      │
+      ▼
+┌────────────────────────────────────────────────────────┐
+│ 持续接收交易通知 (transactionNotification)             │
+│                                                          │
+│ 每条消息处理:                                             │
+│ 1. 解析交易数据（signature, slot, meta）               │
+│ 2. 跳过失败的交易 (meta.err)                           │
+│ 3. 提取关键信息:                                        │
+│    - from_address (signer)                             │
+│    - SOL 流向 (sol_spent)                              │
+│    - Token 余额变化 (BUY/SELL/TRANSFER)                │
+│    - DEX 检测 (pump.fun/raydium/orca)                  │
+│ 4. 写入 Transaction 表                                  │
+│ 5. 记录第一条 WS 交易作为 sync_point                   │
+│ 6. 调用 enqueue_trade() 入队                           │
+└────────────────────────────────────────────────────────┘
+      │
+      ▼
+┌────────────────────────────────────────────────────────┐
+│ WebSocket 广播                                          │
+│ ws_manager.broadcast(mint, {                            │
+│   "type": "status",                                    │
+│   "data": {"status": "STREAMING", ...}                │
+│ })                                                      │
+└────────────────────────────────────────────────────────┘
+```
+
+## 六、历史交易回填 (TradeBackfill)
+
+```
+TradeBackfill.run()
+      │
+      ▼
+┌────────────────────────────────────────────────────────┐
+│ 等待 TradeStream 的 sync_point 就绪                    │
+│ （第一条 WS 交易的 signature）                          │
+└────────────────────────────────────────────────────────┘
+      │
+      ▼
+┌────────────────────────────────────────────────────────┐
+│ 使用 getTransactionsForAddress 分页获取历史交易         │
+│                                                          │
+│ 请求参数:                                                 │
+│ {                                                       │
+│   "method": "getTransactionsForAddress",               │
+│   "params": [                                           │
+│     mint,                                               │
+│     {                                                   │
+│       "filters": {"signature": {"lt": sync_point}},    │
+│       "transactionDetails": "full"                     │
+│     }                                                   │
+│   ]                                                     │
+│ }                                                        │
+│                                                          │
+│ 使用 paginationToken 分页，最多获取 50000 条            │
+└────────────────────────────────────────────────────────┘
+      │
+      ▼
+┌────────────────────────────────────────────────────────┐
+│ 批量入库（按 batch_size 分组）                          │
+│                                                          │
+│ 每批处理:                                                │
+│ 1. 去重检查（检查 sig 是否存在）                        │
+│ 2. INSERT Transaction                                  │
+│ 3. 广播进度: {"status": "FILLING", "progress": xx%}   │
+│ 4. 批次间隔 (request_interval)                          │
+└────────────────────────────────────────────────────────┘
+      │
+      ▼
+┌────────────────────────────────────────────────────────┐
+│ 回填完成 → 触发全量计算                                 │
+│                                                          │
+│ 1. run_full_calculation() - 遍历历史交易                │
+│    - 庄家判定 + 指数计算                                │
+│    - 写入 TradeAnalysis 表                              │
+│    - 非庄家交易广播到前端                               │
+│                                                          │
+│ 2. start_consumer() - 启动消费者                        │
+│    - 消化队列中积压的 WS 消息                           │
+│    - 实时处理新交易                                     │
+└────────────────────────────────────────────────────────┘
+```
+
+## 七、交易处理引擎 (TradeProcessor)
+
+### 7.1 队列消费模式
+
+```
+实时流收到 WS 消息
+      │
+      ▼
+enqueue_trade(tx_detail)
+      │
+      ▼
+放入 asyncio.Queue 队列
+      │
+      ▼
+消费者循环 (_consumer_loop)
+      │
+      ▼
+┌────────────────────────────────────────────────────┐
+│ 1. 从队列取出交易                                   │
+│ 2. 去重检查（TradeAnalysis）                       │
+│ 3. 庄家判定 (check_and_classify_user)              │
+│ 4. 指数计算 (更新 IndexState)                       │
+│ 5. 写入 TradeAnalysis 表                           │
+│ 6. 非庄家交易 → WebSocket 广播                     │
+│ 7. 庄家交易 → 仅记录，不广播                       │
+└────────────────────────────────────────────────────┘
+```
+
+### 7.2 指数状态 (IndexState)
+
+```python
+class IndexState:
+    current_bet: float = 0.0       # 本轮下注（累计 BUY 的 SOL）
+    dealer_profit: float = 0.0     # 庄家利润
+    realized_profit: float = 0.0   # 已落袋
+    unrealized_pnl: float = 0.0    # 浮盈浮亏
+```
+
+### 7.3 交易类型判定
+
+| Token 变化 | SOL 变化 | 类型 |
+|-----------|---------|------|
+| delta > 0 | - | BUY |
+| delta < 0 | - | SELL |
+| delta = 0 | abs(sol_spent) <= 0.001 | TRANSFER |
+
+## 八、庄家检测 (DealerDetector)
+
+```
+check_and_classify_user(address, mint, sig)
+      │
+      ▼
+┌────────────────────────────────────────────────────┐
+│ 1. 查 Redis 缓存                                    │
+│    - 命中 → 直接返回 (dealer/retail/unknown)        │
+│    - 未命中 → 继续                                  │
+│                                                          │
+│ 2. 分析交易历史                                       │
+│    - 获取该 address 在该 mint 上的所有交易           │
+│    - 统计累计 BUY/SELL 量                           │
+│    - 判断是否为早期买入者                            │
+│                                                          │
+│ 3. 判定规则                                          │
+│    - 早期买入 + 高比例 → dealer                      │
+│    - 普通参与者 → retail                            │
+│    - 其他 → unknown                                 │
+│                                                          │
+│ 4. 写入 Redis 缓存                                  │
+└────────────────────────────────────────────────────┘
+```
+
+## 九、WebSocket 通信
+
+### 9.1 连接建立
+
+```
+客户端连接: ws://localhost:8000/api/trades/ws/{mint}
+      │
+      ▼
+ws_manager.connect(websocket, mint)
+      │
+      ▼
+发送初始状态: {"type": "status", "data": {...}}
+```
+
+### 9.2 消息类型
+
+| type | 说明 | data |
+|------|------|------|
+| `status` | 状态通知 | mint, status, message, progress |
+| `trade` | 交易推送 | 完整交易详情 + 指标 |
+| `error` | 错误通知 | mint, message |
+| `ping/pong` | 心跳 | - |
+
+### 9.3 状态流转
+
+```
+IDLE → WAITING_SYNC → FETCHING_HISTORY → FILLING → 
+DATA_READY → CALCULATION_DONE → STREAMING
+```
+
+## 十、停止监听流程
+
+```
+POST /api/trades/{mint}/stop
+      │
+      ▼
+┌────────────────────────────────────────────────────┐
+│ 1. TradeBackfill.stop() - 停止回填                  │
+│ 2. TradeStream.stop()  - 停止实时流                 │
+│ 3. reset_processor()   - 清理状态:                  │
+│    - 停止消费者任务（发送毒丸）                      │
+│    - 清空队列                                       │
+│    - 重置全局变量                                   │
+│    - 删除 DB 中该 mint 的记录                       │
+│ 4. 从 active_monitors 删除                          │
+└────────────────────────────────────────────────────┘
+```
+
+## 十一、数据流向图
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                        Helius RPC/WSS                            │
+│                        (外部数据源)                                │
+└──────────────────────────────────────────────────────────────────┘
+                              │
+           ┌──────────────────┴──────────────────┐
+           │                                      │
+           ▼                                      ▼
+┌─────────────────────┐                ┌─────────────────────┐
+│   TradeStream       │                │   TradeBackfill     │
+│   (实时流)           │                │   (历史回填)         │
+│   - WS 订阅          │                │   - RPC 分页        │
+│   - 实时解析         │                │   - 批量入库        │
+│   - 入队             │                │   - 全量计算        │
+└─────────────────────┘                └─────────────────────┘
+           │                                      │
+           └──────────────────┬──────────────────┘
+                              │
+                              ▼
+                    ┌─────────────────────┐
+                    │   asyncio.Queue     │
+                    │   (交易队列)         │
+                    └─────────────────────┘
+                              │
+                              ▼
+┌──────────────────────────────────────────────────────────────────┐
+│                     TradeProcessor                               │
+│  ┌────────────────┐    ┌────────────────┐    ┌──────────────┐  │
+│  │ 消费者循环      │    │ 庄家检测       │    │ 指数计算     │  │
+│  │ _consumer_loop │───▶│ DealerDetector │    │ IndexState   │  │
+│  └────────────────┘    └────────────────┘    └──────────────┘  │
+└──────────────────────────────────────────────────────────────────┘
+                              │
+           ┌──────────────────┴──────────────────┐
+           │                                      │
+           ▼                                      ▼
+┌─────────────────────┐                ┌─────────────────────┐
+│   Transaction 表    │                │   TradeAnalysis 表   │
+│   (原始交易数据)     │                │   (分析结果)         │
+└─────────────────────┘                └─────────────────────┘
+           │                                      │
+           └──────────────────┬──────────────────┘
+                              │
+                              ▼
+┌──────────────────────────────────────────────────────────────────┐
+│                       WebSocket 广播                            │
+│              ws_manager.broadcast(mint, message)                │
+└──────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+                    ┌─────────────────────┐
+                    │   前端 Dashboard    │
+                    │   (实时展示)         │
+                    └─────────────────────┘
+```
+
+## 十二、API 端点汇总
+
+### 交易监控
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/trades/{mint}` | 获取交易列表（分页） |
+| GET | `/api/trades/{mint}/metrics` | 获取四个核心指标 |
+| GET | `/api/trades/{mint}/status` | 获取监听状态 |
+| POST | `/api/trades/{mint}/start` | 启动监听 |
+| POST | `/api/trades/{mint}/stop` | 停止监听 |
+| WS | `/api/trades/ws/{mint}` | WebSocket 实时推送 |
+
+### 设置管理
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/settings/` | 获取所有设置 |
+| PUT | `/api/settings/{key}` | 更新设置 |
+
+### 管理后台
+
+| 路径 | 说明 |
 |------|------|
-| 后端框架 | FastAPI + Uvicorn |
-| ORM | SQLAlchemy |
-| 数据库 | SQLite (gmgn.db) |
-| WebSocket | websockets 库 |
-| HTTP 客户端 | httpx |
-| 管理后台 | SQLAdmin |
-| 前端模板 | Jinja2 HTML |
+| `/admin` | SQLAdmin 管理界面 |
+| `/admin/trade-monitor` | 交易监控页面 |
+| `/admin/settings-page` | 设置页面 |
 
-## 三、项目结构
+## 十三、关键配置
+
+### 环境变量 / 数据库设置
+
+| 设置项 | 默认值 | 说明 |
+|--------|--------|------|
+| `helius_api_key` | - | Helius API 密钥（必需） |
+| `batch_size` | 100 | 批量入库大小 |
+| `request_interval` | 0.5 | 请求间隔（秒） |
+
+### DEX 识别
+
+- **pump.fun**: `6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P`
+- **Raydium**: `675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8`
+
+### 已知 Jito 小费地址
+
+内置 10 个常见 Jito 小费账户地址，用于从 sol_spent 中扣除小费，避免统计虚高。
+
+## 十四、错误处理
+
+1. **WebSocket 断开**: 自动重连，回填任务继续
+2. **RPC 请求失败**: 重试 + 指数退避
+3. **数据库错误**: 回滚 + 日志记录
+4. **解析失败**: 跳过该交易 + 警告日志
+
+## 十五、日志输出
+
+```
+[实时流] 启动: {mint}
+[实时流] sync_point 已设置: {signature}
+[回填] sync_point 已就绪: {signature}
+[回填] 已获取 {count} 条有效交易...
+[回填] 批次 {n}/{total}: 插入 {n} 条，跳过 {n} 条
+[回填] 入库进度 {progress}%
+[回填] 回填完成，共 {count} 条历史数据
+[全量计算] 开始计算 mint={mint}
+[全量计算] 共 {count} 条交易待处理
+[全量计算] 完成 mint={mint}
+[消费者] 已启动 mint={mint}
+[消费者] {sig}... 完成 user={status}
+[WS] 新连接: mint={mint}, 当前连接数={n}
+[WS] 断开连接: mint={mint}
+```
+
+## 十六、启动命令
+
+```bash
+# 安装依赖
+pip install -r requirements.txt
+
+# 启动应用
+python main.py
+
+# 访问地址
+# - API 文档: http://localhost:8000/docs
+# - 管理后台: http://localhost:8000/admin
+# - 交易监控: http://localhost:8000/admin/trade-monitor
+
+# 默认管理员账号
+# 用户名: admin
+# 密码: admin123
+```
+
+## 十七、流程总结
+
+```
+用户操作                      系统响应
+─────────────────────────────────────────────────────────
+1. 访问 /admin/trade-monitor  → 显示监控页面
+2. 输入 mint 地址             → 等待用户点击开始
+3. 点击「开始监听」            → POST /api/trades/{mint}/start
+4. 系统启动实时流              → Helius WebSocket 订阅
+5. 系统获取 sync_point        → 第一条 WS 交易签名
+6. 系统回填历史交易            → getTransactionsForAddress 分页
+7. 系统计算历史指标            → run_full_calculation
+8. 系统启动消费者              → 处理实时队列
+9. 前端收到实时推送            → 展示交易列表和指标
+10. 点击「停止监听」           → POST /api/trades/{mint}/stop
+11. 系统清理所有状态            → reset_processor
+```
+
+## 十八、文件结构
 
 ```
 fastapiGmgn/
-├── main.py                          # 应用入口，注册路由/SQLAdmin/启动逻辑
-├── requirements.txt                 # Python 依赖
-├── gmgn.db                          # SQLite 数据库
-├── logs/app.log                     # 日志（10MB 轮转）
+├── main.py                    # 应用入口，路由注册，Admin 配置
+├── requirements.txt          # 依赖列表
 ├── app/
-│   ├── models/
-│   │   ├── models.py               # User, Transaction, Token 数据库模型
-│   │   └── trade.py                # Setting, TradeAnalysis 数据库模型
-│   ├── routes/
-│   │   ├── auth.py                 # 认证（注册/登录/me）
-│   │   ├── users.py                # 用户管理
-│   │   └── trades.py               # 交易监控 REST + WebSocket
-│   ├── schemas/
-│   │   ├── schemas.py              # 用户/Token/Transaction Pydantic schema
-│   │   └── trade.py                # 交易/监控/设置/指标 Pydantic schema
-│   ├── services/
-│   │   ├── settings_service.py     # 系统设置 CRUD（键值对存储）
-│   │   ├── trade_stream.py         # 实时交易流（Helius WebSocket 订阅）
-│   │   ├── trade_backfill.py       # 历史交易回填（RPC 分页拉取）
-│   │   └── trade_processor.py      # 交易处理 + 全量计算 + 指标计算
-│   ├── templates/
-│   │   ├── trade_monitor.html      # 交易监控前端页面
-│   │   └── settings.html           # 系统设置页面
-│   ├── utils/
-│   │   └── database.py             # SQLAlchemy 引擎/会话/迁移
-│   └── websocket/
-│       └── manager.py              # WebSocket 连接管理器（单例）
+│   ├── __init__.py
+│   ├── routes/               # 路由层
+│   │   ├── __init__.py
+│   │   ├── auth.py          # 认证路由
+│   │   ├── users.py         # 用户路由
+│   │   └── trades.py        # 交易监控路由 + WebSocket
+│   ├── services/            # 服务层
+│   │   ├── __init__.py
+│   │   ├── trade_stream.py   # 实时交易流
+│   │   ├── trade_backfill.py # 历史回填
+│   │   ├── trade_processor.py # 交易处理引擎
+│   │   ├── dealer_detector.py # 庄家检测
+│   │   └── settings_service.py # 设置管理
+│   ├── models/              # 数据模型
+│   │   ├── __init__.py
+│   │   ├── models.py       # Transaction, Token, User
+│   │   └── trade.py        # TradeAnalysis, Setting
+│   ├── schemas/             # Pydantic 模型
+│   │   ├── __init__.py
+│   │   ├── schemas.py
+│   │   └── trade.py
+│   ├── websocket/          # WebSocket 管理
+│   │   ├── __init__.py
+│   │   └── manager.py      # 连接管理器
+│   ├── utils/               # 工具函数
+│   │   ├── __init__.py
+│   │   └── database.py     # 数据库连接
+│   ├── templates/           # HTML 模板
+│   │   ├── trade_monitor.html
+│   │   └── settings.html
+│   └── admin/               # Admin 页面
+│       └── pages.py
+├── docs/
+│   └── system_flow.md      # 本文档
+└── tests/
+    └── test_sig_order.py   # 测试用例
 ```
-
-## 四、数据库模型
-
-### 4.1 核心表
-
-**transactions（交易记录表）**
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| id | Integer | 自增主键 |
-| sig | String (unique) | 交易签名 |
-| slot | Integer | Solana slot 号 |
-| block_time | DateTime | 区块时间戳 |
-| from_address | String | 发送方（signer） |
-| to_address | String | 接收方（BUY 时填充） |
-| amount | Float | Token 变化绝对值 |
-| token_mint | String | 代币 mint 地址 |
-| token_symbol | String | 代币符号（暂未填充） |
-| transaction_type | String | BUY / SELL / TRANSFER |
-| dex | String | pump.fun / raydium / orca |
-| pool_address | String | 池地址（暂未填充） |
-| sol_spent | Float | SOL 净值支出（pre - post - fee） |
-| fee | Float | 交易费（SOL） |
-| raw_data | Text | 原始数据前 5000 字符 |
-| source | String | **rpc_fill**（回填）/ **helius_ws**（实时） |
-| created_at / updated_at | DateTime | 时间戳 |
-
-**trade_analysis（交易分析表）**
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| id | Integer | 自增主键 |
-| sig | String (unique) | 关联 transactions.sig |
-| net_sol_flow | Float | SOL 净流入 |
-| net_token_flow | Float | Token 净流入 |
-| price_per_token | Float | 单价 |
-| wallet_tag | String | 钱包标记 |
-| processed_at | DateTime | 处理时间 |
-
-**settings（系统设置表）**
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| key | String (PK) | 设置键名 |
-| value | Text | 设置值 |
-| description | Text | 说明 |
-
-关键设置项：`batch_size`(默认100)、`concurrent_requests`(默认3)、`request_interval`(默认0.5)、`helius_api_key`
-
-## 五、核心运转流程
-
-### 5.1 启动监听流程
-
-```
-用户 POST /api/trades/{mint}/start
-        │
-        ├── 1. 创建 TradeStream(mint, api_key)
-        │   └── 创建 TradeBackfill(db, mint, stream=TradeStream实例)
-        │
-        ├── 2. asyncio.create_task(stream.start())
-        │   └── TradeStream 连接 Helius WebSocket
-        │       wss://mainnet.helius-rpc.com?api-key={key}
-        │       发送 transactionSubscribe 订阅 {accountInclude: [mint]}
-        │
-        └── 3. asyncio.create_task(start_backfill_after_stream())
-            └── 等待 stream.running == True 后启动 backfill.run()
-```
-
-### 5.2 TradeStream 实时流
-
-```
-[TradeStream]
-    │
-    ├── WebSocket 连接 Helius
-    ├── 收到第一条实时交易
-    │   ├── 设置 self.sync_point = signature（回填用）
-    │   ├── 解析交易（资金流向优先协议）
-    │   ├── 去重入库（source="helius_ws"）
-    │   ├── 调用 process_trade() 创建 TradeAnalysis
-    │   └── ws_manager.broadcast 推送 type="trade" 到前端
-    │
-    └── 持续接收新交易，断线自动重连（间隔3秒）
-```
-
-### 5.3 TradeBackfill 回填流程（接力模式）
-
-```
-[TradeBackfill]
-    │
-    ├── 阶段1: WAITING_SYNC
-    │   └── 轮询等待 TradeStream.sync_point 就绪（每0.5秒检查）
-    │       如果收到 stop() 信号则中断退出
-    │
-    ├── 阶段2: FETCHING_HISTORY
-    │   └── 使用 before=sync_point 分页获取历史签名
-    │       RPC: getSignaturesForAddress
-    │       每批 1000 条，上限 50000 条
-    │       从新到旧排列
-    │
-    ├── 阶段3: 占位创建
-    │   └── 反转签名列表（从旧到新）
-    │       INSERT OR IGNORE 创建占位记录
-    │       只存 sig + slot + block_time, source="rpc_fill"
-    │
-    ├── 阶段4: FILLING
-    │   └── 按 batch_size 分组，并发调用 getTransaction 解析
-    │       成功：UPDATE 填充占位记录
-    │       失败（meta.err / 超时等）：DELETE 删除占位记录
-    │       每批完成后推送进度到前端
-    │
-    ├── 阶段5: DATA_READY
-    │   └── 回填完成，推送状态
-    │
-    └── 阶段6: CALCULATION_DONE
-        └── 调用 run_full_calculation()
-            按全量排序（rpc_fill 在前，helius_ws 在后，各自 id ASC）
-            逐条处理未处理的交易，创建 TradeAnalysis
-```
-
-### 5.4 状态机
-
-```
-IDLE → WAITING_SYNC → FETCHING_HISTORY → FILLING → DATA_READY → CALCULATION_DONE → STREAMING
-```
-
-各状态通过 `ws_manager.broadcast(mint, {"type": "status", "data": {...}})` 推送到前端。
-
-### 5.5 停止监听
-
-```
-用户 POST /api/trades/{mint}/stop
-        │
-        ├── backfill.stop() → self.running = False
-        │   └── _wait_for_sync_point 检测到 running=False 退出循环
-        │   └── _fetch_all_signatures_before 检测到 running=False 退出循环
-        │
-        └── stream.stop() → self.running = False
-            └── WebSocket 连接关闭，asyncio.Task 取消
-```
-
-## 六、交易类型判定（资金流向优先协议）
-
-两个解析器（TradeStream._extract_trade_info 和 TradeBackfill._extract_trade_info）使用相同的判定逻辑：
-
-### 6.1 SOL 净值计算
-
-```
-sol_spent = (preBalances[0] - postBalances[0] - fee) / 1e9
-```
-
-扣除 fee 后的净值，避免手续费干扰判断。
-
-### 6.2 Token 余额计算
-
-遍历 `postTokenBalances` 数组，找 `mint == 监控代币 AND owner == signer` 的项：
-
-```
-pre_amt = signer 在该 mint 下的 preTokenBalance（无则为 0）
-post_amt = signer 在该 mint 下的 postTokenBalance（无则为 0）
-delta = post_amt - pre_amt
-amount = abs(delta)
-```
-
-此方式解决了新 ATA 创建时 preBalance 为空导致数量为 0 的问题。
-
-### 6.3 类型判定规则
-
-| 条件 | 类型 |
-|------|------|
-| `delta > 0` | **BUY**（signer 的 Token 增加 = 买入） |
-| `delta < 0` | **SELL**（signer 的 Token 减少 = 卖出） |
-| `delta == 0` 且 `abs(sol_spent) <= 0.001` | **TRANSFER**（Token 无变化，SOL 变化极小） |
-
-### 6.4 DEX 检测
-
-通过 inner instructions 的 programId 匹配：
-- `pump` 或 `6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P` → pump.fun
-- `raydium` 或 `675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8` → raydium
-- `orca` → orca
-
-## 七、错误处理
-
-### 7.1 TradeStream（实时流）
-
-- WebSocket 断线：等待 3 秒后自动重连
-- meta.err 交易：提前检查，跳过不入库
-- 解析异常：记录 warning，跳过该交易
-- 入库冲突（重复 sig）：跳过
-
-### 7.2 TradeBackfill（回填）
-
-- sync_point 等待：持续轮询，不超时放弃，仅在 stop() 时中断
-- getTransaction 失败：标记 `_error=True`，后续删除占位记录
-- meta.err 交易：标记 `_error=True`，删除占位记录
-- 数据库冲突：rollback 后继续下一条
-
-## 八、前端数据展示
-
-### 8.1 交易列表排序
-
-```sql
-ORDER BY
-  CASE WHEN source = 'rpc_fill' THEN 0 ELSE 1 END,  -- 回填数据在前
-  slot DESC,
-  block_time DESC,
-  id DESC
-```
-
-确保回填的历史数据先显示完，再显示实时流数据。
-
-### 8.2 WebSocket 推送
-
-前端通过 `/api/trades/ws/{mint}` 接收实时推送：
-
-| type | 触发时机 |
-|------|----------|
-| `status` | 状态变更（WAITING_SYNC / FETCHING_HISTORY / FILLING / DATA_READY / CALCULATION_DONE / STREAMING） |
-| `trade` | 新交易入库并处理完成 |
-| `error` | 发生异常 |
-
-### 8.3 API 端点
-
-| 端点 | 说明 |
-|------|------|
-| `GET /api/trades/{mint}?page=&page_size=` | 分页获取交易列表 |
-| `GET /api/trades/{mint}/metrics` | 获取四指标（current_bet, current_cost, realized_profit, trade_count） |
-| `GET /api/trades/{mint}/status` | 获取当前监控状态 |
-| `POST /api/trades/{mint}/start` | 启动监控 |
-| `POST /api/trades/{mint}/stop` | 停止监控 |
-
-## 九、组件交互关系
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                        main.py                              │
-│  注册路由 → SQLAdmin → WebSocket端点 → 初始化设置/管理员      │
-└──────────────────┬──────────────────────────────────────────┘
-                   │
-    ┌──────────────┼──────────────┐
-    ▼              ▼              ▼
-┌────────┐  ┌───────────┐  ┌────────────┐
-│ trades │  │   auth    │  │  settings  │
-│ routes │  │  routes   │  │   routes   │
-└───┬────┘  └───────────┘  └────────────┘
-    │
-    ├── POST /start
-    │   ├── TradeStream ────WS连接──→ Helius
-    │   │       │                       │
-    │   │       │ sync_point            │
-    │   │       ▼                       │
-    │   └── TradeBackfill ──RPC────→ Helius
-    │           │                       │
-    │           ▼                       │
-    │   └── TradeProcessor ──→ TradeAnalysis 表
-    │
-    ├── GET /{mint} ──→ transactions 表（排序查询）
-    ├── GET /{mint}/metrics ──→ calculate_metrics()
-    └── WS /ws/{mint} ──→ ws_manager.broadcast
-                                │
-                                ▼
-                          前端 WebSocket 连接
-```
-
-## 十、关键设计决策
-
-1. **接力模式**：先起实时流，回填基于实时流的第一条交易（sync_point）作为分界点，避免数据遗漏或重复
-2. **占位+填充**：回填先创建占位记录再批量填充，保证数据按从旧到新的顺序入库
-3. **source 区分**：`rpc_fill`（回填）和 `helius_ws`（实时）通过 source 字段区分，排序时回填数据优先显示
-4. **资金流向优先**：交易类型判定结合 SOL 净值和 Token 变化双重校验，避免单一指标误判
-5. **错误 sig 清理**：回填阶段解析失败的交易，其占位记录会被删除，不留脏数据

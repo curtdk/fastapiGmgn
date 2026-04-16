@@ -43,7 +43,7 @@ async def init_dealer_detector():
     logger.info("[庄家判定] Redis 连接成功")
 
     _dealer_check_queue = asyncio.Queue()
-    _dealer_semaphore = asyncio.Semaphore(20)
+    _dealer_semaphore = asyncio.Semaphore(1)
     _dealer_consumer_task = asyncio.create_task(_dealer_queue_consumer())
     logger.info("[庄家判定] 检测队列消费者已启动")
 
@@ -149,9 +149,11 @@ async def _dealer_queue_consumer():
         if current in ("retail", "dealer"):
             continue
 
+
+        await _run_dealer_check(address, mint, sig)
         # 获取信号量后 create_task，不等待
-        await _dealer_semaphore.acquire()
-        asyncio.create_task(_run_dealer_check(address, mint, sig))
+        # await _dealer_semaphore.acquire()
+        # asyncio.create_task(_run_dealer_check(address, mint, sig))
 
 
 # ──────────────────────────────────────────────────────────
@@ -263,6 +265,7 @@ def _check_c001(tx_data: dict, address: str) -> bool:
 
 async def _fetch_first_transaction(address: str, api_key: str) -> Optional[dict]:
     """获取钱包最旧一笔成功交易"""
+    logger.info(f"[庄家判定] >>> _fetch_first_transaction 开始, address={address[:8]}...")
     body = {
         "jsonrpc": "2.0",
         "id": 1,
@@ -280,11 +283,13 @@ async def _fetch_first_transaction(address: str, api_key: str) -> Optional[dict]
         ],
     }
     try:
-        async with httpx.AsyncClient(timeout=20) as client:
+        logger.info(f"[庄家判定] 发送请求到 {HELIUS_RPC_URL}")
+        async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.post(
-                f"{HELIUS_RPC_URL}/?api-key={api_key}",
+                f"{HELIUS_RPC_URL}/?api-key={api_key[:10]}...",
                 json=body,
             )
+            logger.info(f"[庄家判定] 收到响应 status={resp.status_code}")
             resp.raise_for_status()
             data = resp.json()
 
