@@ -294,7 +294,7 @@ async def _fetch_first_transaction(address: str, api_key: str) -> Optional[dict]
         logger.info(f"[庄家判定] 发送请求到 {HELIUS_RPC_URL}")
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.post(
-                f"{HELIUS_RPC_URL}/?api-key={api_key[:10]}...",
+                f"{HELIUS_RPC_URL}/?api-key={api_key}",
                 json=body,
             )
             logger.info(f"[庄家判定] 收到响应 status={resp.status_code}")
@@ -307,10 +307,20 @@ async def _fetch_first_transaction(address: str, api_key: str) -> Optional[dict]
 
         txs = data.get("result", {}).get("data", [])
         return txs[0] if txs else None
+    
+    except httpx.HTTPStatusError as e:
+        # 专门捕获状态码错误 (4xx, 5xx)
+        logger.error(f"[庄家判定] HTTP 状态码异常: {e.response.status_code}, 错误详情: {e.response.text}")
+    except httpx.RequestError as e:
+        # 专门捕获网络连接、超时等错误
+        logger.error(f"[庄家判定] 网络请求层面异常: {type(e).__name__} -> {e}")
+    except Exception:
+        # 4. 捕获所有其他未知错误，并打印完整的堆栈代码行号
+        logger.error(f"[庄家判定] 代码执行发生崩溃，堆栈详情:\n{traceback.format_exc()}")
 
-    except Exception as e:
-        logger.warning(f"[庄家判定] 请求 Helius 失败: {e}")
-        return None
+    # except Exception as e:
+    #     logger.warning(f"[庄家判定] 请求 Helius 失败: {e}")
+    #     return None
 
 
 async def _get_helius_api_key() -> str:
