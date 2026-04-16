@@ -272,7 +272,12 @@ def _check_c001(tx_data: dict, address: str) -> bool:
 # ──────────────────────────────────────────────────────────
 
 async def _fetch_first_transaction(address: str, api_key: str) -> Optional[dict]:
-    """获取钱包最旧一笔成功交易"""
+    """获取钱包最旧一笔成功交易
+
+    优化：
+    - 超时调整为 20s（回填批次是 60s，dealer 请求更轻量应更快响应）
+    - 最多重试 3 次，指数退避（2s → 4s → 8s），避免在回填高峰期一次超时就放弃
+    """
     logger.info(f"[庄家判定] >>> _fetch_first_transaction 开始, address={address[:8]}...")
     body = {
         "jsonrpc": "2.0",
@@ -290,37 +295,51 @@ async def _fetch_first_transaction(address: str, api_key: str) -> Optional[dict]
             },
         ],
     }
-    try:
-        logger.info(f"[庄家判定] 发送请求到 {HELIUS_RPC_URL}")
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.post(
-                f"{HELIUS_RPC_URL}/?api-key={api_key}",
-                json=body,
-            )
+
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            logger.info(f"[庄家判定] 发送请求到 {HELIUS_RPC_URL}（第 {attempt + 1} 次）")
+            async with httpx.AsyncClient(timeout=20.0) as client:
+                resp = await client.post(
+                    f"{HELIUS_RPC_URL}/?api-key={api_key}",
+                    json=body,
+                )
             logger.info(f"[庄家判定] 收到响应 status={resp.status_code}")
             resp.raise_for_status()
             data = resp.json()
 
-        if "error" in data:
-            logger.warning(f"[庄家判定] Helius 错误: {data['error']}")
+            if "error" in data:
+                logger.warning(f"[庄家判定] Helius 错误: {data['error']}")
+                return None
+
+            txs = data.get("result", {}).get("data", [])
+            return txs[0] if txs else None
+
+        except httpx.HTTPStatusError as e:
+            logger.error(
+                f"[庄家判定] HTTP 状态码异常（第 {attempt + 1} 次）: "
+                f"{e.response.status_code}, 错误详情: {e.response.text}"
+            )
+            # 4xx 客户端错误不重试
+            if e.response.status_code < 500:
+                return None
+        except (httpx.TimeoutException, httpx.RequestError) as e:
+            logger.warning(
+                f"[庄家判定] 网络请求异常（第 {attempt + 1} 次）: {type(e).__name__} -> {e}"
+            )
+        except Exception:
+            logger.error(f"[庄家判定] 代码执行发生崩溃，堆栈详情:\n{traceback.format_exc()}")
             return None
 
-        txs = data.get("result", {}).get("data", [])
-        return txs[0] if txs else None
-    
-    except httpx.HTTPStatusError as e:
-        # 专门捕获状态码错误 (4xx, 5xx)
-        logger.error(f"[庄家判定] HTTP 状态码异常: {e.response.status_code}, 错误详情: {e.response.text}")
-    except httpx.RequestError as e:
-        # 专门捕获网络连接、超时等错误
-        logger.error(f"[庄家判定] 网络请求层面异常: {type(e).__name__} -> {e}")
-    except Exception:
-        # 4. 捕获所有其他未知错误，并打印完整的堆栈代码行号
-        logger.error(f"[庄家判定] 代码执行发生崩溃，堆栈详情:\n{traceback.format_exc()}")
+        # 指数退避后重试：2s, 4s, 8s
+        if attempt < max_retries - 1:
+            wait = 2 ** (attempt + 1)
+            logger.info(f"[庄家判定] {wait}s 后重试...")
+            await asyncio.sleep(wait)
 
-    # except Exception as e:
-    #     logger.warning(f"[庄家判定] 请求 Helius 失败: {e}")
-    #     return None
+    logger.error(f"[庄家判定] {address[:8]}... 重试 {max_retries} 次后仍失败，放弃")
+    return None
 
 
 async def _get_helius_api_key() -> str:

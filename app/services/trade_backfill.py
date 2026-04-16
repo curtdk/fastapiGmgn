@@ -118,36 +118,44 @@ class TradeBackfill:
         使用 getTransactionsForAddress 分页获取历史交易（含完整详情）
         通过 filters.signature.lt=sync_point 获取该签名之前的交易
         使用 paginationToken 分页，返回解析后的 trade_info 列表（从旧到新）
+
+        优化：
+        - 复用单个 AsyncClient（连接池复用，避免每批新建 TCP 连接）
+        - 每批之间加 500ms 间隔，避免打满 Helius RPS 配额抢占 dealer 请求资源
         """
         all_details = []
         pagination_token = None
         batch_size = 100  # transactionDetails: "full" 最大 100
         max_total = 50000
         total_fetched = 0
+        # 批次间限速间隔（秒）：给 dealer_detector 等其他请求留出带宽
+        _BACKFILL_INTERVAL = 0.2
 
-        while self.running and total_fetched < max_total:
-            params = {
-                "limit": batch_size,
-                "commitment": "confirmed",
-                "transactionDetails": "full",
-                "encoding": "jsonParsed",
-                "maxSupportedTransactionVersion": 0,
-                "filters": {
-                    "signature": {"lt": sync_point},
-                },
-            }
-            if pagination_token:
-                params["paginationToken"] = pagination_token
+        api_key = self._get_api_key()
 
-            body = {
-                "jsonrpc": "2.0",
-                "id": 1,
-                "method": "getTransactionsForAddress",
-                "params": [self.mint, params],
-            }
+        # 复用同一个 AsyncClient，避免每次分页都新建 TCP 连接
+        async with httpx.AsyncClient(timeout=60) as client:
+            while self.running and total_fetched < max_total:
+                params = {
+                    "limit": batch_size,
+                    "commitment": "confirmed",
+                    "transactionDetails": "full",
+                    "encoding": "jsonParsed",
+                    "maxSupportedTransactionVersion": 0,
+                    "filters": {
+                        "signature": {"lt": sync_point},
+                    },
+                }
+                if pagination_token:
+                    params["paginationToken"] = pagination_token
 
-            api_key = self._get_api_key()
-            async with httpx.AsyncClient(timeout=60) as client:
+                body = {
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "getTransactionsForAddress",
+                    "params": [self.mint, params],
+                }
+
                 resp = await client.post(
                     f"{HELIUS_RPC_URL}/?api-key={api_key}",
                     json=body
@@ -155,53 +163,57 @@ class TradeBackfill:
                 resp.raise_for_status()
                 data = resp.json()
 
-            result = data.get("result", {})
-            txs = result.get("data", [])
-            if not txs:
-                break
+                result = data.get("result", {})
+                txs = result.get("data", [])
+                if not txs:
+                    break
 
-            # 解析每笔交易
-            for tx in txs:
-                # 从 transaction.signatures 获取签名
-                sig = tx.get("transaction", {}).get("signatures", [""])[0]
-                if not sig:
-                    continue
+                # 解析每笔交易
+                for tx in txs:
+                    # 从 transaction.signatures 获取签名
+                    sig = tx.get("transaction", {}).get("signatures", [""])[0]
+                    if not sig:
+                        continue
 
-                # 跳过失败的交易
-                meta = tx.get("meta", {})
-                if meta.get("err"):
-                    continue
+                    # 跳过失败的交易
+                    meta = tx.get("meta", {})
+                    if meta.get("err"):
+                        continue
 
-                # 构建与 _extract_trade_info 兼容的结构
-                tx_data = {
-                    "_signature": sig,
-                    "slot": tx.get("slot", 0),
-                    "blockTime": tx.get("blockTime"),
-                    "transaction": tx.get("transaction", {}),
-                    "meta": meta,
-                }
+                    # 构建与 _extract_trade_info 兼容的结构
+                    tx_data = {
+                        "_signature": sig,
+                        "slot": tx.get("slot", 0),
+                        "blockTime": tx.get("blockTime"),
+                        "transaction": tx.get("transaction", {}),
+                        "meta": meta,
+                    }
 
-                detail = self._extract_trade_info(tx_data)
-                if detail:
-                    all_details.append(detail)
+                    detail = self._extract_trade_info(tx_data)
+                    if detail:
+                        all_details.append(detail)
 
-            total_fetched += len(txs)
+                total_fetched += len(txs)
 
-            # 进度通知
-            await ws_manager.broadcast(self.mint, {
-                "type": "status",
-                "data": {
-                    "mint": self.mint,
-                    "status": "FETCHING_HISTORY",
-                    "message": f"已获取 {len(all_details)} 条有效交易...",
-                    "total_trades": len(all_details),
-                }
-            })
+                # 进度通知
+                await ws_manager.broadcast(self.mint, {
+                    "type": "status",
+                    "data": {
+                        "mint": self.mint,
+                        "status": "FETCHING_HISTORY",
+                        "message": f"已获取 {len(all_details)} 条有效交易...",
+                        "total_trades": len(all_details),
+                    }
+                })
 
-            # 分页：使用 paginationToken
-            pagination_token = result.get("paginationToken")
-            if not pagination_token:
-                break
+                # 分页：使用 paginationToken
+                pagination_token = result.get("paginationToken")
+                if not pagination_token:
+                    break
+
+                # 限速：每批次之间主动让出，避免打满 Helius RPS 配额
+                # 给 dealer_detector._fetch_first_transaction 等其他请求留出带宽
+                await asyncio.sleep(_BACKFILL_INTERVAL)
 
         # 数据已从新到旧返回，反转成从旧到新
         all_details.reverse()
