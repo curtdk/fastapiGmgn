@@ -85,4 +85,12 @@ https://www.helius.dev/docs/api-reference/rpc/http/gettransactionsforaddress
 
 
 网页端 实时交易列表 sol 字段 还是不显示。后台数据库是有数据的
+
+process_trade 方法去处理 指数计算流程。 由于计算必须从第一个开始算起。所以需要增加条件1.run_full_calculation 计算必须完成。这样之前的数据就算完整了，他的方法里面去掉 await process_trade(db, tx_detail) 的处理。 只让 _handle_message 触发。
+2.然后 process_trade 方法里面 需要加上 判断 run_full_calculation 是否完成 然后 按 全量计算 排序 去处理 下一个tx 未处理纪录。具体处理公式也比较复杂，单独建立一个指数计算函数 传入当前纪录 ，具体怎么算后面再说。
  
+
+ 
+
+ 测发现一个问题 网页点击关闭 按钮的时候 start_consumer 队列没有关闭，队列数据也要清零。点击关闭代表一个新的 mint 的监听，需要关闭和清楚之前内容，包括删除表该笔mint 纪录 Transaction 表 TradeAnalysis表                                 
+  ，所有全局变量，指数变量，关闭全部，task 等任务

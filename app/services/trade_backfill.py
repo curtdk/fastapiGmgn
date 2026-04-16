@@ -400,15 +400,18 @@ class TradeBackfill:
 
     async def _trigger_full_calculation(self):
         """触发全量指数计算"""
-        from app.services.trade_processor import run_full_calculation
+        from app.services.trade_processor import run_full_calculation, start_consumer
         try:
+            # 1. 历史 tx 直接处理，更新 _index_state
             await run_full_calculation(self.db, self.mint)
+            # 2. 启动消费者，消化队列中积压的 WS 消息
+            await start_consumer(self.mint)
             await ws_manager.broadcast(self.mint, {
                 "type": "status",
                 "data": {
                     "mint": self.mint,
                     "status": "CALCULATION_DONE",
-                    "message": "指标计算完成",
+                    "message": "指标计算完成，消费者已启动",
                 }
             })
         except Exception as e:

@@ -21,3 +21,25 @@ lsof -ti :8000 | xargs kill -9
   - WS 连接成功 → onopen → 立即调用 fetchHistory 拉取已有数据
   - 回填/实时流推送的 trade 消息 → addTradeRow 逐条插入                                                                        
   - 打开浏览器 DevTools Console 可以看到 历史数据: {trades: [...], total: N} 确认数据返回
+
+    trade_processor.py — 核心改动
+
+  - 新增 IndexState 类（四个状态字段）
+  - 新增模块级变量：_trade_queue、_index_state、_consumer_task、_mint
+  - 新增 _calculate_index() — 根据交易类型更新指数状态（公式待补充）
+  - 新增 enqueue_trade() — WS 消息只入队
+  - 新增 start_consumer() / _consumer_loop() — 单一消费者串行处理队列
+  - 改造 run_full_calculation() — 历史 tx 直接处理，更新 _index_state，不再调 process_trade
+  - 保留 process_trade() 兼容旧调用
+
+  trade_stream.py — 修改 _handle_message
+
+  - import 从 process_trade 改为 enqueue_trade
+  - WS 消息入库后只调 enqueue_trade(tx_detail)，不再直接处理
+
+  trade_backfill.py — 修改 _trigger_full_calculation
+
+  - 先 run_full_calculation() 处理历史 tx
+  - 再 start_consumer() 启动消费者消化队列
+
+  数据流：历史 tx 直接处理 → 启动消费者 → 消费队列中积压的 WS 消息 → 持续处理新入队消息。严格串行，不会丢数据或乱序。

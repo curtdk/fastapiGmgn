@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, Text, Float, Boolean
+from sqlalchemy import Column, Integer, String, DateTime, Text, Float, Boolean, ForeignKey
 from app.utils.database import Base
 from datetime import datetime
 
@@ -49,5 +49,27 @@ class Token(Base):
     liquidity = Column(Float)
     volume_24h = Column(Float)
     is_verified = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class TradingUser(Base):
+    """交易用户表"""
+    __tablename__ = "trading_users"
+    
+    user_address = Column(String, primary_key=True, index=True)  # 用户地址（主键）
+    user_status = Column(String, index=True)  # 用户状态（普通用户/庄家/不确定）
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class UserCondition(Base):
+    """交易用户满足条件表"""
+    __tablename__ = "user_conditions"
+    
+    id = Column(Integer, primary_key=True, index=True)  # 自增主键
+    user_address = Column(String, ForeignKey("trading_users.user_address"), index=True)  # 用户地址（外键）
+    condition_id = Column(String, index=True)  # 条件ID
+    condition_score = Column(Float)  # 条件分值
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

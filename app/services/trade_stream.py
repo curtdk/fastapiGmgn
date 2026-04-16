@@ -10,7 +10,7 @@ import httpx
 import websockets
 
 from app.models.models import Transaction
-from app.services.trade_processor import process_trade
+from app.services.trade_processor import enqueue_trade
 from app.websocket.manager import ws_manager
 
 logger = logging.getLogger(__name__)
@@ -196,12 +196,8 @@ class TradeStream:
 
                     db.close()
 
-                    # 处理并推送到前端（用新 session，确保 db 可用）
-                    db2 = SessionLocal()
-                    try:
-                        await process_trade(db2, tx_detail)
-                    finally:
-                        db2.close()
+                    # 入队，由消费者统一处理
+                    await enqueue_trade(tx_detail)
             except Exception as e:
                 logger.warning(f"[实时流] 入库失败: {e}")
                 db.rollback()

@@ -199,6 +199,14 @@ class TradeMonitorView(BaseView):
             if st: await st.stop()
             del active_monitors[mint]
 
+            # 清理 trade_processor 全局状态 + 删除 DB 记录
+            from app.services.trade_processor import reset_processor
+            _reset_db = SessionLocal()
+            try:
+                await reset_processor(mint, _reset_db)
+            finally:
+                _reset_db.close()
+
         db = SessionLocal()
         try:
             from app.services.settings_service import get_setting
@@ -233,6 +241,15 @@ class TradeMonitorView(BaseView):
         if bf: bf.stop()
         if st: await st.stop()
         del active_monitors[mint]
+
+        # 清理 trade_processor 全局状态 + 删除 DB 记录
+        from app.services.trade_processor import reset_processor
+        db = SessionLocal()
+        try:
+            await reset_processor(mint, db)
+        finally:
+            db.close()
+
         return JSONResponse({"message": f"已停止监听 {mint}"})
 
     @expose("/api/settings", methods=["GET"])
