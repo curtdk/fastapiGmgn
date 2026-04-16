@@ -33,10 +33,11 @@ _dealer_consumer_task: Optional[asyncio.Task] = None
 
 
 async def init_dealer_detector():
-    """初始化：Redis 连接 + 队列 + 信号量 + 启动消费者
+    """初始化：Redis 连接 + 队列 + 信号量
+    消费者启动移到 trade_backfill._trigger_full_calculation 中
     在 app startup 时调用一次。
     """
-    global _redis, _dealer_check_queue, _dealer_semaphore, _dealer_consumer_task
+    global _redis, _dealer_check_queue, _dealer_semaphore
 
     _redis = aioredis.from_url(REDIS_URL, decode_responses=True)
     await _redis.ping()
@@ -44,8 +45,15 @@ async def init_dealer_detector():
 
     _dealer_check_queue = asyncio.Queue()
     _dealer_semaphore = asyncio.Semaphore(1)
-    _dealer_consumer_task = asyncio.create_task(_dealer_queue_consumer())
-    logger.info("[庄家判定] 检测队列消费者已启动")
+    logger.info("[庄家判定] 队列已就绪，等待首次触发")
+
+
+def start_dealer_consumer():
+    """启动庄家检测消费者（在首次回填完成时调用）"""
+    global _dealer_consumer_task
+    if _dealer_consumer_task is None or _dealer_consumer_task.done():
+        _dealer_consumer_task = asyncio.create_task(_dealer_queue_consumer())
+        logger.info("[庄家判定] 检测队列消费者已启动")
 
 
 async def close_dealer_detector():
