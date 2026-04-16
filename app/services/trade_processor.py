@@ -6,7 +6,6 @@ from typing import Dict, Any, Optional
 
 from sqlalchemy.orm import Session
 from sqlalchemy import case
-from sqlalchemy.dialects.sqlite import insert
 
 from app.models.trade import TradeAnalysis
 from app.models.models import Transaction
@@ -30,15 +29,22 @@ _consumer_task: Optional[asyncio.Task] = None
 _mint: str = ""
 
 
-def _calculate_index(tx_detail: Dict[str, Any], state: IndexState) -> Dict[str, float]:
+async def _calculate_index(tx_detail: Dict[str, Any], state: IndexState, mint: str) -> Dict[str, Any]:
     """
-    根据当前交易更新指数状态
-    TODO: 具体计算公式后续补充
+    根据当前交易更新指数状态，同时判定用户是否为庄家
+    返回 metrics dict，包含 user_status 和 is_dealer 标志
     """
+    from app.services.dealer_detector import check_and_classify_user
+
+    address = tx_detail.get("from_address", "")
+    sig = tx_detail.get("sig", "")
     tx_type = tx_detail.get("transaction_type", "")
-    amount = tx_detail.get("amount", 0) or 0.0
     sol_spent = tx_detail.get("sol_spent", 0) or 0.0
 
+    # 庄家判定（查 Redis，未知则异步触发检测）
+    user_status = await check_and_classify_user(address, mint, sig)
+
+    # 指数计算（BUY/SELL/TRANSFER）
     if tx_type == "BUY":
         state.current_bet += sol_spent
     elif tx_type == "SELL":
@@ -51,6 +57,8 @@ def _calculate_index(tx_detail: Dict[str, Any], state: IndexState) -> Dict[str, 
         "dealer_profit": state.dealer_profit,
         "realized_profit": state.realized_profit,
         "unrealized_pnl": state.unrealized_pnl,
+        "user_status": user_status,
+        "is_dealer": user_status == "dealer",
     }
 
 
@@ -89,38 +97,40 @@ async def _consumer_loop(mint: str):
 
         try:
             db = SessionLocal()
-            # 去重检查
-            existing = db.query(TradeAnalysis).filter(TradeAnalysis.sig == sig).first()
-            if existing:
+            try:
+                # 去重检查
+                existing = db.query(TradeAnalysis).filter(TradeAnalysis.sig == sig).first()
+                if existing:
+                    continue
+
+                # 庄家判定 + 指数计算
+                metrics = await _calculate_index(tx_detail, _index_state, mint)
+
+                # 写入 TradeAnalysis（dealer 也写，保证数据完整）
+                analysis = TradeAnalysis(
+                    sig=sig,
+                    net_sol_flow=tx_detail.get("sol_spent", 0) or 0.0,
+                    net_token_flow=tx_detail.get("amount", 0) or 0.0,
+                    price_per_token=0.0,
+                    wallet_tag=metrics["user_status"],
+                    processed_at=datetime.utcnow(),
+                )
+                db.add(analysis)
+                db.commit()
+            finally:
                 db.close()
-                continue
 
-            # 计算指数
-            metrics = _calculate_index(tx_detail, _index_state)
+            # dealer 不推送实时交易列表，retail/unknown 正常推送
+            if not metrics["is_dealer"]:
+                await ws_manager.broadcast(mint, {
+                    "type": "trade",
+                    "data": {
+                        **tx_detail,
+                        **{k: v for k, v in metrics.items() if k != "is_dealer"},
+                    }
+                })
 
-            # 写入 TradeAnalysis
-            analysis = TradeAnalysis(
-                sig=sig,
-                net_sol_flow=tx_detail.get("sol_spent", 0) or 0.0,
-                net_token_flow=tx_detail.get("amount", 0) or 0.0,
-                price_per_token=0.0,
-                wallet_tag=None,
-                processed_at=datetime.utcnow(),
-            )
-            db.add(analysis)
-            db.commit()
-            db.close()
-
-            # 广播到 WS
-            await ws_manager.broadcast(mint, {
-                "type": "trade",
-                "data": {
-                    **tx_detail,
-                    **metrics,
-                }
-            })
-
-            logger.debug(f"[消费者] {sig[:8]}... 完成")
+            logger.debug(f"[消费者] {sig[:8]}... 完成 user={metrics['user_status']}")
 
         except Exception as e:
             logger.error(f"[消费者] {sig[:8]}... 异常: {e}", exc_info=True)
@@ -135,46 +145,24 @@ async def process_trade(db: Session, tx_detail: Dict[str, Any]):
         return
 
     try:
-        # 检查是否已处理
         existing = db.query(TradeAnalysis).filter(TradeAnalysis.sig == sig).first()
         if existing:
             return
 
-        net_sol_flow = 0.0
-        net_token_flow = 0.0
-        price_per_token = 0.0
-        wallet_tag = None
-
-        tx_type = tx_detail.get("transaction_type", "")
-        amount = tx_detail.get("amount", 0) or 0.0
-
-        if tx_type == "SWAP":
-            pass
-        elif tx_type == "TRANSFER":
-            pass
-
-        # 入库
         analysis = TradeAnalysis(
             sig=sig,
-            net_sol_flow=net_sol_flow,
-            net_token_flow=net_token_flow,
-            price_per_token=price_per_token,
-            wallet_tag=wallet_tag,
+            net_sol_flow=0.0,
+            net_token_flow=0.0,
+            price_per_token=0.0,
+            wallet_tag=None,
             processed_at=datetime.utcnow(),
         )
         db.add(analysis)
         db.commit()
 
-        # 推送处理结果到前端
         await ws_manager.broadcast(tx_detail.get("token_mint", ""), {
             "type": "trade",
-            "data": {
-                **tx_detail,
-                "net_sol_flow": net_sol_flow,
-                "net_token_flow": net_token_flow,
-                "price_per_token": price_per_token,
-                "wallet_tag": wallet_tag,
-            }
+            "data": tx_detail,
         })
 
         logger.debug(f"[处理] {sig[:8]}... 完成")
@@ -211,7 +199,7 @@ async def run_full_calculation(db: Session, mint: str):
 
     for tx in trades:
         try:
-            # 检查是否已处理
+            # 去重检查
             existing = db.query(TradeAnalysis).filter(TradeAnalysis.sig == tx.sig).first()
             if existing:
                 continue
@@ -232,29 +220,30 @@ async def run_full_calculation(db: Session, mint: str):
                 "sol_spent": tx.sol_spent or 0.0,
             }
 
-            # 计算指数
-            metrics = _calculate_index(tx_detail, _index_state)
+            # 庄家判定 + 指数计算
+            metrics = await _calculate_index(tx_detail, _index_state, mint)
 
-            # 写入 TradeAnalysis
+            # 写入 TradeAnalysis（dealer 也写）
             analysis = TradeAnalysis(
                 sig=tx.sig,
                 net_sol_flow=tx.sol_spent or 0.0,
                 net_token_flow=tx.amount or 0.0,
                 price_per_token=0.0,
-                wallet_tag=None,
+                wallet_tag=metrics["user_status"],
                 processed_at=datetime.utcnow(),
             )
             db.add(analysis)
             db.commit()
 
-            # 广播到 WS
-            await ws_manager.broadcast(mint, {
-                "type": "trade",
-                "data": {
-                    **tx_detail,
-                    **metrics,
-                }
-            })
+            # dealer 不推送实时交易列表
+            if not metrics["is_dealer"]:
+                await ws_manager.broadcast(mint, {
+                    "type": "trade",
+                    "data": {
+                        **tx_detail,
+                        **{k: v for k, v in metrics.items() if k != "is_dealer"},
+                    }
+                })
 
         except Exception as e:
             logger.error(f"[全量计算] 处理 {tx.sig[:8]}... 失败: {e}")
@@ -270,6 +259,7 @@ async def reset_processor(mint: str, db: Session):
     - 清空队列
     - 重置所有全局变量和 IndexState
     - 删除 DB 中该 mint 的 Transaction 和 TradeAnalysis 记录
+    注意：Redis 用户数据永久保留，不在此清理
     """
     global _trade_queue, _index_state, _consumer_task, _mint
 
@@ -278,7 +268,7 @@ async def reset_processor(mint: str, db: Session):
     # 1. 停止消费者任务（发送毒丸信号）
     if _consumer_task and not _consumer_task.done():
         if _trade_queue is not None:
-            await _trade_queue.put(None)  # 毒丸信号
+            await _trade_queue.put(None)
         try:
             await asyncio.wait_for(_consumer_task, timeout=3.0)
         except asyncio.TimeoutError:
@@ -289,7 +279,7 @@ async def reset_processor(mint: str, db: Session):
                 pass
         logger.info(f"[重置] 消费者任务已停止")
 
-    # 2. 清空队列（丢弃所有积压消息）
+    # 2. 清空队列
     if _trade_queue is not None:
         cleared = 0
         while not _trade_queue.empty():
@@ -300,7 +290,7 @@ async def reset_processor(mint: str, db: Session):
                 break
         logger.info(f"[重置] 队列已清空，丢弃 {cleared} 条消息")
 
-    # 3. 重置所有全局变量
+    # 3. 重置全局变量
     _trade_queue = asyncio.Queue()
     _index_state = None
     _consumer_task = None
@@ -308,18 +298,12 @@ async def reset_processor(mint: str, db: Session):
 
     # 4. 删除 DB 中该 mint 的记录
     try:
-        # 先找出该 mint 的所有 sig
         sigs = [row.sig for row in db.query(Transaction.sig).filter(Transaction.token_mint == mint).all()]
-
-        # 删除 TradeAnalysis（依赖 sig）
         if sigs:
             deleted_analysis = db.query(TradeAnalysis).filter(TradeAnalysis.sig.in_(sigs)).delete(synchronize_session=False)
             logger.info(f"[重置] 删除 TradeAnalysis {deleted_analysis} 条")
-
-        # 删除 Transaction
         deleted_tx = db.query(Transaction).filter(Transaction.token_mint == mint).delete(synchronize_session=False)
         logger.info(f"[重置] 删除 Transaction {deleted_tx} 条")
-
         db.commit()
     except Exception as e:
         logger.error(f"[重置] 删除 DB 记录失败: {e}", exc_info=True)
@@ -333,8 +317,6 @@ async def calculate_metrics(db: Session, mint: str) -> Dict[str, float]:
     计算四个核心指标
     TODO: 具体计算逻辑待补充
     """
-    from sqlalchemy import func
-
     trades = (
         db.query(Transaction, TradeAnalysis)
         .join(TradeAnalysis, Transaction.sig == TradeAnalysis.sig)

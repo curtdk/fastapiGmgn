@@ -12,3 +12,4 @@ pytest==7.4.4
 pytest-asyncio==0.23.3
 websockets>=12.0
 sqladmin==0.24.0
+redis>=7.0.0

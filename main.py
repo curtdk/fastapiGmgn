@@ -47,6 +47,23 @@ SESSION_SECRET = "your-secret-key-change-in-production"
 
 app = FastAPI(title="GMGN API", version="1.0.0")
 
+
+@app.on_event("startup")
+async def on_startup():
+    """应用启动：初始化庄家判定服务"""
+    from app.services.dealer_detector import init_dealer_detector
+    await init_dealer_detector()
+    logger.info("庄家判定服务已启动")
+
+
+@app.on_event("shutdown")
+async def on_shutdown():
+    """应用关闭：释放庄家判定服务资源"""
+    from app.services.dealer_detector import close_dealer_detector
+    await close_dealer_detector()
+    logger.info("庄家判定服务已关闭")
+
+
 # Session 中间件 (SQLAdmin 需要)
 app.add_middleware(SessionMiddleware, secret_key=SESSION_SECRET)
 
