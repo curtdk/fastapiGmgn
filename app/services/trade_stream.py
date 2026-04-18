@@ -196,7 +196,7 @@ class TradeStream:
 
                     db.close()
 
-                    # 入队，由消费者统一处理
+                    # 入队，由消费者统一处理（get_trader_state 会在 _calculate_index 中触发庄家检测）
                     await enqueue_trade(tx_detail)
             except Exception as e:
                 logger.warning(f"[实时流] 入库失败: {e}")

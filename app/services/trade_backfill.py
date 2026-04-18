@@ -418,7 +418,7 @@ class TradeBackfill:
             # 1. 启动庄家检测消费者
             start_dealer_consumer()
             
-            # 2. 历史 tx 直接处理，更新 _index_state
+            # 2. 历史 tx 直接处理，同时进行庄家检测
             await run_full_calculation(self.db, self.mint)
             
             # 3. 启动消费者，消化队列中积压的 WS 消息

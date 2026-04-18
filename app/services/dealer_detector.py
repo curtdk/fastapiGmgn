@@ -2,13 +2,17 @@
 
 职责：
 - 维护 Redis 中的用户状态（retail / dealer / unknown）
-- 管理检测任务队列（最多 20 并发）
+- 管理检测任务队列
 - 异步执行庄家判定逻辑（当前支持条件 C001，后续可扩展）
 
-Redis 数据结构：
-  user:{address}  →  Hash
-      status:     "retail" | "dealer" | "unknown"
-      conditions: JSON list，如 '["C001"]'
+Redis 数据结构（统一使用 user:{address}）：
+  user:{address}
+    status: "retail" | "dealer" | "unknown"
+    conditions: '["C001"]'
+    {mint}_holdingQty: "1000"
+    {mint}_holdingCost: "5.5"
+    {mint}_avgPrice: "0.0055"
+    ...
 """
 import asyncio
 import json
@@ -33,10 +37,7 @@ _dealer_consumer_task: Optional[asyncio.Task] = None
 
 
 async def init_dealer_detector():
-    """初始化：Redis 连接 + 队列 + 信号量
-    消费者启动移到 trade_backfill._trigger_full_calculation 中
-    在 app startup 时调用一次。
-    """
+    """初始化：Redis 连接 + 队列 + 信号量"""
     global _redis, _dealer_check_queue, _dealer_semaphore
 
     _redis = aioredis.from_url(REDIS_URL, decode_responses=True)
@@ -57,9 +58,7 @@ def start_dealer_consumer():
 
 
 async def close_dealer_detector():
-    """关闭：停止消费者任务，关闭 Redis 连接
-    在 app shutdown 时调用。
-    """
+    """关闭：停止消费者任务，关闭 Redis 连接"""
     global _dealer_consumer_task, _redis
 
     if _dealer_consumer_task and not _dealer_consumer_task.done():
@@ -74,76 +73,11 @@ async def close_dealer_detector():
 
 
 # ──────────────────────────────────────────────────────────
-# Redis 辅助
-# ──────────────────────────────────────────────────────────
-
-def _user_key(address: str) -> str:
-    return f"user:{address}"
-
-
-async def get_user_status(address: str) -> Optional[str]:
-    """从 Redis 读取用户状态，不存在返回 None"""
-    if not _redis:
-        return None
-    return await _redis.hget(_user_key(address), "status")
-
-
-async def _set_user_status(address: str, status: str, conditions: list = None):
-    """写入用户状态到 Redis"""
-    if not _redis:
-        return
-    data = {"status": status, "conditions": json.dumps(conditions or [])}
-    await _redis.hset(_user_key(address), mapping=data)
-
-
-async def _get_user_conditions(address: str) -> list:
-    """读取用户已满足的条件列表"""
-    if not _redis:
-        return []
-    raw = await _redis.hget(_user_key(address), "conditions")
-    if not raw:
-        return []
-    try:
-        return json.loads(raw)
-    except Exception:
-        return []
-
-
-# ──────────────────────────────────────────────────────────
-# 对外接口：供 _calculate_index 调用
-# ──────────────────────────────────────────────────────────
-
-async def check_and_classify_user(address: str, mint: str, sig: str) -> str:
-    """查询并返回用户当前状态，触发异步检测（如需要）
-
-    返回值："retail" | "dealer" | "unknown"
-    """
-    if not address:
-        return "unknown"
-
-    status = await get_user_status(address)
-
-    if status in ("retail", "dealer"):
-        # 状态已确定，直接复用
-        return status
-
-    if status == "unknown":
-        # 重新入队检测（可能上次检测未满足任何条件）
-        await _dealer_check_queue.put((address, mint, sig))
-        return "unknown"
-
-    # 首次见到此地址：新建记录，入队检测
-    await _set_user_status(address, "unknown")
-    await _dealer_check_queue.put((address, mint, sig))
-    return "unknown"
-
-
-# ──────────────────────────────────────────────────────────
 # 队列消费者
 # ──────────────────────────────────────────────────────────
 
 async def _dealer_queue_consumer():
-    """常驻消费者：从队列取地址，控制并发 ≤ 20 个检测任务"""
+    """常驻消费者：从队列取地址，执行检测"""
     logger.info("[庄家判定] 队列消费者运行中")
     while True:
         item = await _dealer_check_queue.get()
@@ -153,15 +87,13 @@ async def _dealer_queue_consumer():
         address, mint, sig = item
 
         # 再次检查状态，避免短时间内重复检测
-        current = await get_user_status(address)
-        if current in ("retail", "dealer"):
+        from app.services.trade_processor import get_trader_state, _get_redis as tp_get_redis
+        redis = await tp_get_redis()
+        state = await get_trader_state(redis, mint, address, sig)
+        if state.get("status") in ("retail", "dealer"):
             continue
 
-
         await _run_dealer_check(address, mint, sig)
-        # 获取信号量后 create_task，不等待
-        # await _dealer_semaphore.acquire()
-        # asyncio.create_task(_run_dealer_check(address, mint, sig))
 
 
 # ──────────────────────────────────────────────────────────
@@ -169,8 +101,19 @@ async def _dealer_queue_consumer():
 # ──────────────────────────────────────────────────────────
 
 async def _run_dealer_check(address: str, mint: str, sig: str):
-    """异步执行庄家判定，完成后通过 WS 广播结果"""
+    """
+    异步执行庄家判定，完成后：
+    - 庄家：修改 status=dealer，排除计算，WS 广播隐藏
+    - 散户：修改 status=retail，WS 广播标记
+    """
+    from app.services.trade_processor import get_trader_state, save_trader_state, exclude_dealer, _get_redis as tp_get_redis
+
     try:
+        redis = await tp_get_redis()
+        state = await get_trader_state(redis, mint, address)
+        conditions = state.get("conditions", [])
+
+        # 获取 Helius API Key
         api_key = await _get_helius_api_key()
         if not api_key:
             logger.warning("[庄家判定] 未配置 Helius API Key，跳过判定")
@@ -182,10 +125,8 @@ async def _run_dealer_check(address: str, mint: str, sig: str):
             logger.debug(f"[庄家判定] {address[:8]}... 无历史交易")
             return
 
-        conditions = await _get_user_conditions(address)
-        is_dealer = False
-
         # ── 条件 C001：首笔交易包含 closeAccount 且交易后 SOL 余额为 0 ──
+        is_dealer = False
         if "C001" not in conditions:
             if _check_c001(first_tx, address):
                 conditions.append("C001")
@@ -195,8 +136,15 @@ async def _run_dealer_check(address: str, mint: str, sig: str):
         # 后续条件在此追加（C002, C003 ...）
 
         if is_dealer:
-            await _set_user_status(address, "dealer", conditions)
-            # WS 广播：前端按 sig 匹配条目更新用户状态
+            # 修改用户状态为 dealer
+            state["status"] = "dealer"
+            state["conditions"] = conditions
+            await save_trader_state(redis, mint, address, state)
+            
+            # 排除庄家：从汇总中减去该用户贡献
+            await exclude_dealer(mint, address)
+            
+            # WS 广播：前端隐藏该用户的交易
             await ws_manager.broadcast(mint, {
                 "type": "user_status",
                 "data": {
@@ -206,15 +154,30 @@ async def _run_dealer_check(address: str, mint: str, sig: str):
                     "sig": sig,
                 }
             })
-            logger.info(f"[庄家判定] {address[:8]}... 判定为庄家，已广播")
+            logger.info(f"[庄家判定] {address[:8]}... 判定为庄家，已排除并广播")
         else:
-            # 更新条件列表（即使没新条件，保持 unknown）
-            await _set_user_status(address, "unknown", conditions)
+            # 修改用户状态为 retail（已知非庄家）
+            state["status"] = "retail"
+            state["conditions"] = conditions
+            await save_trader_state(redis, mint, address, state)
+            
+            # WS 广播：前端标记该用户为散户
+            await ws_manager.broadcast(mint, {
+                "type": "user_status",
+                "data": {
+                    "address": address,
+                    "status": "retail",
+                    "conditions": conditions,
+                    "sig": sig,
+                }
+            })
+            logger.info(f"[庄家判定] {address[:8]}... 判定为散户，已广播")
 
     except Exception as e:
         logger.error(f"[庄家判定] {address[:8]}... 判定异常: {e}", exc_info=True)
     finally:
-        _dealer_semaphore.release()
+        if _dealer_semaphore:
+            _dealer_semaphore.release()
 
 
 def _check_c001(tx_data: dict, address: str) -> bool:
@@ -328,9 +291,6 @@ async def _fetch_first_transaction(address: str, api_key: str) -> Optional[dict]
             logger.warning(
                 f"[庄家判定] 网络请求异常（第 {attempt + 1} 次）: {type(e).__name__} -> {e}"
             )
-        except Exception:
-            logger.error(f"[庄家判定] 代码执行发生崩溃，堆栈详情:\n{traceback.format_exc()}")
-            return None
 
         # 指数退避后重试：2s, 4s, 8s
         if attempt < max_retries - 1:

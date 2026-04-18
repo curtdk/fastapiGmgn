@@ -111,3 +111,13 @@ UserCondition- 条件记录表：地址、条件ID、条件分值
     异步庄家判定状态内容： - 获取交易用户钱包 交易倒序取首笔，转账后销户 满足条件 无资金 加入UserCondition 记录一笔 TradingUser 状态改为庄家 ，其他条件我后面在扩展，案例代码可参考 /Users/curtdk/.openclaw/workspace/fastapiGmgn/test_wallet_tx.py
 
 6. 推送：WS下发 tx_detail.get("sig", "") +最新状态，前端匹配条目更新展示 用户状态 
+
+
+1.获取庄家状态 需要从 redis 现有 用户状态记录 去获取一下 如果没有 再继续
+_calculate_index 方法中。state = await get_trader_state
+
+下面 当第二个mint 来的时候 是不是 清零 计算的
+ state["holdingQty"] += buy_qty
+        state["holdingCost"] += buy_amount
+        state["totalBuyAmount"] += buy_amount
+        if state["holdingQty"] > 0:

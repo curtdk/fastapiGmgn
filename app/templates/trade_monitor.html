@@ -187,6 +187,9 @@ function connectWS() {
         fetchMetrics();
       } else if (msg.type === 'error') {
         alert('错误: ' + (msg.data.message || '未知'));
+      } else if (msg.type === 'user_status') {
+        // 处理用户状态更新（庄家/散户判定结果）
+        handleUserStatus(msg.data);
       }
     } catch (e) {
       console.error('WS 消息解析失败:', e);
@@ -285,5 +288,60 @@ async function stopMonitor() {
 window.addEventListener('DOMContentLoaded', () => {
   fetchMetrics();
 });
+
+// 处理用户状态更新（庄家/散户判定结果）
+function handleUserStatus(data) {
+  const address = data.address;
+  const status = data.status;  // "dealer" | "retail" | "unknown"
+  const sig = data.sig;
+  
+  console.log('[用户状态] address=' + address.slice(0, 8) + '... status=' + status);
+  
+  const tbody = document.getElementById('tradeBody');
+  const rows = tbody.querySelectorAll('tr');
+  
+  rows.forEach(row => {
+    // 查找钱包列（第3列，索引2）
+    const addrCell = row.cells[2];
+    if (!addrCell) return;
+    
+    // 比较完整地址
+    const rowAddr = addrCell.getAttribute('title') || '';
+    if (rowAddr !== address) return;
+    
+    // 找到匹配的交易行
+    const tagCell = row.querySelector('.wallet-tag');
+    
+    if (status === 'dealer') {
+      // 庄家：隐藏该行
+      row.style.display = 'none';
+      console.log('[用户状态] 已隐藏庄家交易: ' + sig.slice(0, 8));
+    } else if (status === 'retail') {
+      // 散户：更新标记
+      if (tagCell) {
+        tagCell.textContent = '散户';
+        tagCell.style.background = '#d3f9d8';
+        tagCell.style.color = '#2f9e44';
+      } else {
+        // 如果没有 tagCell，创建新的
+        const newTag = document.createElement('span');
+        newTag.className = 'wallet-tag';
+        newTag.textContent = '散户';
+        newTag.style.background = '#d3f9d8';
+        newTag.style.color = '#2f9e44';
+        // 插入到标记列
+        const cells = row.cells;
+        if (cells[8]) {
+          cells[8].innerHTML = '';
+          cells[8].appendChild(newTag);
+        }
+      }
+      console.log('[用户状态] 已标记散户: ' + sig.slice(0, 8));
+    }
+  });
+  
+  // 刷新指标
+  fetchMetrics();
+}
 </script>
 {% endblock %}
