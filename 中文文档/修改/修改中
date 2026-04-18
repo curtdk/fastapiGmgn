@@ -121,3 +121,7 @@ _calculate_index 方法中。state = await get_trader_state
         state["holdingCost"] += buy_amount
         state["totalBuyAmount"] += buy_amount
         if state["holdingQty"] > 0:
+
+
+指数计算和 庄家判断 从这里开始就可以了。
+_calculate_index。     _run_dealer_check  判断庄家

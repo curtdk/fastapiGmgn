@@ -216,8 +216,8 @@ async def _calculate_index(tx_detail: Dict[str, Any], mint: str) -> Dict[str, An
     if not address:
         return {}
     
-    # 获取用户状态
-    state = await get_trader_state(redis, mint, address)
+    # 获取用户状态（传入 sig 用于 unknown 时自动入队检测）
+    state = await get_trader_state(redis, mint, address, sig)
     
     # 庄家直接跳过计算
     if state.get("status") == "dealer":
