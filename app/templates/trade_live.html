@@ -1,97 +1,95 @@
-{% extends "sqladmin/layout.html" %}
-{% block title %}交易监控{% endblock %}
-{% block content %}
-<style>
-  .monitor-header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
-  .monitor-header input { width: 380px; font-family: monospace; font-size: 14px; }
-  .metrics-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 20px; }
-  .metric-card { background: #fff; border-radius: 8px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); text-align: center; }
-  .metric-card .label { font-size: 13px; color: #666; margin-bottom: 8px; }
-  .metric-card .value { font-size: 28px; font-weight: 700; color: #206bc4; }
-  .metric-card .value.green { color: #2fb344; }
-  .metric-card .value.red { color: #d63939; }
-  .metric-card .value.orange { color: #f76707; }
-  .trade-table-wrap { background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); overflow: hidden; }
-  .trade-table-wrap .table-scroll { max-height: 600px; overflow-y: auto; }
-  .trade-table-wrap table { margin-bottom: 0; font-size: 13px; }
-  .trade-table-wrap thead { position: sticky; top: 0; z-index: 10; background: #f8f9fa; }
-  .trade-table-wrap tbody tr.new-row { animation: fadeIn 0.3s ease; background: #e7f5ff; }
-  @keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
-  .status-badge { display: inline-block; padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 600; }
-  .status-IDLE { background: #e9ecef; color: #495057; }
-  .status-BACKFILLING { background: #fff3bf; color: #f59f00; }
-  .status-CATCHING_UP { background: #d0ebff; color: #228be6; }
-  .status-STREAMING { background: #d3f9d8; color: #2f9e44; }
-  .status-STOPPED { background: #e9ecef; color: #868e96; }
-  .wallet-tag { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 11px; background: #e9ecef; }
-</style>
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>实时交易监控</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    body { background: #f5f5f5; }
+    .monitor-header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; padding: 20px; background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    .monitor-header input { width: 380px; font-family: monospace; font-size: 14px; }
+    .metrics-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 20px; }
+    .metric-card { background: #fff; border-radius: 8px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); text-align: center; }
+    .metric-card .label { font-size: 13px; color: #666; margin-bottom: 8px; }
+    .metric-card .value { font-size: 28px; font-weight: 700; color: #206bc4; }
+    .metric-card .value.green { color: #2fb344; }
+    .metric-card .value.red { color: #d63939; }
+    .metric-card .value.orange { color: #f76707; }
+    .trade-table-wrap { background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); overflow: hidden; }
+    .trade-table-wrap .table-scroll { max-height: 600px; overflow-y: auto; }
+    .trade-table-wrap table { margin-bottom: 0; font-size: 13px; }
+    .trade-table-wrap thead { position: sticky; top: 0; z-index: 10; background: #f8f9fa; }
+    .trade-table-wrap tbody tr.new-row { animation: fadeIn 0.3s ease; background: #e7f5ff; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+    .status-badge { display: inline-block; padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 600; }
+    .status-IDLE { background: #e9ecef; color: #495057; }
+    .status-BACKFILLING { background: #fff3bf; color: #f59f00; }
+    .status-CATCHING_UP { background: #d0ebff; color: #228be6; }
+    .status-STREAMING { background: #d3f9d8; color: #2f9e44; }
+    .status-STOPPED { background: #e9ecef; color: #868e96; }
+    .wallet-tag { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 11px; background: #e9ecef; }
+  </style>
+</head>
+<body>
+  <div class="container-fluid p-4">
+    <!-- 顶部控制栏 -->
+    <div class="monitor-header">
+      <label class="form-label" style="margin:0; white-space:nowrap;">Mint 地址:</label>
+      <input type="text" id="mintInput" class="form-control" placeholder="输入 Token Mint 地址" />
+      <button id="startBtn" class="btn btn-primary" onclick="startMonitor()">开始</button>
+      <button id="stopBtn" class="btn btn-danger" onclick="stopMonitor()">关闭</button>
+      <span id="statusBadge" class="status-badge status-IDLE">状态: 未启动</span>
+      <span id="statusMsg" style="font-size:13px; color:#666;"></span>
+    </div>
 
-<div class="container-fluid">
-  <!-- 顶部控制栏 -->
-  <div class="monitor-header">
-    <label class="form-label" style="margin:0; white-space:nowrap;">Mint 地址:</label>
-    <input type="text" id="mintInput" class="form-control" placeholder="输入 Token Mint 地址" />
-    <button id="startBtn" class="btn btn-primary" onclick="startMonitor()">开始</button>
-    <button id="stopBtn" class="btn btn-danger" onclick="stopMonitor()">关闭</button>
-    <span id="statusBadge" class="status-badge status-IDLE">状态: 未启动</span>
-    <span id="statusMsg" style="font-size:13px; color:#666;"></span>
+    <!-- 四个指标 -->
+    <div class="metrics-row">
+      <div class="metric-card">
+        <div class="label">本轮下注 (SOL)</div>
+        <div class="value" id="metricBet">0.00</div>
+      </div>
+      <div class="metric-card">
+        <div class="label">本轮成本 (SOL)</div>
+        <div class="value orange" id="metricCost">0.00</div>
+      </div>
+      <div class="metric-card">
+        <div class="label">已落袋 (SOL)</div>
+        <div class="value green" id="metricProfit">0.00</div>
+      </div>
+      <div class="metric-card">
+        <div class="label">交易笔数</div>
+        <div class="value" id="metricCount">0</div>
+      </div>
+    </div>
+
+    <!-- 实时交易表格 -->
+    <div class="trade-table-wrap">
+      <div class="table-scroll">
+        <table class="table table-sm table-hover">
+          <thead>
+            <tr>
+              <th>类型</th>
+              <th>钱包</th>
+              <th>数量</th>
+              <th>SOL</th>
+              <th>净流入</th>
+              <th>标记</th>
+            </tr>
+          </thead>
+          <tbody id="tradeBody">
+          </tbody>
+        </table>
+      </div>
+    </div>
   </div>
 
-  <!-- 四个指标 -->
-  <div class="metrics-row">
-    <div class="metric-card">
-      <div class="label">本轮下注 (SOL)</div>
-      <div class="value" id="metricBet">0.00</div>
-    </div>
-    <div class="metric-card">
-      <div class="label">本轮成本 (SOL)</div>
-      <div class="value orange" id="metricCost">0.00</div>
-    </div>
-    <div class="metric-card">
-      <div class="label">已落袋 (SOL)</div>
-      <div class="value green" id="metricProfit">0.00</div>
-    </div>
-    <div class="metric-card">
-      <div class="label">交易笔数</div>
-      <div class="value" id="metricCount">0</div>
-    </div>
-  </div>
-
-  <!-- 实时交易表格 -->
-  <div class="trade-table-wrap">
-    <div class="table-scroll">
-      <table class="table table-sm table-hover">
-        <thead>
-          <tr>
-            <th>类型</th>
-            <th>钱包</th>
-            <th>数量</th>
-            <th>SOL</th>
-            <th>净流入</th>
-            <th>标记</th>
-          </tr>
-        </thead>
-        <tbody id="tradeBody">
-        </tbody>
-      </table>
-    </div>
-  </div>
-</div>
-
-<script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
 let ws = null;
 let currentMint = '';
 let tradeCount = 0;
 const MAX_ROWS = 2000;
-
-// 格式化时间
-function fmtTime(ts) {
-  if (!ts) return '-';
-  // 兼容 ISO 字符串和时间戳
-  const d = typeof ts === 'string' ? new Date(ts.replace('T', ' ').replace('Z', '')) : new Date(ts);
-  if (isNaN(d.getTime())) return '-';
-  return d.toLocaleTimeString('zh-CN', { hour12: false });
-}
 
 // 截断地址
 function shortAddr(addr) {
@@ -163,7 +161,6 @@ function connectWS() {
 
   ws.onopen = () => {
     console.log('WS 已连接');
-    // 连接成功后立即获取历史数据
     fetchHistory();
   };
 
@@ -175,12 +172,10 @@ function connectWS() {
         updateStatus(msg.data);
       } else if (msg.type === 'trade') {
         addTradeRow(msg.data, true);
-        // 定期刷新指标
         fetchMetrics();
       } else if (msg.type === 'error') {
         alert('错误: ' + (msg.data.message || '未知'));
       } else if (msg.type === 'user_status') {
-        // 处理用户状态更新（庄家/散户判定结果）
         handleUserStatus(msg.data);
       }
     } catch (e) {
@@ -190,7 +185,6 @@ function connectWS() {
 
   ws.onclose = () => {
     console.log('WS 已断开');
-    // 如果仍在监听状态，尝试重连
     if (currentMint) {
       setTimeout(() => {
         if (currentMint) connectWS();
@@ -218,10 +212,8 @@ async function fetchHistory() {
     const resp = await fetch(`/admin/api/trades?mint=${currentMint}&page=1&page_size=${MAX_ROWS}`);
     const data = await resp.json();
     console.log('历史数据:', data);
-    // 清空表格
     document.getElementById('tradeBody').innerHTML = '';
     tradeCount = 0;
-    // 反转：最新在前
     data.trades.reverse().forEach(trade => addTradeRow(trade, false));
     console.log('已渲染', data.trades.length, '条历史交易');
     updateMetrics({ trade_count: data.total });
@@ -248,8 +240,6 @@ async function startMonitor() {
     });
     const data = await resp.json();
     console.log('启动响应:', data);
-
-    // 连接 WS（历史数据会在 WS onopen 时自动加载）
     connectWS();
   } catch (e) {
     alert('启动失败: ' + e.message);
@@ -281,10 +271,10 @@ window.addEventListener('DOMContentLoaded', () => {
   fetchMetrics();
 });
 
-// 处理用户状态更新（庄家/散户判定结果）
+// 处理用户状态更新
 function handleUserStatus(data) {
   const address = data.address;
-  const status = data.status;  // "dealer" | "retail" | "unknown"
+  const status = data.status;
   const sig = data.sig;
   
   console.log('[用户状态] address=' + address.slice(0, 8) + '... status=' + status);
@@ -293,35 +283,28 @@ function handleUserStatus(data) {
   const rows = tbody.querySelectorAll('tr');
   
   rows.forEach(row => {
-    // 查找钱包列（第3列，索引2）
-    const addrCell = row.cells[2];
+    const addrCell = row.cells[1];
     if (!addrCell) return;
     
-    // 比较完整地址
     const rowAddr = addrCell.getAttribute('title') || '';
     if (rowAddr !== address) return;
     
-    // 找到匹配的交易行
     const tagCell = row.querySelector('.wallet-tag');
     
     if (status === 'dealer') {
-      // 庄家：隐藏该行
       row.style.display = 'none';
       console.log('[用户状态] 已隐藏庄家交易: ' + sig.slice(0, 8));
     } else if (status === 'retail') {
-      // 散户：更新标记
       if (tagCell) {
         tagCell.textContent = '散户';
         tagCell.style.background = '#d3f9d8';
         tagCell.style.color = '#2f9e44';
       } else {
-        // 如果没有 tagCell，创建新的
         const newTag = document.createElement('span');
         newTag.className = 'wallet-tag';
         newTag.textContent = '散户';
         newTag.style.background = '#d3f9d8';
         newTag.style.color = '#2f9e44';
-        // 插入到标记列（索引5）
         const cells = row.cells;
         if (cells[5]) {
           cells[5].innerHTML = '';
@@ -332,8 +315,8 @@ function handleUserStatus(data) {
     }
   });
   
-  // 刷新指标
   fetchMetrics();
 }
-</script>
-{% endblock %}
+  </script>
+</body>
+</html>

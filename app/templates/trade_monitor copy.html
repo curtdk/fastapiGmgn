@@ -63,12 +63,16 @@
       <table class="table table-sm table-hover">
         <thead>
           <tr>
+            <th>时间</th>
             <th>类型</th>
             <th>钱包</th>
             <th>数量</th>
             <th>SOL</th>
+            <th>单价(SOL)</th>
             <th>净流入</th>
+            <th>DEX</th>
             <th>标记</th>
+            <th>签名</th>
           </tr>
         </thead>
         <tbody id="tradeBody">
@@ -115,12 +119,16 @@ function addTradeRow(data, isNew) {
   const netClass = netFlow > 0 ? 'text-success' : (netFlow < 0 ? 'text-danger' : '');
 
   tr.innerHTML = `
+    <td>${fmtTime(data.block_time)}</td>
     <td><span class="badge ${data.transaction_type === 'SWAP' ? 'bg-primary' : 'bg-secondary'}">${data.transaction_type || '-'}</span></td>
     <td title="${data.from_address || ''}">${shortAddr(data.from_address)}</td>
     <td>${fmtNum(data.amount, 2)}</td>
     <td>${fmtNum(netFlow, 4)}</td>
+    <td>${fmtNum(data.price_per_token, 6)}</td>
     <td class="${netClass}" style="font-weight:600">${fmtNum(netFlow, 4)}</td>
+    <td>${data.dex || '-'}</td>
     <td>${data.wallet_tag ? '<span class="wallet-tag">' + data.wallet_tag + '</span>' : '-'}</td>
+    <td><a href="https://solscan.io/tx/${data.sig}" target="_blank" style="font-size:11px">${data.sig ? data.sig.slice(0, 8) : '-'}</a></td>
   `;
 
   // 新数据插入到最前面
@@ -321,11 +329,11 @@ function handleUserStatus(data) {
         newTag.textContent = '散户';
         newTag.style.background = '#d3f9d8';
         newTag.style.color = '#2f9e44';
-        // 插入到标记列（索引5）
+        // 插入到标记列
         const cells = row.cells;
-        if (cells[5]) {
-          cells[5].innerHTML = '';
-          cells[5].appendChild(newTag);
+        if (cells[8]) {
+          cells[8].innerHTML = '';
+          cells[8].appendChild(newTag);
         }
       }
       console.log('[用户状态] 已标记散户: ' + sig.slice(0, 8));

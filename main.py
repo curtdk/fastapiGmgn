@@ -81,6 +81,8 @@ app.include_router(auth.router, prefix="/api/auth", tags=["认证"])
 app.include_router(users.router, prefix="/api/users", tags=["用户"])
 app.include_router(trades_router)
 app.include_router(settings_router)
+from app.routes.trades import live_router
+app.include_router(live_router)
 
 # ========== Admin Model Views ==========
 class UserAdmin(ModelView, model=User):

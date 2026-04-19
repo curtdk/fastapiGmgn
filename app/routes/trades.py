@@ -2,10 +2,14 @@
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends, HTTPException
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
+from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from sqlalchemy import case
+
+# Jinja2 模板（用于独立页面）
+templates = Jinja2Templates(directory="app/templates")
 
 from app.utils.database import get_db, SessionLocal
 from app.models.models import Transaction
@@ -228,3 +232,13 @@ def get_settings(db: Session = Depends(get_db)):
 def put_setting(key: str, body: SettingResponse, db: Session = Depends(get_db)):
     """更新设置"""
     return update_setting(db, key, body.value)
+
+
+# ===== 独立页面路由 =====
+live_router = APIRouter(tags=["实时交易"])
+
+
+@live_router.get("/trade")
+async def trade_live_page(request: Request):
+    """独立实时交易页面（无后台菜单）"""
+    return templates.TemplateResponse(request, "trade_live.html")
