@@ -77,6 +77,14 @@ async def get_trader_state(redis, mint: str, address: str, sig: str = None) -> d
         state["status"] = status
         state["conditions"] = conditions
         
+        # 读取 mint 相关字段
+        state["holdingQty"] = float(state.get(f"{mint}_holdingQty", "0"))
+        state["holdingCost"] = float(state.get(f"{mint}_holdingCost", "0"))
+        state["avgPrice"] = float(state.get(f"{mint}_avgPrice", "0"))
+        state["totalBuyAmount"] = float(state.get(f"{mint}_totalBuyAmount", "0"))
+        state["totalSellAmount"] = float(state.get(f"{mint}_totalSellAmount", "0"))
+        state["totalSellPrincipal"] = float(state.get(f"{mint}_totalSellPrincipal", "0"))
+        
         # 如果是 unknown 且有 sig，自动入队检测
         if status == "unknown" and sig:
             await _enqueue_dealer_check(address, mint, sig)
