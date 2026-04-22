@@ -29,6 +29,7 @@
     .status-STREAMING { background: #d3f9d8; color: #2f9e44; }
     .status-STOPPED { background: #e9ecef; color: #868e96; }
     .wallet-tag { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 11px; background: #e9ecef; }
+    .wallet-tag.failed { background: #fff3bf; color: #f59f00; }
   </style>
 </head>
 <body>
@@ -89,7 +90,7 @@
 let ws = null;
 let currentMint = '';
 let tradeCount = 0;
-const MAX_ROWS = 2000;
+const MAX_ROWS = 200;
 
 // 截断地址
 function shortAddr(addr) {
@@ -276,6 +277,7 @@ function handleUserStatus(data) {
   const address = data.address;
   const status = data.status;
   const sig = data.sig;
+  const reason = data.reason;
   
   console.log('[用户状态] address=' + address.slice(0, 8) + '... status=' + status);
   
@@ -312,6 +314,21 @@ function handleUserStatus(data) {
         }
       }
       console.log('[用户状态] 已标记散户: ' + sig.slice(0, 8));
+    } else if (status === 'unknown' && reason === 'detection_failed') {
+      if (tagCell) {
+        tagCell.textContent = 'unknown(检测失败)';
+        tagCell.className = 'wallet-tag failed';
+      } else {
+        const newTag = document.createElement('span');
+        newTag.className = 'wallet-tag failed';
+        newTag.textContent = 'unknown(检测失败)';
+        const cells = row.cells;
+        if (cells[5]) {
+          cells[5].innerHTML = '';
+          cells[5].appendChild(newTag);
+        }
+      }
+      console.log('[用户状态] 已标记检测失败: ' + sig.slice(0, 8));
     }
   });
   

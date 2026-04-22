@@ -1,0 +1,246 @@
+Transaction Details
+image
+AMM: Sell
+Search transactions, blocks, programs and tokens
+
+Sponsored:  Vega Logo Solscan - Sponsored Ads Slots Available! - Book your slot here!
+
+Buy
+
+Presale
+
+Play
+
+Gaming
+Overview
+Balance Changes
+Raw
+API
+
+Summary
+Swap
+49,400.39326
+placeholder
+MMGA
+for
+0.150115352
+$12.59
+image
+WSOL
+on
+image
+Pump.fun AMM
+AI Explanation
+Signature
+3aTX5VRKqnviFe8quEmj1LYpxdynwX7ZLfMVTvRDVdRPST3cDVvKP1oCr1dc1rtFhGWMcfFtEmPVrnLWvrb9vr6z
+Logo
+Bundle 检查失败
+Inspect Tx
+Block & Timestamp
+414031080
+
+2 days ago
+11:45:26 Apr 18, 2026 (UTC)
+Result
+Success
+finalized (MAX confirmations)
+Signer
+6EssiA1oHwrhtFAGobtSyWrh9foJVfmaXDbioihAdmh3
+Transaction Actions
+6 Transfer(s)
+Legacy Mode
+Summary Mode
+Key Actions
+
+Token Account
+
+Tx Maps
+Swap
+49,400.39326
+placeholder
+MMGA
+for
+0.150115352
+$12.59
+image
+WSOL
+on
+image
+Pump.fun AMM
+Transfer from
+6EssiA...hAdmh3
+to
+image
+Pump.fun AMM (MMGA-WSOL) Market
+for
+49,400.39326
+placeholder
+MMGA
+Transfer from
+image
+Pump.fun AMM (MMGA-WSOL) Market
+to
+6EssiA...hAdmh3
+for
+0.150115352
+$12.59
+image
+WSOL
+Transfer from
+image
+Pump.fun AMM (MMGA-WSOL) Market
+to
+image
+Pump.fun AMM: Protocol Fee 7
+for
+0.000075893
+$0.006366
+image
+WSOL
+Transfer from
+image
+Pump.fun AMM (MMGA-WSOL) Market
+to
+image
+4XTonc...kzYusi
+for
+0.001290173
+$0.1082
+image
+WSOL
+Sponsored
+
+Fee
+0.000011 SOL ($0.0009221)
+Priority Fee
+0.000006 SOL ($0.0005029)
+Compute Units Consumed
+109,461
+Transaction Version
+legacy
+Recent Block Hash
+
+HMfkZP2Zkyax8v5eheUrUsHjEB7mwxgRck9GjHFrfr8L
+Personal Label
+Sign in to add personal label
+Instruction Details
+List 
+Tree 
+
+
+Compute Units Distribution
+Total:
+109,461
+Instruction #1:
+150
+Instruction #2:
+150
+Instruction #3:
+20,600
+Instruction #4:
+85,646
+Instruction #5:
+2,915
+
+#1 - Compute Budget: SetComputeUnitPrice
+Raw
+
+
+#2 - Compute Budget: SetComputeUnitLimit
+Raw
+
+
+#3 - Associated Token Program: createIdempotent
+Raw
+
+
+#4 - Pump.fun AMM: sell
+
+Raw
+
+
+#5 - Token Program: closeAccount
+Raw
+
+
+Program Logs
+Hide details
+View Raw Data
+
+#1 Compute Budget instruction
+> Program returned success
+#2 Compute Budget instruction
+> Program returned success
+#3 Associated Token Program instruction
+> Program log: CreateIdempotent
+> Invoking
+image
+Token Program
+  > Program log: Instruction: GetAccountDataSize
+  > Program consumed: 1569 of 192849 compute units
+  > Program return: TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA pQAAAAAAAAA=
+  > Program returned success
+> Invoking
+image
+System Program
+  > Program returned success
+> Program log: Initialize the associated token account
+> Invoking
+image
+Token Program
+  > Program log: Instruction: InitializeImmutableOwner
+  > Program log: Please upgrade to SPL Token 2022 for immutable owner support
+  > Program consumed: 1405 of 186370 compute units
+  > Program returned success
+> Invoking
+image
+Token Program
+  > Program log: Instruction: InitializeAccount3
+  > Program consumed: 3158 of 182541 compute units
+  > Program returned success
+> Program consumed: 20600 of 199700 compute units
+> Program returned success
+#4 Pump.fun AMM instruction
+> Program log: Instruction: Sell
+> Invoking
+Pump Fees Program
+  > Program log: Instruction: GetFees
+  > Program consumed: 4630 of 143374 compute units
+  > Program return: pfeeUxB6jkeY1Hxd7CsFCAjcbHA9rWtchMGdZ6VojVZ FAAAAAAAAAAFAAAAAAAAAFUAAAAAAAAA
+  > Program returned success
+> Invoking
+image
+Token 2022 Program
+  > Program log: Instruction: TransferChecked
+  > Program consumed: 2475 of 134742 compute units
+  > Program returned success
+> Invoking
+image
+Token Program
+  > Program log: Instruction: TransferChecked
+  > Program consumed: 6238 of 129446 compute units
+  > Program returned success
+> Invoking
+image
+Token Program
+  > Program log: Instruction: TransferChecked
+  > Program consumed: 6238 of 120372 compute units
+  > Program returned success
+> Invoking
+image
+Token Program
+  > Program log: Instruction: TransferChecked
+  > Program consumed: 6238 of 109683 compute units
+  > Program returned success
+> Program data: Pi83CqUD3CrWbuNpAAAAACwufoALAAAAAQAAAAAAAABK98OVhQMAAAAAAAAAAAAAdee6pi1HAAANOK8FOAAAABwODAkAAAAAFAAAAAAAAADSoQQAAAAAAAUAAAAAAAAAdSgBAAAAAABKbAcJAAAAABiU8ggAAAAAW5Wkg0nc1M3VtydXWTpeNOvZV0yEEwwHoQNgxMaJ6hhN2IJHxDBpXRR5wLKwKM0PIA9edjx8cv2aXhZjlAofsoRVckWdywBdb9C0RrGfKZgO65tqCdo8+o/LButIkTHE6V/JJzipNqUW5px8fQH1dR77UTe6VImZhe7kBU6+9KNKwvjQ3Vy8l+MonBl8tQYqVPPZVrnOblEV+WVnqlyz5nfZFZVfiIBzHOtKdaDMlsF0+kCVxOHZlnrPxChFrmeu7AErhFAj55bmBnS6ASdzY49yNFi/SXfAT4YF/85UDehVAAAAAAAAAL2vEwAAAAAAAAAAAAAAAAAAAAAAAAAAAA==
+> Invoking
+image
+Pump.fun AMM
+  > Program consumed: 2048 of 96818 compute units
+  > Program returned success
+> Program consumed: 85646 of 179100 compute units
+> Program returned success
+#5 Token Program instruction
+> Program log: Instruction: CloseAccount
+> Program consumed: 2915 of 93454 compute units
+> Program returned success

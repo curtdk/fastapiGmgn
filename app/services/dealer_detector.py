@@ -34,11 +34,13 @@ _redis: Optional[aioredis.Redis] = None
 _dealer_check_queue: Optional[asyncio.Queue] = None
 _dealer_semaphore: Optional[asyncio.Semaphore] = None
 _dealer_consumer_task: Optional[asyncio.Task] = None
+_retry_queue: Optional[asyncio.Queue] = None
+_retry_consumer_task: Optional[asyncio.Task] = None
 
 
 async def init_dealer_detector():
     """初始化：Redis 连接 + 队列 + 信号量"""
-    global _redis, _dealer_check_queue, _dealer_semaphore
+    global _redis, _dealer_check_queue, _dealer_semaphore, _retry_queue
 
     _redis = aioredis.from_url(REDIS_URL, decode_responses=True)
     await _redis.ping()
@@ -46,6 +48,7 @@ async def init_dealer_detector():
 
     _dealer_check_queue = asyncio.Queue()
     _dealer_semaphore = asyncio.Semaphore(1)
+    _retry_queue = asyncio.Queue()
     logger.info("[庄家判定] 队列已就绪，等待首次触发")
 
 
@@ -55,18 +58,28 @@ def start_dealer_consumer():
     if _dealer_consumer_task is None or _dealer_consumer_task.done():
         _dealer_consumer_task = asyncio.create_task(_dealer_queue_consumer())
         logger.info("[庄家判定] 检测队列消费者已启动")
+    
+    start_retry_consumer()
 
 
 async def close_dealer_detector():
     """关闭：停止消费者任务，关闭 Redis 连接"""
-    global _dealer_consumer_task, _redis
+    global _dealer_consumer_task, _retry_consumer_task, _redis
 
     if _dealer_consumer_task and not _dealer_consumer_task.done():
-        await _dealer_check_queue.put(None)  # 毒丸信号
+        await _dealer_check_queue.put(None)
         try:
             await asyncio.wait_for(_dealer_consumer_task, timeout=3.0)
         except asyncio.TimeoutError:
             _dealer_consumer_task.cancel()
+    
+    if _retry_consumer_task and not _retry_consumer_task.done():
+        await _retry_queue.put(None)
+        try:
+            await asyncio.wait_for(_retry_consumer_task, timeout=3.0)
+        except asyncio.TimeoutError:
+            _retry_consumer_task.cancel()
+    
     if _redis:
         await _redis.aclose()
     logger.info("[庄家判定] 已关闭")
@@ -97,6 +110,69 @@ async def _dealer_queue_consumer():
 
 
 # ──────────────────────────────────────────────────────────
+# 重试队列处理
+# ──────────────────────────────────────────────────────────
+
+async def _handle_detection_failed(redis, address, mint, sig, current_count, reason):
+    """处理检测失败：入重试队列或放弃"""
+    retry_key = f"retry:{address}:{mint}"
+    new_count = current_count + 1
+    
+    if new_count >= 3:
+        # 重试 3 次都失败，放弃
+        logger.warning(f"[庄家判定] {address[:8]}... 重试 {new_count} 次失败 ({reason})，放弃")
+        
+        # 广播给前端
+        await ws_manager.broadcast(mint, {
+            "type": "user_status",
+            "data": {
+                "address": address,
+                "status": "unknown",
+                "reason": "detection_failed",
+                "sig": sig,
+            }
+        })
+        
+        # 清理重试计数
+        await redis.delete(retry_key)
+    else:
+        # 入重试队列，等待 2s/4s/8s 后再试
+        await redis.set(retry_key, str(new_count))
+        wait_time = 2 ** new_count
+        logger.info(f"[庄家判定] {address[:8]}... 第 {new_count} 次失败，{wait_time}s 后重试")
+        await _retry_queue.put((address, mint, sig, wait_time))
+
+
+async def _retry_queue_consumer():
+    """重试队列消费者：只有 dealer_check_queue 为空时才处理"""
+    logger.info("[重试] 消费者运行中")
+    
+    while True:
+        item = await _retry_queue.get()
+        if item is None:
+            break
+        
+        address, mint, sig, wait_time = item
+        
+        await asyncio.sleep(wait_time)
+        
+        if not _dealer_check_queue.empty():
+            logger.debug(f"[重试] 主队列非空，{address[:8]}... 放回队列等待")
+            await _retry_queue.put((address, mint, sig, wait_time))
+            continue
+        
+        await _run_dealer_check(address, mint, sig)
+
+
+def start_retry_consumer():
+    """启动重试消费者"""
+    global _retry_consumer_task
+    if _retry_consumer_task is None or _retry_consumer_task.done():
+        _retry_consumer_task = asyncio.create_task(_retry_queue_consumer())
+        logger.info("[重试] 消费者已启动")
+
+
+# ──────────────────────────────────────────────────────────
 # 庄家判定核心
 # ──────────────────────────────────────────────────────────
 
@@ -108,21 +184,25 @@ async def _run_dealer_check(address: str, mint: str, sig: str):
     """
     from app.services.trade_processor import get_trader_state, save_trader_state, exclude_dealer, _get_redis as tp_get_redis
 
+    redis = await tp_get_redis()
+    retry_key = f"retry:{address}:{mint}"
+    retry_count = await redis.get(retry_key)
+    retry_count = int(retry_count) if retry_count else 0
+    
     try:
-        redis = await tp_get_redis()
         state = await get_trader_state(redis, mint, address)
         conditions = state.get("conditions", [])
 
         # 获取 Helius API Key
         api_key = await _get_helius_api_key()
         if not api_key:
-            logger.warning("[庄家判定] 未配置 Helius API Key，跳过判定")
+            await _handle_detection_failed(redis, address, mint, sig, retry_count, "API Key 未配置")
             return
 
         # 获取钱包最旧一笔交易（sortOrder asc, limit 1）
         first_tx = await _fetch_first_transaction(address, api_key)
         if not first_tx:
-            logger.debug(f"[庄家判定] {address[:8]}... 无历史交易")
+            await _handle_detection_failed(redis, address, mint, sig, retry_count, "无历史交易")
             return
 
         # ── 条件 C001：首笔交易包含 closeAccount 且交易后 SOL 余额为 0 ──
@@ -175,6 +255,7 @@ async def _run_dealer_check(address: str, mint: str, sig: str):
 
     except Exception as e:
         logger.error(f"[庄家判定] {address[:8]}... 判定异常: {e}", exc_info=True)
+        await _handle_detection_failed(redis, address, mint, sig, retry_count, str(e))
     finally:
         if _dealer_semaphore:
             _dealer_semaphore.release()
