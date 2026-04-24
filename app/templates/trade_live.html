@@ -68,16 +68,15 @@
     <div class="trade-table-wrap">
       <div class="table-scroll">
         <table class="table table-sm table-hover">
-          <thead>
-            <tr>
-              <th>类型</th>
-              <th>钱包</th>
-              <th>数量</th>
-              <th>SOL</th>
-              <th>净流入</th>
-              <th>标记</th>
-            </tr>
-          </thead>
+            <thead>
+              <tr>
+                <th>类型</th>
+                <th>钱包</th>
+                <th>数量</th>
+                <th>SOL</th>
+                <th>标记</th>
+              </tr>
+            </thead>
           <tbody id="tradeBody">
           </tbody>
         </table>
@@ -117,7 +116,6 @@ function addTradeRow(data, isNew) {
     <td><span class="badge ${data.transaction_type === 'SWAP' ? 'bg-primary' : 'bg-secondary'}">${data.transaction_type || '-'}</span></td>
     <td title="${data.from_address || ''}">${shortAddr(data.from_address)}</td>
     <td>${fmtNum(data.amount, 2)}</td>
-    <td>${fmtNum(netFlow, 4)}</td>
     <td class="${netClass}" style="font-weight:600">${fmtNum(netFlow, 4)}</td>
     <td>${data.wallet_tag ? '<span class="wallet-tag">' + data.wallet_tag + '</span>' : '-'}</td>
   `;
@@ -308,9 +306,9 @@ function handleUserStatus(data) {
         newTag.style.background = '#d3f9d8';
         newTag.style.color = '#2f9e44';
         const cells = row.cells;
-        if (cells[5]) {
-          cells[5].innerHTML = '';
-          cells[5].appendChild(newTag);
+        if (cells[4]) {
+          cells[4].innerHTML = '';
+          cells[4].appendChild(newTag);
         }
       }
       console.log('[用户状态] 已标记散户: ' + sig.slice(0, 8));
@@ -323,9 +321,9 @@ function handleUserStatus(data) {
         newTag.className = 'wallet-tag failed';
         newTag.textContent = 'unknown(检测失败)';
         const cells = row.cells;
-        if (cells[5]) {
-          cells[5].innerHTML = '';
-          cells[5].appendChild(newTag);
+        if (cells[4]) {
+          cells[4].innerHTML = '';
+          cells[4].appendChild(newTag);
         }
       }
       console.log('[用户状态] 已标记检测失败: ' + sig.slice(0, 8));
