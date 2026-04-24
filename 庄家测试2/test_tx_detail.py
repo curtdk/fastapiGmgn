@@ -152,6 +152,10 @@ def extract_dealer_hints(meta: Dict[str, Any], message: Dict[str, Any]) -> Dict[
         "has_writable_signer": False, "program_ids": [], "is_simple_transfer": False,
         "uses_lookup_table": False, "has_known_bot_program": False,
         "known_bot_programs": [], "is_dex_swap": False, "dex_type": "",
+        # 新增：innerInstructions 相关
+        "inner_instructions": [],  # 包含的所有内置命令列表
+        "inner_programs": [],     # 涉及的所有程序 ID
+        "total_instruction_count": 0,  # 总命令数（主指令 + 内部指令）
     }
     
     account_keys = message.get("accountKeys", [])
@@ -180,16 +184,35 @@ def extract_dealer_hints(meta: Dict[str, Any], message: Dict[str, Any]) -> Dict[
     instructions = message.get("instructions", [])
     result["instructions_count"] = len(instructions)
     
+    # 主指令
     for ix in instructions:
         program_id = ix.get("programId", "")
         if program_id and program_id not in result["program_ids"]:
             result["program_ids"].append(program_id)
     
+    # 内部指令 (innerInstructions)
+    inner_instr_count = 0
     for ix_group in meta.get("innerInstructions", []):
         for ix in ix_group.get("instructions", []):
+            inner_instr_count += 1
             program_id = ix.get("programId", "")
+            
+            # 记录程序 ID
+            if program_id and program_id not in result["inner_programs"]:
+                result["inner_programs"].append(program_id)
+            
+            # 提取指令类型 (parsed type)
+            ix_type = ix.get("parsed", {}).get("type", "")
+            if ix_type:
+                result["inner_instructions"].append(ix_type)
+            else:
+                # 如果没有 parsed，尝试从 data 解码
+                result["inner_instructions"].append(f"raw:{program_id[:10]}...")
+            
             if program_id and program_id not in result["program_ids"]:
                 result["program_ids"].append(program_id)
+    
+    result["total_instruction_count"] = result["instructions_count"] + inner_instr_count
     
     for pid in result["program_ids"]:
         for dex_name, dex_pids in DEX_PROGRAMS.items():
@@ -445,6 +468,21 @@ def parse_and_display_transaction(tx_entry: Dict[str, Any], is_raw: bool = False
     print(f"   Priority:  {compute_info['priority_fee']:.9f} SOL")
     print(f"   CU:        {compute_info['cu_consumed']:,} / {compute_info['cu_limit']:,}")
     print(f"   DEX:       {dex or 'N/A'}")
+    
+    # 指令统计
+    print(f"\n   📋 指令统计:")
+    print(f"     主指令数:    {dealer_hints['instructions_count']}")
+    print(f"     内部指令数:   {len(dealer_hints['inner_instructions'])}")
+    print(f"     总指令数:     {dealer_hints['total_instruction_count']}")
+    
+    if dealer_hints['inner_instructions']:
+        print(f"\n     🔧 内部命令列表:")
+        # 去重并计数
+        from collections import Counter
+        ix_counts = Counter(dealer_hints['inner_instructions'])
+        for ix_type, count in ix_counts.most_common(5):
+            print(f"       - {ix_type}: {count}次")
+    
     print(f"\n   风险评估:  {dealer_analysis['verdict']} ({dealer_analysis['score']}/100)")
     
     if dealer_analysis['indicators']:
