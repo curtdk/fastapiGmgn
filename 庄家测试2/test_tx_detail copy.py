@@ -21,11 +21,10 @@ import httpx
 HELIUS_RPC_URL = "https://mainnet.helius-rpc.com"
 API_KEY = "f43f1a35-863c-4c55-9a13-d00092f0ff2d"
 
-# 默认测试 Mint
+# 默认测试钱包地址
+DEFAULT_WALLET = "8u43z8r32qzt87F5PntBs2tCFjnWNmNqFPv4z3XZuX"
 DEFAULT_MINT = "2H5kunvkCnuqkEYZnKAnDbtoZCuDqqJ7RU9Zrf3fR99gj1ekY1v3Yna9orcjg846V9piinXmnNbcPPzrtCnkxZuN"
 
-# 默认交易签名
-DEFAULT_SIG = "2H5kunvkCnuqkEYZnKAnDbtoZCuDqqJ7RU9Zrf3fR99gj1ekY1v3Yna9orcjg846V9piinXmnNbcPPzrtCnkxZuN"
 
 
 def extract_mints_from_transaction(tx_raw: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -750,27 +749,75 @@ def check_dealer_c001(tx_data: dict, address: str) -> bool:
 
 
 async def main():
-    """主函数 - 仅支持签名模式"""
+    """主函数"""
     import sys
     
-    # 使用 DEFAULT_SIG 作为默认
-    sig = DEFAULT_SIG
-    
     if len(sys.argv) >= 2:
-        sig = sys.argv[1]
-    
-    # 签名模式
-    print(f"\n📌 使用签名模式: {sig[:30]}...")
-    print("\n" + "=" * 60)
-    print(" 🔍 通过 getTransaction 获取交易详情")
-    print("=" * 60)
-    
-    tx = await get_transaction_by_sig(sig)
-    if tx:
-        print()
-        parse_and_display_transaction(tx, is_raw=True)
+        arg = sys.argv[1]
     else:
-        print("❌ 获取交易失败")
+        arg = DEFAULT_WALLET
+    
+    if arg and len(arg) > 5:
+        # 判断是签名还是钱包地址 (签名通常 > 50 字符)
+        if len(arg) > 50:
+            # 签名模式
+            sig = arg
+            print(f"\n📌 使用签名模式: {sig[:30]}...")
+            print("\n" + "=" * 60)
+            print(" 🔍 通过 getTransaction 获取交易详情")
+            print("=" * 60)
+            
+            tx = await get_transaction_by_sig(sig)
+            if tx:
+                print()
+                parse_and_display_transaction(tx, is_raw=True)
+            else:
+                print("❌ 获取交易失败")
+        else:
+            # 钱包地址模式
+            wallet = arg
+            print(f"\n📌 使用钱包地址: {wallet}")
+            print("\n" + "=" * 60)
+            print(" 📋 通过 getTransactionsForAddress 获取交易列表")
+            print("=" * 60)
+            
+            txs = await get_transactions_for_address(wallet, limit=5)
+            if txs:
+                print(f"\n✅ 成功获取 {len(txs)} 条交易\n")
+                for i, tx_entry in enumerate(txs):
+                    print(f"{'='*60}")
+                    print(f" 📝 交易 #{i+1}")
+                    print(f"{'='*60}")
+                    parse_and_display_transaction(tx_entry, is_raw=False)
+                    print()
+            else:
+                print("❌ 获取交易失败或无交易")
+    else:
+        # 默认使用钱包地址模式
+        wallet = DEFAULT_WALLET
+        print(f"\n📌 使用默认钱包地址: {wallet}")
+        print("\n" + "=" * 60)
+        print(" 📋 通过 getTransactionsForAddress 获取交易列表")
+        print("=" * 60)
+        
+        txs = await get_transactions_for_address(wallet, limit=5)
+        if txs:
+            print(f"\n✅ 成功获取 {len(txs)} 条交易\n")
+            for i, tx_entry in enumerate(txs):
+                print(f"{'='*60}")
+                print(f" 📝 交易 #{i+1}")
+                print(f"{'='*60}")
+                parse_and_display_transaction(tx_entry, is_raw=False)
+                print()
+        else:
+            print("❌ 获取交易失败或无交易")
+    
+    print(f"\n💡 使用说明:")
+    print(f"   # 签名模式 (长字符串):")
+    print(f"   python test_tx_detail.py <交易签名>")
+    print(f"\n   # 钱包地址模式 (短字符串):")
+    print(f"   python test_tx_detail.py <钱包地址>")
+    print(f"   python test_tx_detail.py  # 使用默认钱包")
 
 
 if __name__ == "__main__":
