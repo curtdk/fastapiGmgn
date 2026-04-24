@@ -156,6 +156,9 @@ def extract_dealer_hints(meta: Dict[str, Any], message: Dict[str, Any]) -> Dict[
         "inner_instructions": [],  # 包含的所有内置命令列表
         "inner_programs": [],     # 涉及的所有程序 ID
         "total_instruction_count": 0,  # 总命令数（主指令 + 内部指令）
+        # 新增：完整指令信息
+        "main_instructions": [],     # 主指令详细信息 [{program_id, type, data, index}]
+        "inner_instructions_detail": [],  # 内部指令详细信息
     }
     
     account_keys = message.get("accountKeys", [])
@@ -184,30 +187,56 @@ def extract_dealer_hints(meta: Dict[str, Any], message: Dict[str, Any]) -> Dict[
     instructions = message.get("instructions", [])
     result["instructions_count"] = len(instructions)
     
-    # 主指令
-    for ix in instructions:
+    # 主指令 - 收集完整信息
+    for idx, ix in enumerate(instructions):
         program_id = ix.get("programId", "")
+        ix_type = ix.get("parsed", {}).get("type", "") or ix.get("instructionType", "")
+        
+        # 如果类型为空，尝试解码
+        if not ix_type:
+            ix_type = decode_instruction_type(program_id, ix.get("data", ""))
+        
+        ix_info = {
+            "index": idx,
+            "program_id": program_id,
+            "type": ix_type,
+            "data": ix.get("data", "")[:20] + "..." if ix.get("data", "") else "",
+        }
+        result["main_instructions"].append(ix_info)
+        
         if program_id and program_id not in result["program_ids"]:
             result["program_ids"].append(program_id)
     
-    # 内部指令 (innerInstructions)
+    # 内部指令 (innerInstructions) - 收集完整信息
     inner_instr_count = 0
     for ix_group in meta.get("innerInstructions", []):
-        for ix in ix_group.get("instructions", []):
+        group_index = ix_group.get("index", 0)
+        for idx, ix in enumerate(ix_group.get("instructions", [])):
             inner_instr_count += 1
             program_id = ix.get("programId", "")
+            
+            # 提取指令类型
+            ix_type = ix.get("parsed", {}).get("type", "") or ix.get("instructionType", "")
+            
+            # 如果类型为空，尝试解码
+            if not ix_type:
+                ix_type = decode_instruction_type(program_id, ix.get("data", ""))
+            
+            ix_info = {
+                "index": idx,
+                "group_index": group_index,
+                "program_id": program_id,
+                "type": ix_type,
+                "data": ix.get("data", "")[:20] + "..." if ix.get("data", "") else "",
+            }
+            result["inner_instructions_detail"].append(ix_info)
             
             # 记录程序 ID
             if program_id and program_id not in result["inner_programs"]:
                 result["inner_programs"].append(program_id)
             
-            # 提取指令类型 (parsed type)
-            ix_type = ix.get("parsed", {}).get("type", "")
-            if ix_type:
-                result["inner_instructions"].append(ix_type)
-            else:
-                # 如果没有 parsed，尝试从 data 解码
-                result["inner_instructions"].append(f"raw:{program_id[:10]}...")
+            # 简化命令名称（用于统计）
+            result["inner_instructions"].append(ix_type)
             
             if program_id and program_id not in result["program_ids"]:
                 result["program_ids"].append(program_id)
@@ -279,6 +308,155 @@ def analyze_dealer_indicators(result: Dict[str, Any], priority_fee: float) -> Di
         verdict = "✅ 低风险 - 普通用户交易"
     
     return {"score": min(score, 100), "indicators": indicators, "verdict": verdict}
+
+
+# ==================== ComputeBudget 指令类型映射 ====================
+
+COMPUTE_BUDGET_TYPES = {
+    0: "RequestUnitsDeprecated",
+    1: "RequestHeapFrame", 
+    2: "SetComputeUnitLimit",
+    3: "SetComputeUnitPrice",
+}
+
+SYSTEM_TYPES = {
+    0: "createAccount",
+    1: "assign",
+    2: "transfer",
+    3: "createAccountWithSeed",
+    4: "delegate",
+    5: "split",
+    7: "merge",
+    8: "setAuthority",
+    9: "removeAuthority",
+    10: "initializeNonce",
+    11: "advanceNonce",
+    12: "withdrawNonce",
+    13: "authorizeNonce",
+    18: "allocate",
+    19: "assignWithSeed",
+    20: "transferWithSeed",
+}
+
+# Pump.fun 指令类型 - 根据实际交易解码
+PUMP_TYPES = {
+    0: "initialize",
+    1: "create",
+    2: "buy",
+    3: "sell",
+    4: "sellDirect",
+    5: "buyDirect",
+    # 常见指令编号 (基于实际交易)
+    51: "sell",      # 实际 sell 交易中出现的编号
+    228: "sell",     # 内部指令中的 sell
+    1: "create",
+    2: "buy",
+    18: "update",
+}
+
+# Pump Fees Program 指令类型
+PUMP_FEE_TYPES = {
+    0: "getFees",
+    1: "setFees",
+    2: "withdrawFees",
+    3: "updateConfig",
+    231: "getFees",  # 实际交易中出现的编号
+}
+
+# Token 2022 指令类型
+TOKEN_2022_TYPES = {
+    0: "initializeAccount",
+    1: "initializeMint",
+    2: "initializeAccount2",
+    3: "initializeMultisig",
+    4: "transfer",
+    5: "approve",
+    6: "revoke",
+    7: "setAuthority",
+    8: "mintTo",
+    9: "burn",
+    10: "closeAccount",
+    11: "freezeAccount",
+    12: "thawAccount",
+    13: "transferChecked",
+    14: "approveChecked",
+    15: "mintToChecked",
+    16: "burnChecked",
+    17: "initializeAccount3",
+    18: "initializeMultisig2",
+    19: "initializeAccount2Extension",
+    20: "initializeImmutableOwner",
+    21: "initializeExtension",
+    22: "amountToUiAmount",
+    23: "increaseNonce",
+    24: "deactivateNonce",
+    25: "activateNonce",
+}
+
+# Associated Token Account Program 指令类型
+ATA_TYPES = {
+    0: "create",
+    1: "createIdempotent",
+    2: "resolve",
+}
+
+# Jupiter AMM Program 指令类型
+JUPITER_TYPES = {
+    0: "swap",
+    1: "createState",
+    2: "executeState",
+    3: "withdraw",
+    4: "closePosition",
+    5: "removeLiquidity",
+    # 实际交易中出现的编号 - 保持原始编号显示以便区分
+    51: "ammSwap",       # 主指令 - AMM Swap
+    228: "ammCallback",  # 内部指令 - AMM Callback
+}
+
+def decode_instruction_type(program_id: str, data: str) -> str:
+    """尝试解码指令类型"""
+    if not data:
+        return "unknown"
+    
+    try:
+        decoded = base58.b58decode(data)
+        if not decoded:
+            return "unknown"
+        
+        ix_type = decoded[0]
+        
+        # ComputeBudget Program
+        if program_id == "ComputeBudget111111111111111111111111111111":
+            return COMPUTE_BUDGET_TYPES.get(ix_type, f"type_{ix_type}")
+        
+        # System Program
+        elif program_id == "11111111111111111111111111111111":
+            return SYSTEM_TYPES.get(ix_type, f"system_type_{ix_type}")
+        
+        # Pump.fun
+        elif program_id == "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P":
+            return PUMP_TYPES.get(ix_type, f"pump_type_{ix_type}")
+        
+        # Pump Fees Program
+        elif program_id == "pfeeUxB6jkeY1Hxd7CsFCAjcbHA9rWtchMGdZ6VojVZ":
+            return PUMP_FEE_TYPES.get(ix_type, f"pumpfee_type_{ix_type}")
+        
+        # Token 2022 Program
+        elif program_id == "TokenzQdBNLBzWwDoV5vFRuByTLgTZ4N3RYrnMbx2EtJ2y":
+            return TOKEN_2022_TYPES.get(ix_type, f"token2022_type_{ix_type}")
+        
+        # Associated Token Account Program
+        elif program_id == "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLnJAk7e":
+            return ATA_TYPES.get(ix_type, f"ata_type_{ix_type}")
+        
+        # Jupiter AMM Program (pAMMBay6oc...)
+        elif "pAMMBay" in program_id:
+            return JUPITER_TYPES.get(ix_type, f"jupiter_type_{ix_type}")
+    
+    except Exception:
+        pass
+    
+    return "unknown"
 
 
 # ==================== API 函数 ====================
@@ -395,28 +573,29 @@ def parse_and_display_transaction(tx_entry: Dict[str, Any], is_raw: bool = False
     if len(pre_balances) > signer_idx and len(post_balances) > signer_idx:
         sol_spent = (pre_balances[signer_idx] - post_balances[signer_idx] - fee_lamports) / 1e9
     
-    # Token 变化 - 检查 signer 的 token 余额变化
+    # 获取涉及的主要 mint（用于显示）- 基于 signer 的最大余额变化
+    mints_info = extract_mints_from_transaction({"meta": meta})
+    selected_mint = mints_info[0]["mint"] if mints_info else ""
+    
+    # Token 变化 - 按 mint 和 signer 过滤
     pre_amt = 0.0
     post_amt = 0.0
     
-    # 找到 signer 的 pre 和 post token 余额
+    # 从 preTokenBalances 中找 signer 在 selected_mint 上的余额
     for b in meta.get("preTokenBalances", []):
-        if b.get("owner") == signer:
+        if b.get("owner") == signer and b.get("mint") == selected_mint:
             pre_amt = b.get("uiTokenAmount", {}).get("uiAmount", 0) or 0.0
             break
     
+    # 从 postTokenBalances 中找 signer 在 selected_mint 上的余额
     for b in meta.get("postTokenBalances", []):
-        if b.get("owner") == signer:
+        if b.get("owner") == signer and b.get("mint") == selected_mint:
             post_amt = b.get("uiTokenAmount", {}).get("uiAmount", 0) or 0.0
             break
     
     # 计算 delta（post - pre）
     delta = post_amt - pre_amt
     amount = abs(delta)
-    
-    # 获取涉及的主要 mint（用于显示）
-    mints_info = extract_mints_from_transaction({"meta": meta})
-    selected_mint = mints_info[0]["mint"] if mints_info else ""
     
     # 判断交易类型
     # - token 增加（delta > 0）且 SOL 减少 → BUY（花钱买币）
@@ -475,13 +654,27 @@ def parse_and_display_transaction(tx_entry: Dict[str, Any], is_raw: bool = False
     print(f"     内部指令数:   {len(dealer_hints['inner_instructions'])}")
     print(f"     总指令数:     {dealer_hints['total_instruction_count']}")
     
-    if dealer_hints['inner_instructions']:
-        print(f"\n     🔧 内部命令列表:")
-        # 去重并计数
+    # 显示主指令详细信息
+    if dealer_hints['main_instructions']:
+        print(f"\n   📝 主指令列表:")
+        for ix in dealer_hints['main_instructions']:
+            pid_short = ix['program_id'][:10] + "..." if len(ix['program_id']) > 10 else ix['program_id']
+            ix_type = ix['type'] or 'unknown'
+            print(f"     [{ix['index']}] {ix_type} @ {pid_short}")
+    
+    # 显示内部指令详细信息
+    if dealer_hints['inner_instructions_detail']:
+        print(f"\n   🔧 内部指令列表:")
         from collections import Counter
-        ix_counts = Counter(dealer_hints['inner_instructions'])
+        ix_counts = Counter([ix['type'] for ix in dealer_hints['inner_instructions_detail']])
         for ix_type, count in ix_counts.most_common(5):
-            print(f"       - {ix_type}: {count}次")
+            print(f"     - {ix_type}: {count}次")
+        
+        # 详细列表
+        print(f"\n     详细列表:")
+        for ix in dealer_hints['inner_instructions_detail'][:10]:
+            pid_short = ix['program_id'][:10] + "..." if len(ix['program_id']) > 10 else ix['program_id']
+            print(f"     [{ix['group_index']}.{ix['index']}] {ix['type']} @ {pid_short}")
     
     print(f"\n   风险评估:  {dealer_analysis['verdict']} ({dealer_analysis['score']}/100)")
     
@@ -556,10 +749,13 @@ def check_dealer_c001(tx_data: dict, address: str) -> bool:
 async def main():
     """主函数"""
     import sys
-    arg = '44HpE6Y21DstMSvuz8DLQaJNwUATa7anifWrBnKYVTWqJ37soLr98Z6udSkLoSkakv8DNL11PGge9E4wCtS7t9au'
-    if True:
-        # arg = sys.argv[1]
-        
+    
+    if len(sys.argv) >= 2:
+        arg = sys.argv[1]
+    else:
+        arg = DEFAULT_WALLET
+    
+    if arg and len(arg) > 5:
         # 判断是签名还是钱包地址 (签名通常 > 50 字符)
         if len(arg) > 50:
             # 签名模式
