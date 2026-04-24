@@ -26,6 +26,23 @@ def migrate_transactions_table():
             new_columns = [
                 ("sol_spent", "FLOAT"),
                 ("fee", "FLOAT"),
+                ("jito_tip", "FLOAT"),
+                ("priority_fee", "FLOAT"),
+                ("cu_consumed", "INTEGER"),
+                ("cu_limit", "INTEGER"),
+                ("cu_price", "INTEGER"),
+                ("instructions_count", "INTEGER"),
+                ("inner_instructions_count", "INTEGER"),
+                ("total_instruction_count", "INTEGER"),
+                ("account_keys_count", "INTEGER"),
+                ("uses_lookup_table", "BOOLEAN"),
+                ("signers_count", "INTEGER"),
+                ("main_instructions", "TEXT"),
+                ("inner_instructions", "TEXT"),
+                ("program_ids", "TEXT"),
+                ("risk_score", "INTEGER"),
+                ("risk_verdict", "TEXT"),
+                ("risk_indicators", "TEXT"),
             ]
 
             for col_name, col_type in new_columns:

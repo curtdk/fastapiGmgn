@@ -1,5 +1,6 @@
 """实时交易流服务 - Helius WebSocket 订阅 + 实时推送"""
 import asyncio
+import base58
 import json
 import logging
 import os
@@ -118,23 +119,7 @@ class TradeStream:
                 await asyncio.sleep(3)
 
     async def _handle_message(self, msg: str):
-        """处理收到的 WebSocket 消息
-
-        实际消息格式:
-        {
-          "jsonrpc": "2.0",
-          "method": "transactionNotification",
-          "params": {
-            "subscription": 8811454,
-            "result": {
-              "slot": 413098808,
-              "signature": "jzbUx...",
-              "transaction": { "transaction": { "signatures": [...], "message": {...} } },
-              "meta": { "preBalances": [...], "postBalances": [...], ... }
-            }
-          }
-        }
-        """
+        """处理收到的 WebSocket 消息"""
         try:
             data = json.loads(msg)
 
@@ -144,27 +129,24 @@ class TradeStream:
             if data.get("method") == "subscriptionNotification":
                 return
 
-            # 解析交易数据 — Helius WS 实际格式
+            # 解析交易数据
             params = data.get("params", {})
             result = params.get("result", {})
             if not result:
                 return
 
-            # 提取 signature
             sig = result.get("signature", "")
             if not sig:
                 return
 
-            # 提前检查 meta.err，有错误的 sig 直接跳过
-            transaction=result.get("transaction", {})
+            transaction = result.get("transaction", {})
             meta = transaction.get("meta", {})
 
-            # meta = result.get("meta", {})
             if meta.get("err"):
-                logger.debug(f"[实时流] 跳过错误 sig: {sig[:8]}... err={meta['err']}")
+                logger.debug(f"[实时流] 跳过错误 sig: {sig[:8]}...")
                 return
 
-            # 构建 tx_data 结构，与 _extract_trade_info 期望的格式一致
+            # 构建 tx_data 结构
             tx_data = {
                 "_signature": sig,
                 "slot": result.get("slot", 0),
@@ -179,7 +161,6 @@ class TradeStream:
 
             # 入库（去重）
             sig = tx_detail.get("sig", "")
-            existing = None
             from app.utils.database import SessionLocal
             db = SessionLocal()
             try:
@@ -189,14 +170,11 @@ class TradeStream:
                     db.add(tx_record)
                     db.commit()
 
-                    # 记录第一条 WS 交易作为 sync_point
                     if self.sync_point is None:
                         self.sync_point = sig
                         logger.info(f"[实时流] sync_point 已设置: {sig}")
 
                     db.close()
-
-                    # 入队，由消费者统一处理（get_trader_state 会在 _calculate_index 中触发庄家检测）
                     await enqueue_trade(tx_detail)
             except Exception as e:
                 logger.warning(f"[实时流] 入库失败: {e}")
@@ -207,7 +185,7 @@ class TradeStream:
         except Exception as e:
             logger.error(f"[实时流] 消息处理失败: {e}", exc_info=True)
 
-    # ===== 已知 Jito 小费地址（用于从 sol_spent 中扣除） =====
+    # ===== 已知 Jito 小费地址 =====
     KNOWN_JITO_TIP_ACCOUNTS = {
         "96gYZGLnJYVFmbjzopPSU6QiEV5fGqZNyN9nmNhvrZU5",
         "HFqU5x63VTqvQss8hp11i4wT8PQ69LBAatPfitZfFWhS",
@@ -234,12 +212,11 @@ class TradeStream:
         return key_entry if isinstance(key_entry, str) else ""
 
     def _detect_jito_tip(self, inner_instructions, signer: str) -> int:
-        """检测 Jito 小费金额：从 signer 发出的最小 SOL 转账视为小费"""
+        """检测 Jito 小费金额"""
         transfers = []
         for ix_group in inner_instructions:
             for ix in ix_group.get("instructions", []):
-                is_system = (ix.get("program") == "system"
-                             or ix.get("programId") == "11111111111111111111111111111111")
+                is_system = (ix.get("program") == "system" or ix.get("programId") == "11111111111111111111111111111111")
                 if not is_system:
                     continue
                 parsed = ix.get("parsed", {})
@@ -253,35 +230,29 @@ class TradeStream:
                 if lamports > 0 and dest:
                     transfers.append(lamports)
 
-        # 多个转账时，最小的视为小费
         if len(transfers) >= 2:
             return min(transfers)
-        # 单个转账但目标是已知 Jito 地址
         if len(transfers) == 1:
             for ix_group in inner_instructions:
                 for ix in ix_group.get("instructions", []):
-                    is_system = (ix.get("program") == "system"
-                                 or ix.get("programId") == "11111111111111111111111111111111")
+                    is_system = (ix.get("program") == "system" or ix.get("programId") == "11111111111111111111111111111111")
                     if not is_system:
                         continue
                     parsed = ix.get("parsed", {})
                     if parsed.get("type") != "transfer":
                         continue
                     info = parsed.get("info", {})
-                    if (info.get("source") == signer
-                            and info.get("lamports", 0) == transfers[0]
-                            and info.get("destination", "") in self.KNOWN_JITO_TIP_ACCOUNTS):
+                    if (info.get("source") == signer and info.get("lamports", 0) == transfers[0] and info.get("destination", "") in self.KNOWN_JITO_TIP_ACCOUNTS):
                         return transfers[0]
         return 0
 
     def _scan_dex_recursive(self, inner_instructions) -> str:
-        """递归扫描 innerInstructions 识别 DEX（处理 Flash 执行器嵌套）"""
+        """递归扫描 innerInstructions 识别 DEX"""
         dex = ""
         for ix_group in inner_instructions:
             for ix in ix_group.get("instructions", []):
                 program_id = ix.get("programId", "")
                 program_name = ix.get("program", "").lower()
-                # 检查 programId 和 parsed 中的 program 字段
                 pid_lower = program_id.lower()
                 if "pump" in pid_lower or "pump" in program_name or "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P" in program_id:
                     return "pump.fun"
@@ -291,18 +262,166 @@ class TradeStream:
                     dex = "orca"
         return dex
 
-    def _extract_trade_info(self, tx_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """从 Helius WS 交易数据中提取交易信息（资金流向优先协议）
-
-        适配 Helius transactionNotification 真实数据结构:
-        - 交易体位于 params.result
-        - 双层嵌套: result['transaction']['transaction']
-        - accountKeys 是对象列表 {"pubkey": "...", "signer": true}
-        - Token balance 可能缺少 owner 字段，需通过 accountIndex 关联
-        - 扣除 Jito 小费避免 sol_spent 虚高
-        - 递归扫描 innerInstructions 识别嵌套 DEX
-        """
+    def _decode_instruction_type(self, program_id: str, data: str) -> str:
+        """尝试解码指令类型"""
+        if not data:
+            return "unknown"
         try:
+            decoded = base58.b58decode(data)
+            if not decoded:
+                return "unknown"
+            ix_type = decoded[0]
+            # ComputeBudget Program
+            if program_id == "ComputeBudget111111111111111111111111111111":
+                types = {0: "RequestUnitsDeprecated", 1: "RequestHeapFrame", 2: "SetComputeUnitLimit", 3: "SetComputeUnitPrice"}
+                return types.get(ix_type, f"type_{ix_type}")
+            # System Program
+            elif program_id == "11111111111111111111111111111111":
+                types = {0: "createAccount", 1: "assign", 2: "transfer", 8: "setAuthority", 10: "initializeNonce"}
+                return types.get(ix_type, f"system_type_{ix_type}")
+            # Pump.fun
+            elif "6EF8rrecth" in program_id:
+                types = {2: "buy", 3: "sell"}
+                return types.get(ix_type, f"pump_type_{ix_type}")
+        except Exception:
+            pass
+        return "unknown"
+
+    def _extract_compute_info(self, message: Dict[str, Any]) -> Dict[str, Any]:
+        """提取 Compute Unit 和 Priority Fee 信息"""
+        result = {"cu_limit": 200000, "cu_price": 0, "cu_consumed": 0}
+        try:
+            instructions = message.get("instructions", [])
+            for ix in instructions:
+                program_id = ix.get("programId", "")
+                if program_id == "ComputeBudget111111111111111111111111111111":
+                    data = ix.get("data", "")
+                    if data and len(data) > 2:
+                        decoded = base58.b58decode(data)
+                        if len(decoded) >= 9:
+                            ix_type = decoded[0]
+                            value = int.from_bytes(decoded[1:9], 'little')
+                            if ix_type == 2:
+                                result["cu_limit"] = value
+                            elif ix_type == 3:
+                                result["cu_price"] = value
+        except Exception:
+            pass
+        return result
+
+    def _extract_instruction_details(self, message: Dict[str, Any], meta: Dict[str, Any]) -> Dict[str, Any]:
+        """提取指令详细信息"""
+        result = {
+            "instructions_count": 0,
+            "inner_instructions_count": 0,
+            "total_instruction_count": 0,
+            "account_keys_count": 0,
+            "uses_lookup_table": False,
+            "signers_count": 0,
+            "main_instructions": [],
+            "inner_instructions": [],
+            "program_ids": [],
+        }
+        
+        account_keys = message.get("accountKeys", [])
+        result["account_keys_count"] = len(account_keys)
+        
+        for key in account_keys:
+            if isinstance(key, dict):
+                if key.get("signer"):
+                    result["signers_count"] += 1
+                if key.get("source") == "lookupTable":
+                    result["uses_lookup_table"] = True
+        
+        instructions = message.get("instructions", [])
+        result["instructions_count"] = len(instructions)
+        
+        for idx, ix in enumerate(instructions):
+            program_id = ix.get("programId", "")
+            ix_type = ix.get("parsed", {}).get("type", "") or ix.get("instructionType", "")
+            if not ix_type:
+                ix_type = self._decode_instruction_type(program_id, ix.get("data", ""))
+            
+            result["main_instructions"].append({
+                "index": idx,
+                "program_id": program_id,
+                "type": ix_type,
+            })
+            if program_id and program_id not in result["program_ids"]:
+                result["program_ids"].append(program_id)
+        
+        inner_count = 0
+        for ix_group in meta.get("innerInstructions", []):
+            group_index = ix_group.get("index", 0)
+            for idx, ix in enumerate(ix_group.get("instructions", [])):
+                inner_count += 1
+                program_id = ix.get("programId", "")
+                ix_type = ix.get("parsed", {}).get("type", "") or ix.get("instructionType", "")
+                if not ix_type:
+                    ix_type = self._decode_instruction_type(program_id, ix.get("data", ""))
+                
+                result["inner_instructions"].append({
+                    "group_index": group_index,
+                    "index": idx,
+                    "program_id": program_id,
+                    "type": ix_type,
+                })
+                if program_id and program_id not in result["program_ids"]:
+                    result["program_ids"].append(program_id)
+        
+        result["inner_instructions_count"] = inner_count
+        result["total_instruction_count"] = result["instructions_count"] + inner_count
+        
+        return result
+
+    def _analyze_risk(self, hints: Dict[str, Any], priority_fee: float) -> Dict[str, Any]:
+        """分析风险指标"""
+        indicators = []
+        score = 0
+        
+        if hints["account_keys_count"] > 20:
+            indicators.append(f"高账户数: {hints['account_keys_count']}")
+            score += 25
+        elif hints["account_keys_count"] > 15:
+            indicators.append(f"中等账户数: {hints['account_keys_count']}")
+            score += 10
+        
+        if hints["uses_lookup_table"]:
+            indicators.append("使用了地址查找表 (ALT)")
+            score += 20
+        
+        if priority_fee > 0.5:
+            indicators.append(f"高 Priority Fee: {priority_fee:.6f} SOL")
+            score += 20
+        elif priority_fee > 0.1:
+            indicators.append(f"中等 Priority Fee: {priority_fee:.6f} SOL")
+            score += 10
+        
+        if hints["instructions_count"] > 1:
+            indicators.append("复杂交易 (非简单转账)")
+            score += 10
+        
+        dex_programs = ["6EF8rrecth", "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8"]
+        is_dex = any(pid in hints["program_ids"] for pid in dex_programs)
+        if is_dex:
+            indicators.append("DEX 交易")
+            score += 5
+        
+        if score >= 60:
+            verdict = "高风险"
+        elif score >= 30:
+            verdict = "中等风险"
+        elif score >= 15:
+            verdict = "低风险"
+        else:
+            verdict = "普通"
+        
+        return {"score": min(score, 100), "verdict": verdict, "indicators": indicators}
+
+    def _extract_trade_info(self, tx_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """从 Helius WS 交易数据中提取交易信息（增强版）"""
+        try:
+            import json
             sig = tx_data.get("_signature", "")
             if not sig:
                 return None
@@ -317,16 +436,13 @@ class TradeStream:
 
             slot = tx_data.get("slot", 0)
 
-            # ===== 获取 accountKeys（适配双层嵌套 + 对象化结构） =====
             inner_tx = tx_data.get("transaction", {}).get("transaction", {})
             if not inner_tx:
-                # 兼容旧格式: transaction.message.accountKeys
                 inner_tx = tx_data.get("transaction", {})
 
             message = inner_tx.get("message", {})
             account_keys = message.get("accountKeys", [])
 
-            # 获取 signer（第一个 signer=true 的对象）
             signer = ""
             signer_index = 0
             for i, key in enumerate(account_keys):
@@ -336,7 +452,6 @@ class TradeStream:
                         signer_index = i
                         break
                 elif isinstance(key, str):
-                    # 兼容旧格式（纯字符串列表，第一个即为 signer）
                     signer = key
                     signer_index = i
                     break
@@ -344,24 +459,21 @@ class TradeStream:
             if not signer:
                 return None
 
-            # ===== SOL 流向计算（净值，使用 signer_index 匹配余额数组） =====
             pre_sol_balances = meta.get("preBalances", [])
             post_sol_balances = meta.get("postBalances", [])
             fee_lamports = meta.get("fee", 0)
             sol_spent = 0.0
+            jito_tip = 0.0
             if (pre_sol_balances and post_sol_balances
                     and len(pre_sol_balances) > signer_index
                     and len(post_sol_balances) > signer_index):
                 raw_sol_spent = (pre_sol_balances[signer_index]
                                  - post_sol_balances[signer_index]
                                  - fee_lamports)
-
-                # 扣除 Jito 小费（避免支出统计虚高）
                 inner_instructions = meta.get("innerInstructions", [])
                 jito_tip = self._detect_jito_tip(inner_instructions, signer)
                 sol_spent = (raw_sol_spent - jito_tip) / 1e9
 
-            # ===== Token 余额变化（适配 owner 缺失时通过 accountIndex 关联） =====
             pre_token_list = meta.get("preTokenBalances", [])
             post_token_list = meta.get("postTokenBalances", [])
 
@@ -372,10 +484,8 @@ class TradeStream:
             for b in post_token_list:
                 if b.get("mint") != self.mint:
                     continue
-                # 优先使用 owner 字段
                 owner = b.get("owner")
                 if not owner:
-                    # 通过 accountIndex 关联 accountKeys 获取 owner
                     owner = self._resolve_owner_from_index(b, account_keys, signer)
                 if owner == signer:
                     post_amt = b.get("uiTokenAmount", {}).get("uiAmount", 0) or 0.0
@@ -395,7 +505,6 @@ class TradeStream:
             delta = post_amt - pre_amt
             amount = abs(delta)
 
-            # ===== 交易类型判定（资金流向优先） =====
             tx_type = "TRANSFER"
             from_addr = signer
             to_addr = ""
@@ -408,9 +517,21 @@ class TradeStream:
             elif abs(sol_spent) <= 0.001:
                 tx_type = "TRANSFER"
 
-            # ===== DEX 深度扫描（递归 innerInstructions） =====
             dex = self._scan_dex_recursive(meta.get("innerInstructions", []))
             pool_address = ""
+
+            # 新增：Compute Unit 和 Priority Fee
+            compute_info = self._extract_compute_info(message)
+            cu_consumed = meta.get("computeUnitsConsumed", 0)
+            cu_limit = compute_info["cu_limit"]
+            cu_price = compute_info["cu_price"]
+            priority_fee = (cu_limit * cu_price) / 1e9
+
+            # 新增：指令详细信息
+            instruction_details = self._extract_instruction_details(message, meta)
+
+            # 新增：风险分析
+            risk_info = self._analyze_risk(instruction_details, priority_fee)
 
             return {
                 "sig": sig,
@@ -426,6 +547,24 @@ class TradeStream:
                 "pool_address": pool_address,
                 "sol_spent": sol_spent,
                 "fee": fee_lamports / 1e9,
+                "jito_tip": jito_tip / 1e9 if jito_tip else 0.0,
+                # 新增字段
+                "priority_fee": priority_fee,
+                "cu_consumed": cu_consumed,
+                "cu_limit": cu_limit,
+                "cu_price": cu_price,
+                "instructions_count": instruction_details["instructions_count"],
+                "inner_instructions_count": instruction_details["inner_instructions_count"],
+                "total_instruction_count": instruction_details["total_instruction_count"],
+                "account_keys_count": instruction_details["account_keys_count"],
+                "uses_lookup_table": instruction_details["uses_lookup_table"],
+                "signers_count": instruction_details["signers_count"],
+                "main_instructions": json.dumps(instruction_details["main_instructions"]),
+                "inner_instructions": json.dumps(instruction_details["inner_instructions"]),
+                "program_ids": json.dumps(instruction_details["program_ids"]),
+                "risk_score": risk_info["score"],
+                "risk_verdict": risk_info["verdict"],
+                "risk_indicators": json.dumps(risk_info["indicators"]),
                 "raw_data": str(tx_data)[:20000],
                 "source": "helius_ws",
             }

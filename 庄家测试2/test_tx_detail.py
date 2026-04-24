@@ -416,6 +416,93 @@ JUPITER_TYPES = {
     228: "ammCallback",  # 内部指令 - AMM Callback
 }
 
+# ===== 新增：未知程序的描述映射（方案 A：记录用途而非解码） =====
+
+# Pump.fun Bundle/Swap Program (Gz9VPiSL...)
+PUMP_BUNDLE_TYPES = {
+    # 基于实际交易 data 分析
+    22: "bundleSwap",      # 捆绑交换指令
+    16: "getQuote",        # 获取报价
+    # 其他编号暂时 unknown
+}
+
+# ===== 已知的机器人/量化交易程序（只识别，不解码） =====
+
+KNOWN_TRADING_BOTS = {
+    "FLASHX8DrLbgeR8FcfNV1F5krxYcYMUdBkrP1EPBtxB9": {
+        "name": "Axiom Bot",
+        "description": "高频交易机器人 (Jito MEV Bot)",
+        "category": "mev_bot"
+    },
+    "LBUZGfxFaB9nmFEHhCmDmcYfquaxK8bC2yk3XtgEbN3q": {
+        "name": "Jito Bot",
+        "description": "Jito 验证者机器人",
+        "category": "jito_bot"
+    },
+    "CCloudEGJ8SoJ8N2uJ1TmD2cJ9b9aG1C7Y4pL6qN3sR9tK": {
+        "name": "Banx Bot",
+        "description": "Banx 交易机器人",
+        "category": "trading_bot"
+    },
+    "JUP4Fb2cQruVjuLodCmYjM5MPjQTtC2gFuf6L7dRSJF9": {
+        "name": "Jupiter Aggregator",
+        "description": "Jupiter 路由聚合器",
+        "category": "dex_aggregator"
+    },
+}
+
+# ===== DEX 映射（扩展） =====
+
+DEX_PROGRAMS_EXTENDED = {
+    # pump.fun
+    "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P": {
+        "name": "pump.fun",
+        "DEX": "pumpfun",
+        "token_type": "memecoin"
+    },
+    # pump.fun Fee Program
+    "pfeeUxB6jkeY1Hxd7CsFCAjcbHA9rWtchMGdZ6VojVZ": {
+        "name": "pump.fun Fee",
+        "DEX": "pumpfun",
+        "token_type": "fee_program"
+    },
+    # pump.fun Bundle Program
+    "Gz9VPiSLQYbvKyb3jZPjNfyA6n4T4qVFUuAukgL964nL": {
+        "name": "pump.fun Bundle",
+        "DEX": "pumpfun",
+        "token_type": "bundle_program"
+    },
+    # Raydium
+    "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8": {
+        "name": "Raydium CLMM",
+        "DEX": "raydium",
+        "token_type": "amm"
+    },
+    "RVKdAzt5QAcimWWzF23xHaAkNvPGB8NLAa6P1NqDTzw": {
+        "name": "Raydium V2",
+        "DEX": "raydium",
+        "token_type": "amm_v2"
+    },
+    # Orca
+    "whirLbMiicVdio4qvTf5xKJEsXZMv4os1ay4yjHfnr5": {
+        "name": "Orca Whirlpool",
+        "DEX": "orca",
+        "token_type": "whirlpool"
+    },
+    # Jupiter
+    "JUP6LkbZbjS1jKKwapHJHNv45jcF6GGWC2eG9ZLhXc4": {
+        "name": "Jupiter Limit Order",
+        "DEX": "jupiter",
+        "token_type": "limit_order"
+    },
+    # OpenBook / Serum
+    "srmqPvymJeFKQ4zGvz1W8M1VNNi38dHynGJaW16Zm5k": {
+        "name": "OpenBook",
+        "DEX": "openbook",
+        "token_type": "central_limit"
+    },
+}
+
 def decode_instruction_type(program_id: str, data: str) -> str:
     """尝试解码指令类型"""
     if not data:
@@ -428,38 +515,66 @@ def decode_instruction_type(program_id: str, data: str) -> str:
         
         ix_type = decoded[0]
         
-        # ComputeBudget Program
+        # ===== 1. ComputeBudget Program =====
         if program_id == "ComputeBudget111111111111111111111111111111":
             return COMPUTE_BUDGET_TYPES.get(ix_type, f"type_{ix_type}")
         
-        # System Program
+        # ===== 2. System Program =====
         elif program_id == "11111111111111111111111111111111":
             return SYSTEM_TYPES.get(ix_type, f"system_type_{ix_type}")
         
-        # Pump.fun
+        # ===== 3. Pump.fun 主程序 =====
         elif program_id == "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P":
             return PUMP_TYPES.get(ix_type, f"pump_type_{ix_type}")
         
-        # Pump Fees Program
+        # ===== 4. Pump Fees Program =====
         elif program_id == "pfeeUxB6jkeY1Hxd7CsFCAjcbHA9rWtchMGdZ6VojVZ":
             return PUMP_FEE_TYPES.get(ix_type, f"pumpfee_type_{ix_type}")
         
-        # Token 2022 Program
+        # ===== 5. Pump.fun Bundle/Swap Program (新增) =====
+        elif program_id == "Gz9VPiSLQYbvKyb3jZPjNfyA6n4T4qVFUuAukgL964nL":
+            return PUMP_BUNDLE_TYPES.get(ix_type, f"pump_bundle_type_{ix_type}")
+        
+        # ===== 6. Token 2022 Program =====
         elif program_id == "TokenzQdBNLBzWwDoV5vFRuByTLgTZ4N3RYrnMbx2EtJ2y":
             return TOKEN_2022_TYPES.get(ix_type, f"token2022_type_{ix_type}")
         
-        # Associated Token Account Program
+        # ===== 7. Associated Token Account Program =====
         elif program_id == "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLnJAk7e":
             return ATA_TYPES.get(ix_type, f"ata_type_{ix_type}")
         
-        # Jupiter AMM Program (pAMMBay6oc...)
+        # ===== 8. Jupiter AMM Program =====
         elif "pAMMBay" in program_id:
             return JUPITER_TYPES.get(ix_type, f"jupiter_type_{ix_type}")
+        
+        # ===== 9. 已知机器人程序 - 返回描述而非指令类型 =====
+        elif program_id in KNOWN_TRADING_BOTS:
+            bot_info = KNOWN_TRADING_BOTS[program_id]
+            return f"bot_{bot_info['category']}"
+        
+        # ===== 10. 其他已知 DEX 程序 =====
+        elif program_id in DEX_PROGRAMS_EXTENDED:
+            dex_info = DEX_PROGRAMS_EXTENDED[program_id]
+            return f"dex_{dex_info['DEX']}"
     
     except Exception:
         pass
     
     return "unknown"
+
+
+def get_program_description(program_id: str) -> str:
+    """获取程序的描述信息（用于显示）"""
+    if program_id in KNOWN_TRADING_BOTS:
+        return KNOWN_TRADING_BOTS[program_id]["name"]
+    elif program_id in DEX_PROGRAMS_EXTENDED:
+        return DEX_PROGRAMS_EXTENDED[program_id]["name"]
+    elif program_id == "11111111111111111111111111111111":
+        return "System"
+    elif program_id == "ComputeBudget111111111111111111111111111111":
+        return "ComputeBudget"
+    else:
+        return program_id[:10] + "..."
 
 
 # ==================== API 函数 ====================

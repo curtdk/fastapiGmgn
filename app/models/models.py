@@ -31,8 +31,26 @@ class Transaction(Base):
     pool_address = Column(String, index=True)
     sol_spent = Column(Float)  # 消耗 SOL
     fee = Column(Float)  # 交易费
+    jito_tip = Column(Float, default=0.0)  # Jito 小费
     raw_data = Column(Text)
     source = Column(String)  # helius_ws, solana_rpc, rpc_fill
+    # 新增字段
+    priority_fee = Column(Float, default=0.0)  # Priority Fee (SOL)
+    cu_consumed = Column(Integer, default=0)  # 消耗的 Compute Units
+    cu_limit = Column(Integer, default=200000)  # CU Limit
+    cu_price = Column(Integer, default=0)  # CU Price (microlamports)
+    instructions_count = Column(Integer, default=0)  # 主指令数
+    inner_instructions_count = Column(Integer, default=0)  # 内部指令数
+    total_instruction_count = Column(Integer, default=0)  # 总指令数
+    account_keys_count = Column(Integer, default=0)  # 账户数
+    uses_lookup_table = Column(Boolean, default=False)  # 是否使用 ALT
+    signers_count = Column(Integer, default=0)  # 签名者数
+    main_instructions = Column(Text)  # JSON: 主指令详情
+    inner_instructions = Column(Text)  # JSON: 内部指令详情
+    program_ids = Column(Text)  # JSON: 程序 ID 列表
+    risk_score = Column(Integer, default=0)  # 风险评分
+    risk_verdict = Column(String)  # 风险判定
+    risk_indicators = Column(Text)  # JSON: 触发指标
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

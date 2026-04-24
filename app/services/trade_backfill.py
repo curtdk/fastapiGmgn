@@ -1,5 +1,6 @@
 """历史交易回填服务 - getTransactionsForAddress 一步获取签名+交易详情"""
 import asyncio
+import base58
 import logging
 from datetime import datetime
 from typing import List, Optional, Dict, Any
@@ -200,81 +201,55 @@ class TradeBackfill:
                     "type": "status",
                     "data": {
                         "mint": self.mint,
-                        "status": "FETCHING_HISTORY",
-                        "message": f"已获取 {len(all_details)} 条有效交易...",
-                        "total_trades": len(all_details),
+                        "status": "FILLING",
+                        "message": f"已获取 {total_fetched} 条交易...",
+                        "total_trades": total_fetched,
                     }
                 })
 
-                # 分页：使用 paginationToken
+                # 分页
                 pagination_token = result.get("paginationToken")
                 if not pagination_token:
                     break
 
-                # 限速：每批次之间主动让出，避免打满 Helius RPS 配额
-                # 给 dealer_detector._fetch_first_transaction 等其他请求留出带宽
+                # 批次间间隔
                 await asyncio.sleep(_BACKFILL_INTERVAL)
 
-        # 数据已从新到旧返回，反转成从旧到新
-        all_details.reverse()
-        if all_details:
-            self.earliest_slot = all_details[0].get("slot")
-
+        self.total_fetched = len(all_details)
         return all_details
 
     async def _batch_insert(self, tx_details: List[Dict[str, Any]]):
-        """
-        批量入库（去重后直接 INSERT）
-        按 batch_size 分批处理，每批完成后更新进度
-        """
-        batch_size = get_int_setting(self.db, "batch_size", 100)
-        interval = get_float_setting(self.db, "request_interval", 0.5)
+        """批量入库（UPSERT 去重）"""
+        if not tx_details:
+            return
 
-        # 按 batch_size 分组
-        batches = [tx_details[i:i + batch_size] for i in range(0, len(tx_details), batch_size)]
-        total_batches = len(batches)
+        interval = 0.1
+        batch_size = 100
 
-        from app.utils.database import SessionLocal
+        for i in range(0, len(tx_details), batch_size):
+            batch = tx_details[i:i + batch_size]
 
-        for batch_idx, batch in enumerate(batches):
-            if not self.running:
-                break
-
-            db = SessionLocal()
             try:
-                inserted = 0
-                skipped = 0
                 for detail in batch:
                     sig = detail.get("sig", "")
                     if not sig:
                         continue
 
-                    # 去重检查
-                    existing = db.query(Transaction).filter(Transaction.sig == sig).first()
+                    existing = self.db.query(Transaction).filter(Transaction.sig == sig).first()
                     if existing:
-                        skipped += 1
                         continue
 
-                    try:
-                        stmt = insert(Transaction).values(**detail)
-                        db.execute(stmt)
-                        inserted += 1
-                    except Exception as e:
-                        logger.warning(f"[回填] 入库失败 {sig}: {e}")
-                        db.rollback()
+                    tx_record = Transaction(**detail)
+                    self.db.add(tx_record)
 
-                db.commit()
-                self.total_fetched += inserted
-                logger.info(f"[回填] 批次 {batch_idx+1}/{total_batches}: 插入 {inserted} 条，跳过 {skipped} 条")
+                self.db.commit()
+                self.total_fetched += len(batch)
 
             except Exception as e:
-                logger.error(f"[回填] 批次入库异常: {e}")
-                db.rollback()
-            finally:
-                db.close()
+                logger.warning(f"[回填] 批量入库失败: {e}")
+                self.db.rollback()
 
-            # 进度通知
-            progress = ((batch_idx + 1) / total_batches) * 100
+            progress = min(i + batch_size, len(tx_details)) / len(tx_details) * 100
             await ws_manager.broadcast(self.mint, {
                 "type": "status",
                 "data": {
@@ -290,8 +265,205 @@ class TradeBackfill:
             if interval > 0:
                 await asyncio.sleep(interval)
 
+    # ===== 辅助方法（与 trade_stream.py 保持一致） =====
+
+    def _decode_instruction_type(self, program_id: str, data: str) -> str:
+        """尝试解码指令类型"""
+        if not data:
+            return "unknown"
+        try:
+            decoded = base58.b58decode(data)
+            if not decoded:
+                return "unknown"
+            ix_type = decoded[0]
+            if program_id == "ComputeBudget111111111111111111111111111111":
+                types = {0: "RequestUnitsDeprecated", 1: "RequestHeapFrame", 2: "SetComputeUnitLimit", 3: "SetComputeUnitPrice"}
+                return types.get(ix_type, f"type_{ix_type}")
+            elif program_id == "11111111111111111111111111111111":
+                types = {0: "createAccount", 1: "assign", 2: "transfer", 8: "setAuthority", 10: "initializeNonce"}
+                return types.get(ix_type, f"system_type_{ix_type}")
+            elif "6EF8rrecth" in program_id:
+                types = {2: "buy", 3: "sell"}
+                return types.get(ix_type, f"pump_type_{ix_type}")
+        except Exception:
+            pass
+        return "unknown"
+
+    def _extract_compute_info(self, message: Dict[str, Any]) -> Dict[str, Any]:
+        """提取 Compute Unit 和 Priority Fee 信息"""
+        result = {"cu_limit": 200000, "cu_price": 0, "cu_consumed": 0}
+        try:
+            instructions = message.get("instructions", [])
+            for ix in instructions:
+                program_id = ix.get("programId", "")
+                if program_id == "ComputeBudget111111111111111111111111111111":
+                    data = ix.get("data", "")
+                    if data and len(data) > 2:
+                        decoded = base58.b58decode(data)
+                        if len(decoded) >= 9:
+                            ix_type = decoded[0]
+                            value = int.from_bytes(decoded[1:9], 'little')
+                            if ix_type == 2:
+                                result["cu_limit"] = value
+                            elif ix_type == 3:
+                                result["cu_price"] = value
+        except Exception:
+            pass
+        return result
+
+    def _extract_instruction_details(self, message: Dict[str, Any], meta: Dict[str, Any]) -> Dict[str, Any]:
+        """提取指令详细信息"""
+        result = {
+            "instructions_count": 0,
+            "inner_instructions_count": 0,
+            "total_instruction_count": 0,
+            "account_keys_count": 0,
+            "uses_lookup_table": False,
+            "signers_count": 0,
+            "main_instructions": [],
+            "inner_instructions": [],
+            "program_ids": [],
+        }
+        
+        account_keys = message.get("accountKeys", [])
+        result["account_keys_count"] = len(account_keys)
+        
+        for key in account_keys:
+            if isinstance(key, dict):
+                if key.get("signer"):
+                    result["signers_count"] += 1
+                if key.get("source") == "lookupTable":
+                    result["uses_lookup_table"] = True
+        
+        instructions = message.get("instructions", [])
+        result["instructions_count"] = len(instructions)
+        
+        for idx, ix in enumerate(instructions):
+            program_id = ix.get("programId", "")
+            ix_type = ix.get("parsed", {}).get("type", "") or ix.get("instructionType", "")
+            if not ix_type:
+                ix_type = self._decode_instruction_type(program_id, ix.get("data", ""))
+            
+            result["main_instructions"].append({
+                "index": idx,
+                "program_id": program_id,
+                "type": ix_type,
+            })
+            if program_id and program_id not in result["program_ids"]:
+                result["program_ids"].append(program_id)
+        
+        inner_count = 0
+        for ix_group in meta.get("innerInstructions", []):
+            group_index = ix_group.get("index", 0)
+            for idx, ix in enumerate(ix_group.get("instructions", [])):
+                inner_count += 1
+                program_id = ix.get("programId", "")
+                ix_type = ix.get("parsed", {}).get("type", "") or ix.get("instructionType", "")
+                if not ix_type:
+                    ix_type = self._decode_instruction_type(program_id, ix.get("data", ""))
+                
+                result["inner_instructions"].append({
+                    "group_index": group_index,
+                    "index": idx,
+                    "program_id": program_id,
+                    "type": ix_type,
+                })
+                if program_id and program_id not in result["program_ids"]:
+                    result["program_ids"].append(program_id)
+        
+        result["inner_instructions_count"] = inner_count
+        result["total_instruction_count"] = result["instructions_count"] + inner_count
+        
+        return result
+
+    def _analyze_risk(self, hints: Dict[str, Any], priority_fee: float) -> Dict[str, Any]:
+        """分析风险指标"""
+        indicators = []
+        score = 0
+        
+        if hints["account_keys_count"] > 20:
+            indicators.append(f"高账户数: {hints['account_keys_count']}")
+            score += 25
+        elif hints["account_keys_count"] > 15:
+            indicators.append(f"中等账户数: {hints['account_keys_count']}")
+            score += 10
+        
+        if hints["uses_lookup_table"]:
+            indicators.append("使用了地址查找表 (ALT)")
+            score += 20
+        
+        if priority_fee > 0.5:
+            indicators.append(f"高 Priority Fee: {priority_fee:.6f} SOL")
+            score += 20
+        elif priority_fee > 0.1:
+            indicators.append(f"中等 Priority Fee: {priority_fee:.6f} SOL")
+            score += 10
+        
+        if hints["instructions_count"] > 1:
+            indicators.append("复杂交易 (非简单转账)")
+            score += 10
+        
+        dex_programs = ["6EF8rrecth", "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8"]
+        is_dex = any(pid in hints["program_ids"] for pid in dex_programs)
+        if is_dex:
+            indicators.append("DEX 交易")
+            score += 5
+        
+        if score >= 60:
+            verdict = "高风险"
+        elif score >= 30:
+            verdict = "中等风险"
+        elif score >= 15:
+            verdict = "低风险"
+        else:
+            verdict = "普通"
+        
+        return {"score": min(score, 100), "verdict": verdict, "indicators": indicators}
+
+    def _detect_jito_tip(self, inner_instructions, signer: str) -> int:
+        """检测 Jito 小费金额"""
+        KNOWN_JITO_TIP_ACCOUNTS = {
+            "96gYZGLnJYVFmbjzopPSU6QiEV5fGqZNyN9nmNhvrZU5",
+            "HFqU5x63VTqvQss8hp11i4wT8PQ69LBAatPfitZfFWhS",
+            "ADaUMid9yfUytqMBgopwjb2DTLSokTSzLJt6c6GmGwfT",
+            "Cw8CFyM9FkoMi7K7Crf6HNQqf4uEMFPjRZaLkL3TJppF",
+            "DfXygSm4jCyNCybVYYK6DwvWqjKee8pbDmJGcLWNDXjh",
+        }
+        transfers = []
+        for ix_group in inner_instructions:
+            for ix in ix_group.get("instructions", []):
+                is_system = (ix.get("program") == "system" or ix.get("programId") == "11111111111111111111111111111111")
+                if not is_system:
+                    continue
+                parsed = ix.get("parsed", {})
+                if parsed.get("type") != "transfer":
+                    continue
+                info = parsed.get("info", {})
+                if info.get("source") != signer:
+                    continue
+                lamports = info.get("lamports", 0)
+                dest = info.get("destination", "")
+                if lamports > 0 and dest:
+                    transfers.append(lamports)
+
+        if len(transfers) >= 2:
+            return min(transfers)
+        if len(transfers) == 1:
+            for ix_group in inner_instructions:
+                for ix in ix_group.get("instructions", []):
+                    is_system = (ix.get("program") == "system" or ix.get("programId") == "11111111111111111111111111111111")
+                    if not is_system:
+                        continue
+                    parsed = ix.get("parsed", {})
+                    if parsed.get("type") != "transfer":
+                        continue
+                    info = parsed.get("info", {})
+                    if (info.get("source") == signer and info.get("lamports", 0) == transfers[0] and info.get("destination", "") in KNOWN_JITO_TIP_ACCOUNTS):
+                        return transfers[0]
+        return 0
+
     def _extract_trade_info(self, tx: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """从标准 Solana RPC 交易数据中提取关键信息（资金流向优先协议）"""
+        """从标准 Solana RPC 交易数据中提取关键信息（资金流向优先协议 + 增强版）"""
         try:
             sig = tx.get("_signature", "")
             if not sig:
@@ -331,16 +503,19 @@ class TradeBackfill:
             post_sol_balances = meta.get("postBalances", [])
             fee_lamports = meta.get("fee", 0)
             sol_spent = 0.0
+            jito_tip = 0.0
             if (pre_sol_balances and post_sol_balances
                     and len(pre_sol_balances) > signer_index
                     and len(post_sol_balances) > signer_index):
-                sol_spent = (pre_sol_balances[signer_index] - post_sol_balances[signer_index] - fee_lamports) / 1e9
+                raw_sol_spent = pre_sol_balances[signer_index] - post_sol_balances[signer_index] - fee_lamports
+                inner_instructions = meta.get("innerInstructions", [])
+                jito_tip = self._detect_jito_tip(inner_instructions, signer)
+                sol_spent = (raw_sol_spent - jito_tip) / 1e9
 
             # ===== Token 余额变化（遍历所有 ATA，找 signer 拥有的） =====
             pre_token_list = meta.get("preTokenBalances", [])
             post_token_list = meta.get("postTokenBalances", [])
 
-            # 构建 signer 在该 mint 下的 pre/post 余额
             pre_amt = 0.0
             post_amt = 0.0
             to_owner = ""
@@ -365,14 +540,11 @@ class TradeBackfill:
             to_addr = ""
 
             if delta > 0:
-                # Token 增加 → BUY（signer 花 SOL 买币）
                 tx_type = "BUY"
                 to_addr = to_owner
             elif delta < 0:
-                # Token 减少 → SELL（signer 卖币得 SOL）
                 tx_type = "SELL"
             elif abs(sol_spent) <= 0.001:
-                # Token 无变化且 SOL 变化极小 → TRANSFER
                 tx_type = "TRANSFER"
 
             # ===== DEX 检测 =====
@@ -389,6 +561,21 @@ class TradeBackfill:
                     elif "orca" in program_id.lower():
                         dex = "orca"
 
+            # ===== 新增：Compute Unit 和 Priority Fee =====
+            compute_info = self._extract_compute_info(message)
+            cu_consumed = meta.get("computeUnitsConsumed", 0)
+            cu_limit = compute_info["cu_limit"]
+            cu_price = compute_info["cu_price"]
+            priority_fee = (cu_limit * cu_price) / 1e9
+
+            # ===== 新增：指令详细信息 =====
+            instruction_details = self._extract_instruction_details(message, meta)
+
+            # ===== 新增：风险分析 =====
+            risk_info = self._analyze_risk(instruction_details, priority_fee)
+
+            # JSON 序列化列表字段
+            import json
             return {
                 "sig": sig,
                 "slot": slot,
@@ -403,6 +590,24 @@ class TradeBackfill:
                 "pool_address": pool_address,
                 "sol_spent": sol_spent,
                 "fee": fee_lamports / 1e9,
+                "jito_tip": jito_tip / 1e9 if jito_tip else 0.0,
+                # 新增字段
+                "priority_fee": priority_fee,
+                "cu_consumed": cu_consumed,
+                "cu_limit": cu_limit,
+                "cu_price": cu_price,
+                "instructions_count": instruction_details["instructions_count"],
+                "inner_instructions_count": instruction_details["inner_instructions_count"],
+                "total_instruction_count": instruction_details["total_instruction_count"],
+                "account_keys_count": instruction_details["account_keys_count"],
+                "uses_lookup_table": instruction_details["uses_lookup_table"],
+                "signers_count": instruction_details["signers_count"],
+                "main_instructions": json.dumps(instruction_details["main_instructions"]),
+                "inner_instructions": json.dumps(instruction_details["inner_instructions"]),
+                "program_ids": json.dumps(instruction_details["program_ids"]),
+                "risk_score": risk_info["score"],
+                "risk_verdict": risk_info["verdict"],
+                "risk_indicators": json.dumps(risk_info["indicators"]),
                 "raw_data": str(tx)[:20000],
                 "source": "rpc_fill",
             }
