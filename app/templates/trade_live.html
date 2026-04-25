@@ -31,6 +31,20 @@
     .wallet-tag { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 11px; background: #e9ecef; }
     .wallet-tag.failed { background: #fff3bf; color: #f59f00; }
   </style>
+  <!-- 交易详情弹窗 -->
+  <div id="txDetailModal" class="modal fade" tabindex="-1" style="display:none;">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">📋 交易详情</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body" id="txDetailContent">
+          <!-- 动态内容 -->
+        </div>
+      </div>
+    </div>
+  </div>
 </head>
 <body>
   <div class="container-fluid p-4">
@@ -74,6 +88,9 @@
                 <th>钱包</th>
                 <th>数量</th>
                 <th>SOL</th>
+                <th>风险</th>
+                <th>原因</th>
+                <th>CU</th>
                 <th>标记</th>
               </tr>
             </thead>
@@ -112,13 +129,50 @@ function addTradeRow(data, isNew) {
   const netFlow = data.sol_spent || 0;
   const netClass = netFlow > 0 ? 'text-success' : (netFlow < 0 ? 'text-danger' : '');
 
+  // 风险评分
+  const riskScore = data.risk_score || 0;
+  const riskClass = riskScore >= 60 ? 'text-danger fw-bold' : (riskScore >= 30 ? 'text-warning fw-bold' : 'text-success');
+
+  // 触发原因
+  let reasons = '';
+  if (data.risk_indicators) {
+    try {
+      const indicators = typeof data.risk_indicators === 'string' ? JSON.parse(data.risk_indicators) : data.risk_indicators;
+      reasons = indicators.slice(0, 2).map((i, idx) => {
+        // 简化原因文本
+        let short = i;
+        if (i.includes('高账户数')) short = '高账户';
+        else if (i.includes('ALT')) short = 'ALT';
+        else if (i.includes('机器人')) short = '机器人';
+        else if (i.includes('Priority')) short = '优先费';
+        else if (i.includes('复杂')) short = '复杂';
+        else if (i.includes('DEX')) short = 'DEX';
+        return short;
+      }).join('+');
+    } catch (e) {
+      reasons = '-';
+    }
+  }
+
+  // CU 值
+  const cuConsumed = data.cu_consumed || 0;
+  const cuLimit = data.cu_limit || 200000;
+  const cuDisplay = cuConsumed > 0 ? `${fmtNum(cuConsumed, 0)}/${fmtNum(cuLimit, 0)}` : '-';
+
   tr.innerHTML = `
     <td><span class="badge ${data.transaction_type === 'SWAP' ? 'bg-primary' : 'bg-secondary'}">${data.transaction_type || '-'}</span></td>
     <td title="${data.from_address || ''}">${shortAddr(data.from_address)}</td>
     <td>${fmtNum(data.amount, 2)}</td>
     <td class="${netClass}" style="font-weight:600">${fmtNum(netFlow, 4)}</td>
+    <td class="${riskClass}">${riskScore > 0 ? riskScore : '-'}</td>
+    <td style="font-size:11px; max-width:80px; overflow:hidden; text-overflow:ellipsis;" title="${reasons}">${reasons || '-'}</td>
+    <td style="font-size:11px; white-space:nowrap;">${cuDisplay}</td>
     <td>${data.wallet_tag ? '<span class="wallet-tag">' + data.wallet_tag + '</span>' : '-'}</td>
   `;
+
+  // 点击行显示详情弹窗
+  tr.style.cursor = 'pointer';
+  tr.addEventListener('click', () => showTxDetail(data));
 
   // 新数据插入到最前面
   if (tbody.children.length >= MAX_ROWS) {
@@ -270,6 +324,206 @@ window.addEventListener('DOMContentLoaded', () => {
   fetchMetrics();
 });
 
+// 显示交易详情弹窗
+function showTxDetail(data) {
+  const content = document.getElementById('txDetailContent');
+  
+  const riskScore = data.risk_score || 0;
+  const riskLabel = riskScore >= 60 ? '⚠️ 高风险' : (riskScore >= 30 ? '⚡ 中等风险' : '✅ 低风险');
+  const riskColor = riskScore >= 60 ? 'text-danger' : (riskScore >= 30 ? 'text-warning' : 'text-success');
+  
+  // 风险原因
+  let indicatorsHtml = '<p class="text-muted">无</p>';
+  if (data.risk_indicators) {
+    try {
+      const indicators = typeof data.risk_indicators === 'string' ? JSON.parse(data.risk_indicators) : data.risk_indicators;
+      if (indicators.length > 0) {
+        indicatorsHtml = '<ul class="mb-0">' + indicators.map(i => `<li>${i}</li>`).join('') + '</ul>';
+      }
+    } catch (e) {}
+  }
+  
+  // 指令统计
+  const mainIxCount = data.instructions_count || 0;
+  const innerIxCount = data.inner_instructions_count || 0;
+  const totalIxCount = data.total_instruction_count || (mainIxCount + innerIxCount);
+  
+  // 主指令列表
+  let mainIxHtml = '<p class="text-muted">无数据</p>';
+  if (data.main_instructions) {
+    try {
+      const instructions = typeof data.main_instructions === 'string' ? JSON.parse(data.main_instructions) : data.main_instructions;
+      if (instructions.length > 0) {
+        mainIxHtml = '<ul class="mb-0 small">';
+        instructions.forEach(ix => {
+          mainIxHtml += `<li>[${ix.index}] <strong>${ix.type || 'unknown'}</strong> @ ${ix.program_id?.slice(0, 12)}...</li>`;
+        });
+        mainIxHtml += '</ul>';
+      }
+    } catch (e) {
+      mainIxHtml = '<p class="text-muted">解析失败</p>';
+    }
+  }
+  
+  // 内部指令列表
+  let innerIxHtml = '<p class="text-muted">无数据</p>';
+  if (data.inner_instructions) {
+    try {
+      const instructions = typeof data.inner_instructions === 'string' ? JSON.parse(data.inner_instructions) : data.inner_instructions;
+      if (instructions.length > 0) {
+        // 统计各类型数量
+        const typeCount = {};
+        instructions.forEach(ix => {
+          const type = ix.type || 'unknown';
+          typeCount[type] = (typeCount[type] || 0) + 1;
+        });
+        
+        innerIxHtml = '<div class="small">';
+        Object.entries(typeCount).sort((a, b) => b[1] - a[1]).slice(0, 8).forEach(([type, count]) => {
+          innerIxHtml += `<span class="badge bg-secondary me-1 mb-1">${type}: ${count}次</span>`;
+        });
+        innerIxHtml += '</div>';
+      }
+    } catch (e) {
+      innerIxHtml = '<p class="text-muted">解析失败</p>';
+    }
+  }
+  
+  // 程序列表
+  let programHtml = '<p class="text-muted">无数据</p>';
+  if (data.program_ids) {
+    try {
+      const programs = typeof data.program_ids === 'string' ? JSON.parse(data.program_ids) : data.program_ids;
+      if (programs.length > 0) {
+        programHtml = '<div class="small">';
+        programs.forEach(pid => {
+          programHtml += `<span class="badge bg-info me-1 mb-1" title="${pid}">${pid.slice(0, 8)}...</span>`;
+        });
+        programHtml += '</div>';
+      }
+    } catch (e) {}
+  }
+  
+  content.innerHTML = `
+    <div class="container-fluid">
+      <!-- 基本信息 -->
+      <div class="row mb-3">
+        <div class="col-12">
+          <h6 class="border-bottom pb-2 mb-2">📌 基本信息</h6>
+          <div class="row">
+            <div class="col-md-6">
+              <p class="mb-1"><strong>签名:</strong> <code class="small">${data.sig || '-'}</code></p>
+              <p class="mb-1"><strong>Slot:</strong> ${data.slot || '-'}</p>
+              <p class="mb-1"><strong>时间:</strong> ${data.block_time || '-'}</p>
+            </div>
+            <div class="col-md-6">
+              <p class="mb-1"><strong>类型:</strong> <span class="badge ${data.transaction_type === 'BUY' ? 'bg-success' : (data.transaction_type === 'SELL' ? 'bg-danger' : 'bg-secondary')}">${data.transaction_type || '-'}</span></p>
+              <p class="mb-1"><strong>数量:</strong> ${fmtNum(data.amount, 4)}</p>
+              <p class="mb-1"><strong>SOL:</strong> <span class="${data.sol_spent >= 0 ? 'text-danger' : 'text-success'}">${fmtNum(data.sol_spent, 6)}</span></p>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- 风险评估 -->
+      <div class="row mb-3">
+        <div class="col-12">
+          <h6 class="border-bottom pb-2 mb-2">🚨 风险评估</h6>
+          <div class="row">
+            <div class="col-md-4">
+              <div class="p-3 bg-light rounded text-center">
+                <div class="h4 ${riskColor} fw-bold mb-1">${riskScore}</div>
+                <div class="small text-muted">风险分 (0-100)</div>
+              </div>
+            </div>
+            <div class="col-md-8">
+              <p class="mb-1"><strong class="${riskColor}">${riskLabel}</strong></p>
+              <p class="mb-2 small text-muted">触发指标:</p>
+              ${indicatorsHtml}
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- 计算单元 -->
+      <div class="row mb-3">
+        <div class="col-12">
+          <h6 class="border-bottom pb-2 mb-2">⚡ 计算单元 (CU)</h6>
+          <div class="row">
+            <div class="col-md-4">
+              <div class="p-3 bg-light rounded text-center">
+                <div class="h4 text-primary fw-bold mb-1">${(data.cu_consumed || 0).toLocaleString()}</div>
+                <div class="small text-muted">已消耗 / ${(data.cu_limit || 200000).toLocaleString()}</div>
+              </div>
+            </div>
+            <div class="col-md-8">
+              <p class="mb-1"><strong>Fee:</strong> ${fmtNum(data.fee, 9)} SOL</p>
+              <p class="mb-1"><strong>Priority Fee:</strong> ${fmtNum(data.priority_fee || 0, 9)} SOL</p>
+              <p class="mb-1"><strong>Jito Tip:</strong> ${fmtNum(data.jito_tip || 0, 9)} SOL</p>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- 指令统计 -->
+      <div class="row mb-3">
+        <div class="col-12">
+          <h6 class="border-bottom pb-2 mb-2">📋 指令统计</h6>
+          <div class="row mb-2">
+            <div class="col-4"><span class="badge bg-primary">主指令: ${mainIxCount}</span></div>
+            <div class="col-4"><span class="badge bg-secondary">内部指令: ${innerIxCount}</span></div>
+            <div class="col-4"><span class="badge bg-dark">总计: ${totalIxCount}</span></div>
+          </div>
+          <div class="row">
+            <div class="col-md-6">
+              <p class="mb-1 small fw-bold">主指令列表:</p>
+              ${mainIxHtml}
+            </div>
+            <div class="col-md-6">
+              <p class="mb-1 small fw-bold">内部指令 (TOP 8):</p>
+              ${innerIxHtml}
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- 程序 ID -->
+      <div class="row">
+        <div class="col-12">
+          <h6 class="border-bottom pb-2 mb-2">🔧 程序 ID (${(data.program_ids ? (typeof data.program_ids === 'string' ? JSON.parse(data.program_ids) : data.program_ids).length : 0) || 0})</h6>
+          ${programHtml}
+        </div>
+      </div>
+      
+      <!-- 附加信息 -->
+      <div class="row mt-3">
+        <div class="col-12">
+          <h6 class="border-bottom pb-2 mb-2">📊 其他信息</h6>
+          <div class="row small">
+            <div class="col-md-4">
+              <p class="mb-1"><strong>账户数:</strong> ${data.account_keys_count || '-'}</p>
+              <p class="mb-1"><strong>使用ALT:</strong> ${data.uses_lookup_table ? '✅ 是' : '❌ 否'}</p>
+            </div>
+            <div class="col-md-4">
+              <p class="mb-1"><strong>签名者数:</strong> ${data.signers_count || '-'}</p>
+              <p class="mb-1"><strong>DEX:</strong> ${data.dex || '-'}</p>
+            </div>
+            <div class="col-md-4">
+              <p class="mb-1"><strong>来源:</strong> ${data.source || '-'}</p>
+              <p class="mb-1"><strong>标签:</strong> ${data.wallet_tag || '-'}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+  
+  // 显示弹窗
+  const modalEl = document.getElementById('txDetailModal');
+  const modal = new bootstrap.Modal(modalEl);
+  modal.show();
+}
+
 // 处理用户状态更新
 function handleUserStatus(data) {
   const address = data.address;
@@ -306,9 +560,9 @@ function handleUserStatus(data) {
         newTag.style.background = '#d3f9d8';
         newTag.style.color = '#2f9e44';
         const cells = row.cells;
-        if (cells[4]) {
-          cells[4].innerHTML = '';
-          cells[4].appendChild(newTag);
+        if (cells[7]) {
+          cells[7].innerHTML = '';
+          cells[7].appendChild(newTag);
         }
       }
       console.log('[用户状态] 已标记散户: ' + sig.slice(0, 8));
@@ -321,9 +575,9 @@ function handleUserStatus(data) {
         newTag.className = 'wallet-tag failed';
         newTag.textContent = 'unknown(检测失败)';
         const cells = row.cells;
-        if (cells[4]) {
-          cells[4].innerHTML = '';
-          cells[4].appendChild(newTag);
+        if (cells[7]) {
+          cells[7].innerHTML = '';
+          cells[7].appendChild(newTag);
         }
       }
       console.log('[用户状态] 已标记检测失败: ' + sig.slice(0, 8));

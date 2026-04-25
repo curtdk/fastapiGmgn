@@ -69,12 +69,7 @@ def extract_mints_from_transaction(tx_raw: Dict[str, Any]) -> List[Dict[str, Any
 
 
 def extract_compute_unit_info_from_instructions(transaction: Dict[str, Any]) -> Dict[str, int]:
-    """从交易指令中解析 ComputeUnitLimit 和 ComputeUnitPrice
-    
-    Solana ComputeBudget 指令格式：
-    - SetComputeUnitLimit (opcode 2): opcode(1) + u32(4) = 5 bytes
-    - SetComputeUnitPrice (opcode 3): opcode(1) + u64(8) = 9 bytes
-    """
+    """从交易指令中解析 ComputeUnitLimit 和 ComputeUnitPrice"""
     result = {"cu_limit": 200000, "cu_price": 0}
     
     try:
@@ -87,15 +82,14 @@ def extract_compute_unit_info_from_instructions(transaction: Dict[str, Any]) -> 
                 data = ix.get("data", "")
                 if data and len(data) > 2:
                     decoded = base58.b58decode(data)
-                    if len(decoded) >= 1:
+                    if len(decoded) >= 9:
                         instruction_type = decoded[0]
+                        value = int.from_bytes(decoded[1:9], 'little')
                         
-                        if instruction_type == 2:  # SetComputeUnitLimit
-                            if len(decoded) >= 5:
-                                result["cu_limit"] = int.from_bytes(decoded[1:5], 'little')
-                        elif instruction_type == 3:  # SetComputeUnitPrice
-                            if len(decoded) >= 9:
-                                result["cu_price"] = int.from_bytes(decoded[1:9], 'little')
+                        if instruction_type == 2:
+                            result["cu_limit"] = value
+                        elif instruction_type == 3:
+                            result["cu_price"] = value
     except Exception:
         pass
     
@@ -112,6 +106,14 @@ def extract_compute_and_fee_info(meta: Dict[str, Any], transaction: Dict[str, An
     result["cu_consumed"] = meta.get("computeUnitsConsumed", 0)
     result["total_fee"] = meta.get("fee", 0)
     
+    cu_info = extract_compute_unit_info_from_instructions(transaction)
+    result["cu_limit"] = cu_info["cu_limit"]
+    result["cu_price"] = cu_info["cu_price"]
+    
+    # Priority Fee = cu_limit * cu_price / 1e9
+    if result["cu_price"] > 0 and result["cu_limit"] > 0:
+        result["priority_fee"] = (result["cu_limit"] * result["cu_price"]) / 1e9
+    
     # 计算签名者数量
     message = transaction.get("message", {})
     account_keys = message.get("accountKeys", [])
@@ -127,22 +129,9 @@ def extract_compute_and_fee_info(meta: Dict[str, Any], transaction: Dict[str, An
     # 基础费 = 签名数 * 5000 lamports
     result["base_fee"] = result["signers_count"] * 5000
     
-    # 优先使用解析出的 cu_info
-    cu_info = extract_compute_unit_info_from_instructions(transaction)
-    result["cu_limit"] = cu_info["cu_limit"]
-    result["cu_price"] = cu_info["cu_price"]
-    
-    # 计算 priority_fee
-    # 首选方法：直接从 total_fee - base_fee 计算（最可靠）
-    # 因为 cu_price 的解码可能存在问题，导致计算结果不准确
-    priority_lamports = max(0, result["total_fee"] - result["base_fee"])
-    result["priority_fee"] = priority_lamports / 1e9
-    
-    # 调试信息：如果 cu_price 存在，显示解码的 cu_price
-    # 但不使用它来计算 priority_fee
-    if result["cu_price"] > 0:
-        # 可选：添加调试日志
-        pass
+    # 如果 priority_fee 为 0，用总费用减去基础费
+    if result["priority_fee"] == 0 and result["total_fee"] > result["base_fee"]:
+        result["priority_fee"] = (result["total_fee"] - result["base_fee"]) / 1e9
     
     return result
 
@@ -748,7 +737,7 @@ def parse_and_display_transaction(tx_entry: Dict[str, Any], is_raw: bool = False
                 break
     
     # 计算 CU 和 Fee
-    compute_info = extract_compute_and_fee_info(meta, transaction)
+    compute_info = extract_compute_and_fee_info(meta, tx_raw)
     dealer_hints = extract_dealer_hints(meta, message)
     dealer_analysis = analyze_dealer_indicators(dealer_hints, compute_info["priority_fee"])
     
@@ -900,5 +889,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-
-
