@@ -290,7 +290,12 @@ class TradeBackfill:
         return "unknown"
 
     def _extract_compute_info(self, message: Dict[str, Any]) -> Dict[str, Any]:
-        """提取 Compute Unit 和 Priority Fee 信息"""
+        """提取 Compute Unit 和 Priority Fee 信息
+        
+        Solana ComputeBudget 指令格式：
+        - SetComputeUnitLimit (opcode 2): opcode(1) + u32(4) = 5 bytes
+        - SetComputeUnitPrice (opcode 3): opcode(1) + u64(8) = 9 bytes
+        """
         result = {"cu_limit": 200000, "cu_price": 0, "cu_consumed": 0}
         try:
             instructions = message.get("instructions", [])
@@ -300,13 +305,14 @@ class TradeBackfill:
                     data = ix.get("data", "")
                     if data and len(data) > 2:
                         decoded = base58.b58decode(data)
-                        if len(decoded) >= 9:
+                        if len(decoded) >= 1:
                             ix_type = decoded[0]
-                            value = int.from_bytes(decoded[1:9], 'little')
-                            if ix_type == 2:
-                                result["cu_limit"] = value
-                            elif ix_type == 3:
-                                result["cu_price"] = value
+                            if ix_type == 2:  # SetComputeUnitLimit
+                                if len(decoded) >= 5:
+                                    result["cu_limit"] = int.from_bytes(decoded[1:5], 'little')
+                            elif ix_type == 3:  # SetComputeUnitPrice
+                                if len(decoded) >= 9:
+                                    result["cu_price"] = int.from_bytes(decoded[1:9], 'little')
         except Exception:
             pass
         return result
@@ -561,15 +567,21 @@ class TradeBackfill:
                     elif "orca" in program_id.lower():
                         dex = "orca"
 
+            # ===== 新增：指令详细信息（需要在 priority_fee 计算前获取 signers_count） =====
+            instruction_details = self._extract_instruction_details(message, meta)
+
             # ===== 新增：Compute Unit 和 Priority Fee =====
             compute_info = self._extract_compute_info(message)
             cu_consumed = meta.get("computeUnitsConsumed", 0)
             cu_limit = compute_info["cu_limit"]
             cu_price = compute_info["cu_price"]
-            priority_fee = (cu_limit * cu_price) / 1e9
-
-            # ===== 新增：指令详细信息 =====
-            instruction_details = self._extract_instruction_details(message, meta)
+            
+            # 计算 priority_fee：从 total_fee - base_fee 计算（更可靠）
+            # base_fee = 签名数 * 5000 lamports
+            signers_count = instruction_details["signers_count"]
+            base_fee = max(1, signers_count) * 5000
+            priority_lamports = max(0, fee_lamports - base_fee)
+            priority_fee = priority_lamports / 1e9
 
             # ===== 新增：风险分析 =====
             risk_info = self._analyze_risk(instruction_details, priority_fee)
