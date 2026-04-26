@@ -54,6 +54,26 @@ class TradeData(BaseModel):
     net_token_flow: float = 0.0
     price_per_token: float = 0.0
     wallet_tag: Optional[str] = None
+    # 风险相关
+    risk_score: Optional[int] = 0
+    risk_verdict: Optional[str] = None
+    risk_indicators: Optional[str] = None  # JSON 字符串
+    # Compute Unit
+    priority_fee: Optional[float] = None
+    cu_consumed: Optional[int] = 0
+    cu_limit: Optional[int] = 200000
+    cu_price: Optional[int] = 0
+    # 指令统计
+    instructions_count: Optional[int] = 0
+    inner_instructions_count: Optional[int] = 0
+    total_instruction_count: Optional[int] = 0
+    account_keys_count: Optional[int] = 0
+    uses_lookup_table: Optional[bool] = False
+    signers_count: Optional[int] = 0
+    # 指令详情（JSON 字符串）
+    main_instructions: Optional[str] = None
+    inner_instructions: Optional[str] = None
+    program_ids: Optional[str] = None
 
 
 class TradeListResponse(BaseModel):

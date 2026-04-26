@@ -89,6 +89,26 @@ def get_trades(
             net_token_flow=analysis.net_token_flow if analysis else 0.0,
             price_per_token=analysis.price_per_token if analysis else 0.0,
             wallet_tag=analysis.wallet_tag if analysis else None,
+            # 风险相关
+            risk_score=tx.risk_score or 0,
+            risk_verdict=tx.risk_verdict,
+            risk_indicators=tx.risk_indicators,
+            # Compute Unit
+            priority_fee=tx.priority_fee,
+            cu_consumed=tx.cu_consumed or 0,
+            cu_limit=tx.cu_limit or 200000,
+            cu_price=tx.cu_price or 0,
+            # 指令统计
+            instructions_count=tx.instructions_count or 0,
+            inner_instructions_count=tx.inner_instructions_count or 0,
+            total_instruction_count=tx.total_instruction_count or 0,
+            account_keys_count=tx.account_keys_count or 0,
+            uses_lookup_table=tx.uses_lookup_table or False,
+            signers_count=tx.signers_count or 0,
+            # 指令详情
+            main_instructions=tx.main_instructions,
+            inner_instructions=tx.inner_instructions,
+            program_ids=tx.program_ids,
         ))
 
     return TradeListResponse(

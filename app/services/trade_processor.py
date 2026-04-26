@@ -456,6 +456,28 @@ async def run_full_calculation(db: Session, mint: str):
                 "dex": tx.dex,
                 "pool_address": tx.pool_address,
                 "sol_spent": tx.sol_spent or 0.0,
+                "fee": tx.fee,
+                "source": tx.source,
+                # 风险相关
+                "risk_score": tx.risk_score or 0,
+                "risk_verdict": tx.risk_verdict,
+                "risk_indicators": tx.risk_indicators,
+                # Compute Unit
+                "priority_fee": tx.priority_fee,
+                "cu_consumed": tx.cu_consumed or 0,
+                "cu_limit": tx.cu_limit or 200000,
+                "cu_price": tx.cu_price or 0,
+                # 指令统计
+                "instructions_count": tx.instructions_count or 0,
+                "inner_instructions_count": tx.inner_instructions_count or 0,
+                "total_instruction_count": tx.total_instruction_count or 0,
+                "account_keys_count": tx.account_keys_count or 0,
+                "uses_lookup_table": tx.uses_lookup_table or False,
+                "signers_count": tx.signers_count or 0,
+                # 指令详情
+                "main_instructions": tx.main_instructions,
+                "inner_instructions": tx.inner_instructions,
+                "program_ids": tx.program_ids,
             }
 
             # 指数计算（get_trader_state 会自动检测 unknown 状态并入队）
