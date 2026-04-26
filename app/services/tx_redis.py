@@ -202,14 +202,6 @@ async def update_tx_analysis(sig: str, analysis: Dict[str, Any]):
     logger.debug(f"[tx_redis] 更新分析结果 {sig[:8]}...")
 
 
-async def is_tx_processed(sig: str) -> bool:
-    """检查交易是否已处理（是否有 wallet_tag）"""
-    tx = await get_tx(sig)
-    if not tx:
-        return False
-    return "wallet_tag" in tx and tx["wallet_tag"] is not None
-
-
 # ──────────────────────────────────────────────────────────
 # 批量操作
 # ──────────────────────────────────────────────────────────

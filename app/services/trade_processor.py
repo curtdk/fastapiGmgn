@@ -6,9 +6,7 @@ from datetime import datetime
 from typing import Dict, Any, Optional
 
 from sqlalchemy.orm import Session
-from sqlalchemy import case
 
-from app.models.trade import TradeAnalysis
 from app.models.models import Transaction
 from app.services import tx_redis
 from app.websocket.manager import ws_manager
@@ -284,11 +282,20 @@ async def _calculate_index(tx_detail: Dict[str, Any], mint: str) -> Dict[str, An
     
     await update_metrics_delta(redis, mint, delta_bet, delta_profit)
     
+    # 更新 Redis 中的分析结果
+    await tx_redis.update_tx_analysis(sig, {
+        "net_sol_flow": sol_spent,
+        "net_token_flow": amount,
+        "price_per_token": state.get("avgPrice", 0),
+        "wallet_tag": "dealer" if state.get("status") == "dealer" else "unknown",
+        "processed_at": datetime.utcnow().isoformat(),
+    })
+    
     return {
         "holdingQty": state.get("holdingQty", 0),
         "holdingCost": state.get("holdingCost", 0),
         "avgPrice": state.get("avgPrice", 0),
-        "is_dealer": False
+        "is_dealer": state.get("status") == "dealer"
     }
 
 
@@ -333,8 +340,6 @@ async def start_consumer(mint: str):
 
 async def _consumer_loop(mint: str):
     """单一消费者，持续从队列取 tx 串行处理"""
-    from app.utils.database import SessionLocal
-    
     logger.info(f"[消费者] 开始消化队列 mint={mint}")
 
     while True:
@@ -347,28 +352,10 @@ async def _consumer_loop(mint: str):
         if not sig:
             continue
 
-        db = SessionLocal()
         try:
-            # 去重检查
-            existing = db.query(TradeAnalysis).filter(TradeAnalysis.sig == sig).first()
-            if existing:
-                continue
-
-            # 庄家判定 + 指数计算
+            # 庄家判定 + 指数计算 + 更新 wallet_tag
             metrics = await _calculate_index(tx_detail, mint)
 
-            # 写入 TradeAnalysis
-            analysis = TradeAnalysis(
-                sig=sig,
-                net_sol_flow=tx_detail.get("sol_spent", 0) or 0.0,
-                net_token_flow=tx_detail.get("amount", 0) or 0.0,
-                price_per_token=metrics.get("avgPrice", 0),
-                wallet_tag="dealer" if metrics.get("is_dealer") else "unknown",
-                processed_at=datetime.utcnow(),
-            )
-            db.add(analysis)
-            db.commit()
-            
             # 非庄家交易 → WebSocket 广播
             if not metrics.get("is_dealer"):
                 await ws_manager.broadcast(mint, {
@@ -383,9 +370,6 @@ async def _consumer_loop(mint: str):
 
         except Exception as e:
             logger.error(f"[消费者] {sig[:8]}... 异常: {e}", exc_info=True)
-            db.rollback()
-        finally:
-            db.close()
 
 
 async def process_trade(db: Session, tx_detail: Dict[str, Any]):
@@ -427,7 +411,9 @@ async def run_full_calculation(db: Session, mint: str):
     logger.info(f"[全量计算] 开始计算 mint={mint}")
 
     # 从 Redis 有序集合获取交易列表（先 rpc_fill，再 ws）
-    rpc_sigs = await tx_redis.get_tx_list(mint, "rpc_fill")
+    # rpc_fill 需要倒序获取（从最新到最旧），因为 backfill 时最新交易先存入
+    # 然后反转得到从旧到新的顺序，保证指数计算从最早的交易开始
+    rpc_sigs = list(reversed(await tx_redis.get_tx_list(mint, "rpc_fill")))
     ws_sigs = await tx_redis.get_tx_list(mint, "ws")
     all_sigs = rpc_sigs + ws_sigs
 
@@ -435,27 +421,13 @@ async def run_full_calculation(db: Session, mint: str):
 
     for sig in all_sigs:
         try:
-            # 检查是否已处理
-            existing = await tx_redis.is_tx_processed(sig)
-            if existing:
-                continue
-
             # 从 Redis 获取交易详情
             tx_detail = await tx_redis.get_tx(sig)
             if not tx_detail:
                 continue
 
-            # 指数计算（get_trader_state 会自动检测 unknown 状态并入队）
+            # 指数计算（_calculate_index 内部更新 wallet_tag）
             metrics = await _calculate_index(tx_detail, mint)
-
-            # 更新 Redis 中的分析结果
-            await tx_redis.update_tx_analysis(sig, {
-                "net_sol_flow": tx_detail.get("sol_spent", 0) or 0.0,
-                "net_token_flow": tx_detail.get("amount", 0) or 0.0,
-                "price_per_token": metrics.get("avgPrice", 0),
-                "wallet_tag": "dealer" if metrics.get("is_dealer") else "unknown",
-                "processed_at": datetime.utcnow().isoformat(),
-            })
 
             # 非庄家交易 → WebSocket 广播
             if not metrics.get("is_dealer"):
