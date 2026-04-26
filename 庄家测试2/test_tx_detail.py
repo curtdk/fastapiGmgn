@@ -24,7 +24,7 @@ API_KEY = "f43f1a35-863c-4c55-9a13-d00092f0ff2d"
 
 
 # 默认交易签名
-DEFAULT_SIG = "5n1wiypwgE4U9UHmACA7ChAUFySB2W8FW4YMMb3nH8i5wRdZjuExCtiHQaX8Rt4uLQiyy9MfZj3KubRzxkCxUf4w"
+DEFAULT_SIG = "2jAZDBhH8FJAp4czM9ZbEZC7tTG74TtfuNeXNiEVaqxdx3hsHTmEF2TS2m2p2nYvcyx4h1KUXVQsKzSSxgsiHj3N"
 
 
 def extract_mints_from_transaction(tx_raw: Dict[str, Any]) -> List[Dict[str, Any]]:

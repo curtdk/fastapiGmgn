@@ -12,6 +12,7 @@ import websockets
 
 from app.models.models import Transaction
 from app.services.trade_processor import enqueue_trade
+from app.services import tx_redis
 from app.websocket.manager import ws_manager
 
 logger = logging.getLogger(__name__)
@@ -159,28 +160,27 @@ class TradeStream:
             if not tx_detail:
                 return
 
-            # 入库（去重）
+            # 写入 Redis（去重）
             sig = tx_detail.get("sig", "")
-            from app.utils.database import SessionLocal
-            db = SessionLocal()
             try:
-                existing = db.query(Transaction).filter(Transaction.sig == sig).first()
-                if not existing:
-                    tx_record = Transaction(**tx_detail)
-                    db.add(tx_record)
-                    db.commit()
+                # 检查是否已存在
+                existing = await tx_redis.get_tx(sig)
+                if existing:
+                    return
 
-                    if self.sync_point is None:
-                        self.sync_point = sig
-                        logger.info(f"[实时流] sync_point 已设置: {sig}")
+                # 保存到 Redis
+                await tx_redis.save_tx(tx_detail)
+                # 添加到有序集合（ws 数据源）
+                await tx_redis.add_tx_to_list(self.mint, sig, "ws")
 
-                    db.close()
-                    await enqueue_trade(tx_detail)
+                if self.sync_point is None:
+                    self.sync_point = sig
+                    logger.info(f"[实时流] sync_point 已设置: {sig}")
+
+                # 加入处理队列
+                await enqueue_trade(tx_detail)
             except Exception as e:
-                logger.warning(f"[实时流] 入库失败: {e}")
-                db.rollback()
-            finally:
-                db.close()
+                logger.warning(f"[实时流] Redis 写入失败: {e}")
 
         except Exception as e:
             logger.error(f"[实时流] 消息处理失败: {e}", exc_info=True)

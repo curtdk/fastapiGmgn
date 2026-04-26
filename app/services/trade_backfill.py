@@ -1,9 +1,10 @@
 """历史交易回填服务 - getTransactionsForAddress 一步获取签名+交易详情"""
 import asyncio
 import base58
+import json
 import logging
 from datetime import datetime
-from typing import List, Optional, Dict, Any
+from typing import Optional, Dict, Any
 
 import httpx
 from sqlalchemy.orm import Session
@@ -12,6 +13,7 @@ from sqlalchemy.dialects.sqlite import insert
 from app.models.models import Transaction
 from app.models.trade import TradeAnalysis
 from app.services.settings_service import get_int_setting, get_float_setting
+from app.services import tx_redis
 from app.websocket.manager import ws_manager
 
 logger = logging.getLogger(__name__)
@@ -63,11 +65,11 @@ class TradeBackfill:
 
             logger.info(f"[回填] sync_point 已就绪: {sync_point}")
 
-            # 2. 使用 getTransactionsForAddress 分页获取历史交易（含详情）
-            all_tx_details = await self._fetch_all_transactions_before(sync_point)
-            logger.info(f"[回填] 共获取 {len(all_tx_details)} 条有效交易")
+            # 2. 边获取边存入 Redis（保证从旧到新排序）
+            self.total_fetched = await self._fetch_all_transactions_before(sync_point)
+            logger.info(f"[回填] 共获取 {self.total_fetched} 条有效交易")
 
-            if not all_tx_details:
+            if not self.total_fetched:
                 await ws_manager.broadcast(self.mint, {
                     "type": "status",
                     "data": {
@@ -79,10 +81,7 @@ class TradeBackfill:
                 })
                 return
 
-            # 3. 批量入库（去重后直接 INSERT）
-            await self._batch_insert(all_tx_details)
-
-            # 4. 回填完成，触发指数计算
+            # 3. 回填完成，触发指数计算
             await ws_manager.broadcast(self.mint, {
                 "type": "status",
                 "data": {
@@ -94,7 +93,7 @@ class TradeBackfill:
                 }
             })
 
-            # 5. 触发全量指数计算
+            # 4. 触发全量指数计算
             await self._trigger_full_calculation()
 
         except Exception as e:
@@ -114,21 +113,21 @@ class TradeBackfill:
             await asyncio.sleep(0.5)
         return None
 
-    async def _fetch_all_transactions_before(self, sync_point: str) -> List[Dict[str, Any]]:
+    async def _fetch_all_transactions_before(self, sync_point: str) -> int:
         """
         使用 getTransactionsForAddress 分页获取历史交易（含完整详情）
         通过 filters.signature.lt=sync_point 获取该签名之前的交易
-        使用 paginationToken 分页，返回解析后的 trade_info 列表（从旧到新）
+        边获取边存入 Redis（保证从旧到新排序），返回保存数量
 
         优化：
         - 复用单个 AsyncClient（连接池复用，避免每批新建 TCP 连接）
-        - 每批之间加 500ms 间隔，避免打满 Helius RPS 配额抢占 dealer 请求资源
+        - 每批之间加间隔，避免打满 Helius RPS 配额抢占 dealer 请求资源
+        - 边获取边存入 Redis，无需二次遍历
         """
-        all_details = []
         pagination_token = None
         batch_size = 100  # transactionDetails: "full" 最大 100
         max_total = 50000
-        total_fetched = 0
+        total_saved = 0
         # 批次间限速间隔（秒）：给 dealer_detector 等其他请求留出带宽
         _BACKFILL_INTERVAL = 0.2
 
@@ -136,7 +135,7 @@ class TradeBackfill:
 
         # 复用同一个 AsyncClient，避免每次分页都新建 TCP 连接
         async with httpx.AsyncClient(timeout=60) as client:
-            while self.running and total_fetched < max_total:
+            while self.running and total_saved < max_total:
                 params = {
                     "limit": batch_size,
                     "commitment": "confirmed",
@@ -169,19 +168,16 @@ class TradeBackfill:
                 if not txs:
                     break
 
-                # 解析每笔交易
+                # 解析并直接存入 Redis
                 for tx in txs:
-                    # 从 transaction.signatures 获取签名
                     sig = tx.get("transaction", {}).get("signatures", [""])[0]
                     if not sig:
                         continue
 
-                    # 跳过失败的交易
                     meta = tx.get("meta", {})
                     if meta.get("err"):
                         continue
 
-                    # 构建与 _extract_trade_info 兼容的结构
                     tx_data = {
                         "_signature": sig,
                         "slot": tx.get("slot", 0),
@@ -192,9 +188,16 @@ class TradeBackfill:
 
                     detail = self._extract_trade_info(tx_data)
                     if detail:
-                        all_details.append(detail)
-
-                total_fetched += len(txs)
+                        # 检查是否已存在
+                        existing = await tx_redis.get_tx(sig)
+                        if existing:
+                            continue
+                        
+                        # 直接存入 Redis
+                        await tx_redis.save_tx(detail)
+                        # 添加到有序集合（seq 作为 score，保证从旧到新）
+                        await tx_redis.add_tx_to_list(self.mint, sig, "rpc_fill", score=total_saved)
+                        total_saved += 1
 
                 # 进度通知
                 await ws_manager.broadcast(self.mint, {
@@ -202,8 +205,8 @@ class TradeBackfill:
                     "data": {
                         "mint": self.mint,
                         "status": "FILLING",
-                        "message": f"已获取 {total_fetched} 条交易...",
-                        "total_trades": total_fetched,
+                        "message": f"已保存 {total_saved} 条交易...",
+                        "total_trades": total_saved,
                     }
                 })
 
@@ -215,55 +218,7 @@ class TradeBackfill:
                 # 批次间间隔
                 await asyncio.sleep(_BACKFILL_INTERVAL)
 
-        self.total_fetched = len(all_details)
-        return all_details
-
-    async def _batch_insert(self, tx_details: List[Dict[str, Any]]):
-        """批量入库（UPSERT 去重）"""
-        if not tx_details:
-            return
-
-        interval = 0.1
-        batch_size = 100
-
-        for i in range(0, len(tx_details), batch_size):
-            batch = tx_details[i:i + batch_size]
-
-            try:
-                for detail in batch:
-                    sig = detail.get("sig", "")
-                    if not sig:
-                        continue
-
-                    existing = self.db.query(Transaction).filter(Transaction.sig == sig).first()
-                    if existing:
-                        continue
-
-                    tx_record = Transaction(**detail)
-                    self.db.add(tx_record)
-
-                self.db.commit()
-                self.total_fetched += len(batch)
-
-            except Exception as e:
-                logger.warning(f"[回填] 批量入库失败: {e}")
-                self.db.rollback()
-
-            progress = min(i + batch_size, len(tx_details)) / len(tx_details) * 100
-            await ws_manager.broadcast(self.mint, {
-                "type": "status",
-                "data": {
-                    "mint": self.mint,
-                    "status": "FILLING",
-                    "message": f"入库进度 {progress:.1f}% ({self.total_fetched}/{len(tx_details)})",
-                    "progress": round(progress, 1),
-                    "total_trades": self.total_fetched,
-                }
-            })
-
-            # 批次间间隔，避免请求过快
-            if interval > 0:
-                await asyncio.sleep(interval)
+        return total_saved
 
     # ===== 辅助方法（与 trade_stream.py 保持一致） =====
 

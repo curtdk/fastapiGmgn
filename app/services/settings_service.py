@@ -15,6 +15,12 @@ DEFAULT_SETTINGS = {
     "ws_max_connections": "10",    # WS最大连接数
     "trade_page_size": "50",       # 前端显示交易行数
     "helius_api_key": "",          # Helius API 密钥
+    # 庄家检测条件设置
+    "dealer_alt_enabled": "false", # 是否启用 ALT 条件
+    "dealer_gas_max": "0.00001",   # Gas费最大值 (SOL)
+    "dealer_cu_min": "0",         # CU 最小值
+    "dealer_cu_max": "200000",     # CU 最大值
+    "dealer_risk_min": "0",        # 风险分最小值
 }
 
 

@@ -10,6 +10,7 @@ from sqlalchemy import case
 
 from app.models.trade import TradeAnalysis
 from app.models.models import Transaction
+from app.services import tx_redis
 from app.websocket.manager import ws_manager
 
 logger = logging.getLogger(__name__)
@@ -422,78 +423,41 @@ async def process_trade(db: Session, tx_detail: Dict[str, Any]):
 
 
 async def run_full_calculation(db: Session, mint: str):
-    """全量指数计算"""
+    """全量指数计算（从 Redis 获取交易数据）"""
     logger.info(f"[全量计算] 开始计算 mint={mint}")
 
-    trades = (
-        db.query(Transaction)
-        .filter(Transaction.token_mint == mint)
-        .order_by(
-            case((Transaction.source == "rpc_fill", 0), else_=1),
-            Transaction.id.asc()
-        )
-        .all()
-    )
+    # 从 Redis 有序集合获取交易列表（先 rpc_fill，再 ws）
+    rpc_sigs = await tx_redis.get_tx_list(mint, "rpc_fill")
+    ws_sigs = await tx_redis.get_tx_list(mint, "ws")
+    all_sigs = rpc_sigs + ws_sigs
 
-    logger.info(f"[全量计算] 共 {len(trades)} 条交易待处理")
+    logger.info(f"[全量计算] 共 {len(all_sigs)} 条交易待处理 (rpc_fill: {len(rpc_sigs)}, ws: {len(ws_sigs)})")
 
-    for tx in trades:
+    for sig in all_sigs:
         try:
-            existing = db.query(TradeAnalysis).filter(TradeAnalysis.sig == tx.sig).first()
+            # 检查是否已处理
+            existing = await tx_redis.is_tx_processed(sig)
             if existing:
                 continue
 
-            tx_detail = {
-                "sig": tx.sig,
-                "slot": tx.slot,
-                "block_time": tx.block_time,
-                "from_address": tx.from_address,
-                "to_address": tx.to_address,
-                "amount": tx.amount,
-                "token_mint": tx.token_mint,
-                "token_symbol": tx.token_symbol,
-                "transaction_type": tx.transaction_type,
-                "dex": tx.dex,
-                "pool_address": tx.pool_address,
-                "sol_spent": tx.sol_spent or 0.0,
-                "fee": tx.fee,
-                "source": tx.source,
-                # 风险相关
-                "risk_score": tx.risk_score or 0,
-                "risk_verdict": tx.risk_verdict,
-                "risk_indicators": tx.risk_indicators,
-                # Compute Unit
-                "priority_fee": tx.priority_fee,
-                "cu_consumed": tx.cu_consumed or 0,
-                "cu_limit": tx.cu_limit or 200000,
-                "cu_price": tx.cu_price or 0,
-                # 指令统计
-                "instructions_count": tx.instructions_count or 0,
-                "inner_instructions_count": tx.inner_instructions_count or 0,
-                "total_instruction_count": tx.total_instruction_count or 0,
-                "account_keys_count": tx.account_keys_count or 0,
-                "uses_lookup_table": tx.uses_lookup_table or False,
-                "signers_count": tx.signers_count or 0,
-                # 指令详情
-                "main_instructions": tx.main_instructions,
-                "inner_instructions": tx.inner_instructions,
-                "program_ids": tx.program_ids,
-            }
+            # 从 Redis 获取交易详情
+            tx_detail = await tx_redis.get_tx(sig)
+            if not tx_detail:
+                continue
 
             # 指数计算（get_trader_state 会自动检测 unknown 状态并入队）
             metrics = await _calculate_index(tx_detail, mint)
 
-            analysis = TradeAnalysis(
-                sig=tx.sig,
-                net_sol_flow=tx.sol_spent or 0.0,
-                net_token_flow=tx.amount or 0.0,
-                price_per_token=metrics.get("avgPrice", 0),
-                wallet_tag="dealer" if metrics.get("is_dealer") else "unknown",
-                processed_at=datetime.utcnow(),
-            )
-            db.add(analysis)
-            db.commit()
+            # 更新 Redis 中的分析结果
+            await tx_redis.update_tx_analysis(sig, {
+                "net_sol_flow": tx_detail.get("sol_spent", 0) or 0.0,
+                "net_token_flow": tx_detail.get("amount", 0) or 0.0,
+                "price_per_token": metrics.get("avgPrice", 0),
+                "wallet_tag": "dealer" if metrics.get("is_dealer") else "unknown",
+                "processed_at": datetime.utcnow().isoformat(),
+            })
 
+            # 非庄家交易 → WebSocket 广播
             if not metrics.get("is_dealer"):
                 await ws_manager.broadcast(mint, {
                     "type": "trade",
@@ -504,8 +468,7 @@ async def run_full_calculation(db: Session, mint: str):
                 })
 
         except Exception as e:
-            logger.error(f"[全量计算] 处理 {tx.sig[:8]}... 失败: {e}")
-            db.rollback()
+            logger.error(f"[全量计算] 处理 {sig[:8]}... 失败: {e}")
 
     logger.info(f"[全量计算] 完成 mint={mint}")
 

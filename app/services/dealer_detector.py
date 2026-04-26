@@ -3,7 +3,7 @@
 职责：
 - 维护 Redis 中的用户状态（retail / dealer / unknown）
 - 管理检测任务队列
-- 异步执行庄家判定逻辑（当前支持条件 C001，后续可扩展）
+- 异步执行庄家判定逻辑（支持条件 C001-C005）
 
 Redis 数据结构（统一使用 user:{address}）：
   user:{address}
@@ -13,6 +13,13 @@ Redis 数据结构（统一使用 user:{address}）：
     {mint}_holdingCost: "5.5"
     {mint}_avgPrice: "0.0055"
     ...
+
+庄家检测条件：
+  C001: 首笔交易 closeAccount（Helius API，最后检查）
+  C002: uses_lookup_table == True（ALT 条件）
+  C003: fee < 阈值
+  C004: cu_consumed 在范围内
+  C005: risk_score > 阈值
 """
 import asyncio
 import json
@@ -22,6 +29,7 @@ from typing import Optional
 import httpx
 import redis.asyncio as aioredis
 
+from app.services import tx_redis
 from app.websocket.manager import ws_manager
 
 logger = logging.getLogger(__name__)
@@ -181,8 +189,17 @@ async def _run_dealer_check(address: str, mint: str, sig: str):
     异步执行庄家判定，完成后：
     - 庄家：修改 status=dealer，排除计算，WS 广播隐藏
     - 散户：修改 status=retail，WS 广播标记
+    
+    执行顺序：
+    1. C002: ALT 条件（uses_lookup_table）
+    2. C003: Gas 费条件
+    3. C004: CU 条件
+    4. C005: 风险分条件
+    5. C001: 首笔交易 closeAccount（最后，Helius API 耗时长）
     """
     from app.services.trade_processor import get_trader_state, save_trader_state, exclude_dealer, _get_redis as tp_get_redis
+    from app.utils.database import SessionLocal
+    from app.services.settings_service import get_setting, get_float_setting, get_int_setting
 
     redis = await tp_get_redis()
     retry_key = f"retry:{address}:{mint}"
@@ -192,8 +209,88 @@ async def _run_dealer_check(address: str, mint: str, sig: str):
     try:
         state = await get_trader_state(redis, mint, address)
         conditions = state.get("conditions", [])
-
-        # 获取 Helius API Key
+        
+        # 获取交易详情（从 Redis tx:{sig}）
+        tx_detail = await tx_redis.get_tx(sig)
+        
+        is_dealer = False
+        
+        # ── 条件 C002：使用 ALT（地址查找表） ──
+        if "C002" not in conditions and tx_detail:
+            db = SessionLocal()
+            try:
+                alt_enabled = get_setting(db, "dealer_alt_enabled")
+                if alt_enabled == "true" and tx_detail.get("uses_lookup_table"):
+                    conditions.append("C002")
+                    is_dealer = True
+                    logger.info(f"[庄家判定] {address[:8]}... 满足 C002 (ALT)")
+            finally:
+                db.close()
+        
+        # ── 条件 C003：Gas 费小于阈值 ──
+        if "C003" not in conditions and tx_detail:
+            db = SessionLocal()
+            try:
+                gas_max = get_float_setting(db, "dealer_gas_max", 0.00001)
+                fee = tx_detail.get("fee", 0)
+                if fee < gas_max:
+                    conditions.append("C003")
+                    is_dealer = True
+                    logger.info(f"[庄家判定] {address[:8]}... 满足 C003 (Gas: {fee} < {gas_max})")
+            finally:
+                db.close()
+        
+        # ── 条件 C004：CU 在范围内 ──
+        if "C004" not in conditions and tx_detail:
+            db = SessionLocal()
+            try:
+                cu_min = get_int_setting(db, "dealer_cu_min", 0)
+                cu_max = get_int_setting(db, "dealer_cu_max", 200000)
+                cu_consumed = tx_detail.get("cu_consumed", 0)
+                if cu_min <= cu_consumed <= cu_max:
+                    conditions.append("C004")
+                    is_dealer = True
+                    logger.info(f"[庄家判定] {address[:8]}... 满足 C004 (CU: {cu_min} <= {cu_consumed} <= {cu_max})")
+            finally:
+                db.close()
+        
+        # ── 条件 C005：风险分大于阈值 ──
+        if "C005" not in conditions and tx_detail:
+            db = SessionLocal()
+            try:
+                risk_min = get_int_setting(db, "dealer_risk_min", 0)
+                risk_score = tx_detail.get("risk_score", 0)
+                if risk_score > risk_min:
+                    conditions.append("C005")
+                    is_dealer = True
+                    logger.info(f"[庄家判定] {address[:8]}... 满足 C005 (Risk: {risk_score} > {risk_min})")
+            finally:
+                db.close()
+        
+        # 如果前面条件已判定为庄家，直接跳过 C001
+        if is_dealer:
+            # 修改用户状态为 dealer
+            state["status"] = "dealer"
+            state["conditions"] = conditions
+            await save_trader_state(redis, mint, address, state)
+            
+            # 排除庄家：从汇总中减去该用户贡献
+            await exclude_dealer(mint, address)
+            
+            # WS 广播：前端隐藏该用户的交易
+            await ws_manager.broadcast(mint, {
+                "type": "user_status",
+                "data": {
+                    "address": address,
+                    "status": "dealer",
+                    "conditions": conditions,
+                    "sig": sig,
+                }
+            })
+            logger.info(f"[庄家判定] {address[:8]}... 判定为庄家，已排除并广播")
+            return
+        
+        # ── 条件 C001：首笔交易包含 closeAccount（Helius API，最后检查） ──
         api_key = await _get_helius_api_key()
         if not api_key:
             await _handle_detection_failed(redis, address, mint, sig, retry_count, "API Key 未配置")
@@ -205,15 +302,11 @@ async def _run_dealer_check(address: str, mint: str, sig: str):
             await _handle_detection_failed(redis, address, mint, sig, retry_count, "无历史交易")
             return
 
-        # ── 条件 C001：首笔交易包含 closeAccount 且交易后 SOL 余额为 0 ──
-        is_dealer = False
         if "C001" not in conditions:
             if _check_c001(first_tx, address):
                 conditions.append("C001")
                 is_dealer = True
                 logger.info(f"[庄家判定] {address[:8]}... 满足 C001")
-
-        # 后续条件在此追加（C002, C003 ...）
 
         if is_dealer:
             # 修改用户状态为 dealer
