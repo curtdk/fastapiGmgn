@@ -182,10 +182,10 @@ async function loadMintData() {
     const metrics = await metricsResp.json();
     const users = await usersResp.json();
     
-    // 获取交易列表计数
-    const rpcListResp = await fetch(`/admin/api/redis/txlist?mint=${encodeURIComponent(mint)}&source=rpc_fill&page=1&page_size=1`);
+    // 获取交易列表
+    const rpcListResp = await fetch(`/admin/api/redis/txlist?mint=${encodeURIComponent(mint)}&source=rpc_fill&page=1&page_size=10000`);
     const rpcListData = await rpcListResp.json();
-    const wsListResp = await fetch(`/admin/api/redis/txlist?mint=${encodeURIComponent(mint)}&source=ws&page=1&page_size=1`);
+    const wsListResp = await fetch(`/admin/api/redis/txlist?mint=${encodeURIComponent(mint)}&source=ws&page=1&page_size=10000`);
     const wsListData = await wsListResp.json();
     
     document.getElementById('keyInfo').innerHTML = `
