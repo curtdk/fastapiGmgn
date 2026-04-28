@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 from logging.handlers import RotatingFileHandler
@@ -142,6 +143,153 @@ class TradeMonitorView(BaseView):
     @expose("/settings-page", methods=["GET"])
     async def settings_page(self, request: Request):
         return await self.templates.TemplateResponse(request, "settings.html")
+
+    @expose("/dealer-settings", methods=["GET"])
+    async def dealer_settings_page(self, request: Request):
+        return await self.templates.TemplateResponse(request, "dealer_settings.html")
+
+
+class DealerSettingsMenu(BaseView):
+    """庄家设置菜单项"""
+    name = "庄家设置"
+    icon = "fa-solid fa-user-shield"
+
+    @expose("/dealer-settings", methods=["GET"])
+    async def dealer_settings_page(self, request: Request):
+        return await self.templates.TemplateResponse(request, "dealer_settings.html")
+
+
+class TradeLiveMenu(BaseView):
+    """实时交易菜单项"""
+    name = "实时交易"
+    icon = "fa-solid fa-bolt"
+
+    @expose("/trade", methods=["GET"])
+    async def trade_page(self, request: Request):
+        return await self.templates.TemplateResponse(request, "trade_live.html")
+
+
+class RedisViewerMenu(BaseView):
+    """Redis 信息菜单项"""
+    name = "Redis 信息"
+    icon = "fa-solid fa-database"
+    endpoint = "/admin/redis-viewer"
+
+    @expose("/admin/redis-viewer", methods=["GET"], identity="redis-viewer")
+    async def redis_viewer_page(self, request: Request):
+        return await self.templates.TemplateResponse(request, "redis_viewer.html")
+
+    # ===== Redis 数据查询 API =====
+
+    @expose("/api/redis/mints", methods=["GET"])
+    async def api_get_mints(self, request: Request):
+        """获取所有有数据的 mint 列表"""
+        from app.services.trade_processor import _get_redis
+        redis = await _get_redis()
+        mints = []
+        if redis:
+            # 从 metrics:* 和 txlist:* 中提取 mint
+            seen = set()
+            cursor = 0
+            while True:
+                cursor, keys = await redis.scan(cursor, match="metrics:*", count=200)
+                for key in keys:
+                    mint = key.replace("metrics:", "")
+                    if mint not in seen:
+                        seen.add(mint)
+                        # 获取 metrics 数据
+                        metrics = await redis.hgetall(key)
+                        mints.append({
+                            "mint": mint,
+                            "total_bet": float(metrics.get("total_bet", 0)),
+                            "realized_profit": float(metrics.get("realized_profit", 0)),
+                            "dealer_count": int(metrics.get("dealer_count", 0)),
+                        })
+                cursor, keys = await redis.scan(cursor, match="txlist:*", count=200)
+                for key in keys:
+                    # 解析 txlist:source:mint 格式
+                    parts = key.split(":")
+                    if len(parts) >= 3:
+                        source = parts[1]
+                        mint = ":".join(parts[2:]).replace(":counter", "")
+                        if mint not in seen and ":counter" not in key:
+                            seen.add(mint)
+                if cursor == 0:
+                    break
+        return JSONResponse({"mints": sorted(mints, key=lambda x: x["total_bet"], reverse=True), "count": len(mints)})
+
+    @expose("/api/redis/txlist", methods=["GET"])
+    async def api_get_txlist(self, request: Request):
+        mint = request.query_params.get("mint", "")
+        source = request.query_params.get("source", "rpc_fill")
+        from app.services import tx_redis
+        sigs = await tx_redis.get_tx_list(mint, source)
+        count = await tx_redis.get_tx_count(mint, source)
+        return JSONResponse({"sigs": sigs, "count": count})
+
+    @expose("/api/redis/tx-detail", methods=["GET"])
+    async def api_get_tx_detail(self, request: Request):
+        """获取单个交易详情"""
+        sig = request.query_params.get("sig", "")
+        if not sig:
+            return JSONResponse({"error": "sig is required"}, status_code=400)
+        from app.services import tx_redis
+        tx = await tx_redis.get_tx(sig)
+        return JSONResponse({"tx": tx})
+
+    @expose("/api/redis/metrics", methods=["GET"])
+    async def api_get_metrics(self, request: Request):
+        mint = request.query_params.get("mint", "")
+        from app.services.trade_processor import _get_redis
+        redis = await _get_redis()
+        metrics = {}
+        if redis:
+            key = f"metrics:{mint}"
+            data = await redis.hgetall(key)
+            for k, v in data.items():
+                try:
+                    metrics[k] = float(v)
+                except:
+                    metrics[k] = v
+        return JSONResponse({"metrics": metrics})
+
+    @expose("/api/redis/users", methods=["GET"])
+    async def api_get_users(self, request: Request):
+        mint = request.query_params.get("mint", "")
+        from app.services.trade_processor import _get_redis
+        redis = await _get_redis()
+        users = []
+        if redis:
+            # 扫描所有 user:* keys
+            cursor = 0
+            while True:
+                cursor, keys = await redis.scan(cursor, match="user:*", count=100)
+                for key in keys:
+                    user_data = await redis.hgetall(key)
+                    if user_data:
+                        # 检查该用户是否有当前 mint 的数据
+                        holding_qty = user_data.get(f"{mint}_holdingQty")
+                        if holding_qty and float(holding_qty) > 0:
+                            try:
+                                conditions = json.loads(user_data.get("conditions", "[]"))
+                            except:
+                                conditions = []
+                            users.append({
+                                "address": key.replace("user:", ""),
+                                "status": user_data.get("status", "unknown"),
+                                "conditions": conditions,
+                                "holdingQty": float(holding_qty),
+                                "holdingCost": float(user_data.get(f"{mint}_holdingCost", "0")),
+                                "avgPrice": float(user_data.get(f"{mint}_avgPrice", "0")),
+                                "totalBuyAmount": float(user_data.get(f"{mint}_totalBuyAmount", "0")),
+                                "totalSellAmount": float(user_data.get(f"{mint}_totalSellAmount", "0")),
+                                "totalSellPrincipal": float(user_data.get(f"{mint}_totalSellPrincipal", "0")),
+                            })
+                if cursor == 0:
+                    break
+        # 按持仓成本排序
+        users.sort(key=lambda x: x["holdingCost"], reverse=True)
+        return JSONResponse({"users": users, "count": len(users)})
 
     # ===== API 端点（使用 query params 避免 sqladmin 菜单解析 path params 出错） =====
 
@@ -357,6 +505,9 @@ admin.add_view(TokenAdmin)
 admin.add_view(SettingAdmin)
 admin.add_view(TradeAnalysisAdmin)
 admin.add_base_view(TradeMonitorView)
+admin.add_base_view(DealerSettingsMenu)
+admin.add_base_view(TradeLiveMenu)
+admin.add_base_view(RedisViewerMenu)
 
 # ========== WebSocket 路由 ==========
 @app.websocket("/ws/trades/{mint}")

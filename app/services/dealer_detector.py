@@ -231,12 +231,14 @@ async def _run_dealer_check(address: str, mint: str, sig: str):
         if "C003" not in conditions and tx_detail:
             db = SessionLocal()
             try:
-                gas_max = get_float_setting(db, "dealer_gas_max", 0.00001)
-                fee = tx_detail.get("fee", 0)
-                if fee < gas_max:
-                    conditions.append("C003")
-                    is_dealer = True
-                    logger.info(f"[庄家判定] {address[:8]}... 满足 C003 (Gas: {fee} < {gas_max})")
+                gas_enabled = get_setting(db, "dealer_gas_enabled")
+                if gas_enabled == "true":
+                    gas_max = get_float_setting(db, "dealer_gas_max", 0.00001)
+                    fee = tx_detail.get("fee", 0)
+                    if fee < gas_max:
+                        conditions.append("C003")
+                        is_dealer = True
+                        logger.info(f"[庄家判定] {address[:8]}... 满足 C003 (Gas: {fee} < {gas_max})")
             finally:
                 db.close()
         
@@ -244,13 +246,15 @@ async def _run_dealer_check(address: str, mint: str, sig: str):
         if "C004" not in conditions and tx_detail:
             db = SessionLocal()
             try:
-                cu_min = get_int_setting(db, "dealer_cu_min", 0)
-                cu_max = get_int_setting(db, "dealer_cu_max", 200000)
-                cu_consumed = tx_detail.get("cu_consumed", 0)
-                if cu_min <= cu_consumed <= cu_max:
-                    conditions.append("C004")
-                    is_dealer = True
-                    logger.info(f"[庄家判定] {address[:8]}... 满足 C004 (CU: {cu_min} <= {cu_consumed} <= {cu_max})")
+                cu_enabled = get_setting(db, "dealer_cu_enabled")
+                if cu_enabled == "true":
+                    cu_min = get_int_setting(db, "dealer_cu_min", 0)
+                    cu_max = get_int_setting(db, "dealer_cu_max", 200000)
+                    cu_consumed = tx_detail.get("cu_consumed", 0)
+                    if cu_min <= cu_consumed <= cu_max:
+                        conditions.append("C004")
+                        is_dealer = True
+                        logger.info(f"[庄家判定] {address[:8]}... 满足 C004 (CU: {cu_min} <= {cu_consumed} <= {cu_max})")
             finally:
                 db.close()
         
@@ -258,12 +262,14 @@ async def _run_dealer_check(address: str, mint: str, sig: str):
         if "C005" not in conditions and tx_detail:
             db = SessionLocal()
             try:
-                risk_min = get_int_setting(db, "dealer_risk_min", 0)
-                risk_score = tx_detail.get("risk_score", 0)
-                if risk_score > risk_min:
-                    conditions.append("C005")
-                    is_dealer = True
-                    logger.info(f"[庄家判定] {address[:8]}... 满足 C005 (Risk: {risk_score} > {risk_min})")
+                risk_enabled = get_setting(db, "dealer_risk_enabled")
+                if risk_enabled == "true":
+                    risk_min = get_int_setting(db, "dealer_risk_min", 0)
+                    risk_score = tx_detail.get("risk_score", 0)
+                    if risk_score > risk_min:
+                        conditions.append("C005")
+                        is_dealer = True
+                        logger.info(f"[庄家判定] {address[:8]}... 满足 C005 (Risk: {risk_score} > {risk_min})")
             finally:
                 db.close()
         
@@ -291,22 +297,24 @@ async def _run_dealer_check(address: str, mint: str, sig: str):
             return
         
         # ── 条件 C001：首笔交易包含 closeAccount（Helius API，最后检查） ──
-        api_key = await _get_helius_api_key()
-        if not api_key:
-            await _handle_detection_failed(redis, address, mint, sig, retry_count, "API Key 未配置")
-            return
+        c001_enabled = get_setting(SessionLocal(), "dealer_c001_enabled")
+        if c001_enabled == "true":
+            api_key = await _get_helius_api_key()
+            if not api_key:
+                await _handle_detection_failed(redis, address, mint, sig, retry_count, "API Key 未配置")
+                return
 
-        # 获取钱包最旧一笔交易（sortOrder asc, limit 1）
-        first_tx = await _fetch_first_transaction(address, api_key)
-        if not first_tx:
-            await _handle_detection_failed(redis, address, mint, sig, retry_count, "无历史交易")
-            return
+            # 获取钱包最旧一笔交易（sortOrder asc, limit 1）
+            first_tx = await _fetch_first_transaction(address, api_key)
+            if not first_tx:
+                await _handle_detection_failed(redis, address, mint, sig, retry_count, "无历史交易")
+                return
 
-        if "C001" not in conditions:
-            if _check_c001(first_tx, address):
-                conditions.append("C001")
-                is_dealer = True
-                logger.info(f"[庄家判定] {address[:8]}... 满足 C001")
+            if "C001" not in conditions:
+                if _check_c001(first_tx, address):
+                    conditions.append("C001")
+                    is_dealer = True
+                    logger.info(f"[庄家判定] {address[:8]}... 满足 C001")
 
         if is_dealer:
             # 修改用户状态为 dealer

@@ -1,0 +1,180 @@
+{% extends "sqladmin/layout.html" %}
+{% block title %}庄家检测条件设置{% endblock %}
+{% block content %}
+<style>
+  .settings-container { max-width: 900px; margin: 20px auto; }
+  .settings-card { background: #fff; border-radius: 8px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 20px; }
+  .card-title { font-size: 18px; font-weight: 600; margin-bottom: 16px; color: #333; }
+  .condition-item { display: flex; align-items: center; padding: 16px 0; border-bottom: 1px solid #e9ecef; }
+  .condition-item:last-child { border-bottom: none; }
+  .condition-id { font-weight: 600; width: 80px; color: #007bff; }
+  .condition-desc { flex: 1; color: #666; }
+  .condition-controls { display: flex; align-items: center; gap: 16px; }
+  .condition-controls label { display: flex; align-items: center; gap: 4px; }
+  .condition-controls input[type="text"] { width: 100px; text-align: right; }
+  .btn-save { background: #007bff; color: #fff; padding: 10px 24px; border: none; border-radius: 4px; cursor: pointer; }
+  .btn-save:hover { background: #0056b3; }
+  .status-bar { padding: 12px; border-radius: 4px; margin-top: 16px; display: none; }
+  .status-success { background: #d4edda; color: #155724; }
+  .status-error { background: #f8d7da; color: #721c24; }
+</style>
+
+<div class="container-fluid settings-container">
+  <h2 class="page-title">庄家检测条件设置</h2>
+  
+  <div class="settings-card">
+    <div class="card-title">庄家判定条件配置</div>
+    <div id="conditionsList">加载中...</div>
+    <div class="mt-3">
+      <button class="btn-save" onclick="saveAll()">保存设置</button>
+    </div>
+    <div id="statusBar" class="status-bar"></div>
+  </div>
+</div>
+
+<script>
+let settingsData = {};
+
+const conditions = [
+  {
+    id: "C001",
+    name: "首笔交易 closeAccount",
+    desc: "首笔交易包含 closeAccount 指令且交易后 SOL 余额为 0",
+    hasEnabled: true,
+    enabledKey: "dealer_c001_enabled",
+    fields: []
+  },
+  {
+    id: "C002",
+    name: "ALT 条件",
+    desc: "使用了地址查找表 (Address Lookup Table)",
+    hasEnabled: true,
+    enabledKey: "dealer_alt_enabled",
+    fields: []
+  },
+  {
+    id: "C003",
+    name: "Gas 费条件",
+    desc: "Gas 费小于指定阈值",
+    hasEnabled: true,
+    enabledKey: "dealer_gas_enabled",
+    fields: [
+      { key: "dealer_gas_max", label: "最大值 (SOL)", type: "text" }
+    ]
+  },
+  {
+    id: "C004",
+    name: "CU 条件",
+    desc: "Compute Unit 消耗在指定范围内",
+    hasEnabled: true,
+    enabledKey: "dealer_cu_enabled",
+    fields: [
+      { key: "dealer_cu_min", label: "最小值", type: "text" },
+      { key: "dealer_cu_max", label: "最大值", type: "text" }
+    ]
+  },
+  {
+    id: "C005",
+    name: "风险分条件",
+    desc: "风险分大于指定阈值",
+    hasEnabled: true,
+    enabledKey: "dealer_risk_enabled",
+    fields: [
+      { key: "dealer_risk_min", label: "最小值", type: "text" }
+    ]
+  }
+];
+
+async function loadSettings() {
+  try {
+    const resp = await fetch('/admin/api/settings');
+    settingsData = await resp.json();
+    renderConditions();
+  } catch (e) {
+    document.getElementById('conditionsList').innerHTML = '<p class="text-danger">加载失败: ' + e.message + '</p>';
+  }
+}
+
+function renderConditions() {
+  const container = document.getElementById('conditionsList');
+  let html = '';
+  
+  for (const cond of conditions) {
+    html += `<div class="condition-item">`;
+    html += `<div class="condition-id">${cond.id}</div>`;
+    html += `<div class="condition-desc">`;
+    html += `<div><strong>${cond.name}</strong></div>`;
+    html += `<div style="font-size: 12px; color: #868e96;">${cond.desc}</div>`;
+    html += `</div>`;
+    html += `<div class="condition-controls">`;
+    
+    if (cond.hasEnabled) {
+      const checked = settingsData[cond.enabledKey] === 'true' ? 'checked' : '';
+      html += `<label><input type="checkbox" id="setting_${cond.enabledKey}" ${checked} />启用</label>`;
+    } else {
+      html += `<span style="color: #868e96;">自动检测</span>`;
+    }
+    
+    for (const field of cond.fields) {
+      const value = settingsData[field.key] || '';
+      html += `<label>${field.label}: <input type="${field.type}" id="setting_${field.key}" value="${value}" class="form-control form-control-sm" style="width: 100px;" /></label>`;
+    }
+    
+    html += `</div></div>`;
+  }
+  
+  container.innerHTML = html;
+}
+
+function showStatus(message, isError) {
+  const bar = document.getElementById('statusBar');
+  bar.textContent = message;
+  bar.className = 'status-bar ' + (isError ? 'status-error' : 'status-success');
+  bar.style.display = 'block';
+  setTimeout(() => { bar.style.display = 'none'; }, 3000);
+}
+
+async function saveAll() {
+  let success = 0;
+  let total = 0;
+  
+  for (const cond of conditions) {
+    if (cond.hasEnabled) {
+      total++;
+      const checkbox = document.getElementById(`setting_${cond.enabledKey}`);
+      const value = checkbox.type === 'checkbox' ? (checkbox.checked ? 'true' : 'false') : checkbox.value;
+      try {
+        await fetch(`/admin/api/settings`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ key: cond.enabledKey, value: value }),
+        });
+        success++;
+      } catch (e) {
+        console.error(`保存 ${cond.enabledKey} 失败:`, e);
+      }
+    }
+    
+    for (const field of cond.fields) {
+      total++;
+      const input = document.getElementById(`setting_${field.key}`);
+      try {
+        await fetch(`/admin/api/settings`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ key: field.key, value: input.value }),
+        });
+        success++;
+      } catch (e) {
+        console.error(`保存 ${field.key} 失败:`, e);
+      }
+    }
+  }
+  
+  showStatus(`已保存 ${success}/${total} 项设置`, success < total);
+  await loadSettings();
+}
+
+window.addEventListener('DOMContentLoaded', loadSettings);
+</script>
+{% endblock %}

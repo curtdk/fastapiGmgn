@@ -1,0 +1,298 @@
+{% extends "sqladmin/layout.html" %}
+{% block title %}Redis 数据查看{% endblock %}
+{% block content %}
+<style>
+  .viewer-container { max-width: 1400px; margin: 20px auto; }
+  .viewer-card { background: #fff; border-radius: 8px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 20px; }
+  .card-title { font-size: 18px; font-weight: 600; margin-bottom: 16px; color: #333; }
+  .search-box { display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; align-items: center; }
+  .search-box input { padding: 8px 12px; border: 1px solid #ced4da; border-radius: 4px; width: 400px; }
+  .search-box select { padding: 8px 12px; border: 1px solid #ced4da; border-radius: 4px; max-width: 200px; }
+  .btn-search { background: #007bff; color: #fff; padding: 8px 20px; border: none; border-radius: 4px; cursor: pointer; }
+  .btn-search:hover { background: #0056b3; }
+  .section { margin-bottom: 24px; }
+  .section-title { font-weight: 600; margin-bottom: 12px; color: #495057; border-bottom: 2px solid #dee2e6; padding-bottom: 8px; display: flex; justify-content: space-between; align-items: center; }
+  .data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .data-table th { background: #f8f9fa; padding: 10px 12px; text-align: left; border: 1px solid #dee2e6; }
+  .data-table td { padding: 8px 12px; border: 1px solid #dee2e6; word-break: break-all; }
+  .data-table tr:hover { background: #f8f9fa; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; }
+  .badge-dealer { background: #dc3545; color: #fff; }
+  .badge-retail { background: #28a745; color: #fff; }
+  .badge-unknown { background: #6c757d; color: #fff; }
+  .metric-value { font-weight: 600; color: #007bff; }
+  .loading { text-align: center; padding: 40px; color: #6c757d; }
+  .empty-state { text-align: center; padding: 40px; color: #6c757d; }
+  .tabs { display: flex; gap: 4px; margin-bottom: 16px; border-bottom: 2px solid #dee2e6; }
+  .tab { padding: 8px 16px; cursor: pointer; border: none; background: #f8f9fa; border-radius: 4px 4px 0 0; }
+  .tab.active { background: #007bff; color: #fff; }
+  .key-info { background: #f8f9fa; padding: 12px; border-radius: 4px; margin-bottom: 16px; font-size: 12px; color: #6c757d; }
+  .metric-card { display: inline-block; padding: 12px 20px; background: #f8f9fa; border-radius: 4px; margin-right: 12px; margin-bottom: 8px; }
+  .metric-card .label { font-size: 11px; color: #6c757d; }
+  .metric-card .value { font-size: 18px; font-weight: 600; color: #333; }
+  .mint-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
+  .mint-card { padding: 12px; border: 1px solid #dee2e6; border-radius: 4px; cursor: pointer; transition: all 0.2s; }
+  .mint-card:hover { background: #f8f9fa; border-color: #007bff; }
+  .mint-card.selected { background: #e7f1ff; border-color: #007bff; }
+  .mint-card .mint-addr { font-family: monospace; font-size: 12px; word-break: break-all; }
+  .mint-card .mint-stats { display: flex; gap: 16px; margin-top: 8px; font-size: 12px; color: #6c757d; }
+  .tx-detail-modal { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1000; }
+  .tx-detail-modal.show { display: flex; align-items: center; justify-content: center; }
+  .tx-detail-content { background: #fff; border-radius: 8px; padding: 24px; max-width: 800px; max-height: 80vh; overflow: auto; width: 90%; }
+  .tx-detail-close { float: right; cursor: pointer; font-size: 24px; }
+  pre { background: #f8f9fa; padding: 12px; border-radius: 4px; overflow-x: auto; font-size: 12px; }
+</style>
+
+<div class="container-fluid viewer-container">
+  <h2 class="page-title">Redis 数据查看</h2>
+  
+  <div class="viewer-card">
+    <div class="search-box">
+      <select id="mintSelect">
+        <option value="">-- 选择 Mint --</option>
+      </select>
+      <input type="text" id="mintInput" placeholder="或输入 Mint 地址" value="" style="width: 300px;">
+      <button class="btn-search" onclick="loadMintData()">查询</button>
+    </div>
+    
+    <div class="key-info" id="keyInfo">
+      加载中...
+    </div>
+    
+    <div id="contentArea">
+      <div class="empty-state">请选择一个 Mint 后点击查询</div>
+    </div>
+  </div>
+</div>
+
+<!-- 交易详情弹窗 -->
+<div class="tx-detail-modal" id="txDetailModal">
+  <div class="tx-detail-content">
+    <span class="tx-detail-close" onclick="closeTxDetail()">&times;</span>
+    <h3>交易详情</h3>
+    <pre id="txDetailContent"></pre>
+  </div>
+</div>
+
+<script>
+let currentMint = '';
+let mintsData = [];
+
+// 页面加载时获取所有 mint 列表
+async function loadMints() {
+  try {
+    const resp = await fetch('/admin/api/redis/mints');
+    const data = await resp.json();
+    mintsData = data.mints || [];
+    
+    const select = document.getElementById('mintSelect');
+    select.innerHTML = '<option value="">-- 选择 Mint --</option>';
+    
+    mintsData.forEach(m => {
+      const opt = document.createElement('option');
+      opt.value = m.mint;
+      opt.textContent = `${m.mint.slice(0, 20)}... (投注: ${m.total_bet.toFixed(2)} SOL)`;
+      select.dataset.mint = m.mint;
+      select.innerHTML += `<option value="${m.mint}">${m.mint.slice(0, 20)}... (投注: ${m.total_bet.toFixed(2)} SOL)</option>`;
+    });
+    
+    document.getElementById('keyInfo').innerHTML = `共 ${mintsData.length} 个 Mint`;
+
+    // 如果有 URL 参数中的 mint
+    const urlParams = new URLSearchParams(window.location.search);
+    const mintParam = urlParams.get('mint');
+    if (mintParam) {
+      document.getElementById('mintInput').value = mintParam;
+      loadMintData();
+    }
+  } catch (e) {
+    document.getElementById('keyInfo').innerHTML = '加载 Mint 列表失败: ' + e.message;
+  }
+}
+
+// 选择 mint 时的处理
+document.getElementById('mintSelect').addEventListener('change', function() {
+  if (this.value) {
+    document.getElementById('mintInput').value = this.value;
+    loadMintData();
+  }
+});
+
+async function loadMintData() {
+  const mint = document.getElementById('mintInput').value.trim() || document.getElementById('mintSelect').value;
+  if (!mint) {
+    alert('请输入 Mint 地址');
+    return;
+  }
+  currentMint = mint;
+  
+  document.getElementById('keyInfo').innerHTML = '加载中... <i class="fa-solid fa-spinner fa-spin"></i>';
+  document.getElementById('contentArea').innerHTML = '<div class="loading"><i class="fa-solid fa-spinner fa-spin"></i> 加载中...</div>';
+  
+  try {
+    // 并行加载所有数据
+    const [metricsResp, rpcListResp, wsListResp, usersResp] = await Promise.all([
+      fetch(`/admin/api/redis/metrics?mint=${encodeURIComponent(mint)}`),
+      fetch(`/admin/api/redis/txlist?mint=${encodeURIComponent(mint)}&source=rpc_fill`),
+      fetch(`/admin/api/redis/txlist?mint=${encodeURIComponent(mint)}&source=ws`),
+      fetch(`/admin/api/redis/users?mint=${encodeURIComponent(mint)}`)
+    ]);
+    
+    const metrics = await metricsResp.json();
+    const rpcList = await rpcListResp.json();
+    const wsList = await wsListResp.json();
+    const users = await usersResp.json();
+    
+    document.getElementById('keyInfo').innerHTML = `
+      <strong>Redis Keys:</strong> 
+      txlist:rpc_fill:${mint} (${rpcList.count || 0} 条) | 
+      txlist:ws:${mint} (${wsList.count || 0} 条) | 
+      metrics:${mint} | 
+      user:*:${mint}_*
+    `;
+    
+    let html = '';
+    
+    // 全局指标
+    html += renderMetrics(metrics);
+    
+    // 交易列表
+    html += renderTxLists(rpcList, wsList);
+    
+    // 用户列表
+    html += renderUsers(users);
+    
+    document.getElementById('contentArea').innerHTML = html;
+    
+  } catch (e) {
+    document.getElementById('contentArea').innerHTML = '<div class="text-danger">加载失败: ' + e.message + '</div>';
+  }
+}
+
+function renderMetrics(metrics) {
+  const m = metrics.metrics || {};
+  return `
+    <div class="section">
+      <div class="section-title">全局指标 (metrics:${currentMint})</div>
+      <div class="metric-card">
+        <div class="label">总投注 (total_bet)</div>
+        <div class="value">${m.total_bet || 0}</div>
+      </div>
+      <div class="metric-card">
+        <div class="label">已实现利润 (realized_profit)</div>
+        <div class="value">${m.realized_profit || 0}</div>
+      </div>
+      <div class="metric-card">
+        <div class="label">庄家数量 (dealer_count)</div>
+        <div class="value">${m.dealer_count || 0}</div>
+      </div>
+    </div>
+  `;
+}
+
+function renderTxLists(rpcList, wsList) {
+  let html = '<div class="section"><div class="section-title">交易列表';
+  html += `<span style="font-weight:normal;font-size:12px;color:#6c757d;"> 共 ${(rpcList.count || 0) + (wsList.count || 0)} 条</span>`;
+  html += '</div>';
+  html += '<div class="tabs">';
+  html += `<button class="tab active" onclick="showTab('rpc')">历史交易 (${rpcList.count || 0})</button>`;
+  html += `<button class="tab" onclick="showTab('ws')">实时交易 (${wsList.count || 0})</button>`;
+  html += '</div>';
+  
+  // RPC 列表
+  html += `<div id="tab-rpc" style="display:block;">`;
+  if (rpcList.sigs && rpcList.sigs.length > 0) {
+    html += '<table class="data-table"><thead><tr><th>#</th><th>签名</th><th>操作</th></tr></thead><tbody>';
+    rpcList.sigs.forEach((sig, i) => {
+      html += `<tr><td>${i + 1}</td><td><code>${sig.slice(0, 30)}...</code></td><td><a href="javascript:viewTxDetail('${sig}')" style="color:#007bff;">查看</a></td></tr>`;
+    });
+    html += '</tbody></table>';
+  } else {
+    html += '<div class="empty-state">暂无历史交易数据</div>';
+  }
+  html += '</div>';
+  
+  // WS 列表
+  html += `<div id="tab-ws" style="display:none;">`;
+  if (wsList.sigs && wsList.sigs.length > 0) {
+    html += '<table class="data-table"><thead><tr><th>#</th><th>签名</th><th>操作</th></tr></thead><tbody>';
+    wsList.sigs.forEach((sig, i) => {
+      html += `<tr><td>${i + 1}</td><td><code>${sig.slice(0, 30)}...</code></td><td><a href="javascript:viewTxDetail('${sig}')" style="color:#007bff;">查看</a></td></tr>`;
+    });
+    html += '</tbody></table>';
+  } else {
+    html += '<div class="empty-state">暂无实时交易数据</div>';
+  }
+  html += '</div></div>';
+  
+  return html;
+}
+
+function renderUsers(users) {
+  const users_list = users.users || [];
+  let html = `<div class="section"><div class="section-title">用户列表`;
+  html += `<span style="font-weight:normal;font-size:12px;color:#6c757d;"> 共 ${users_list.length} 个用户</span>`;
+  html += '</div>';
+  
+  if (users_list.length > 0) {
+    html += '<table class="data-table"><thead><tr><th>地址</th><th>状态</th><th>条件</th><th>持仓数量</th><th>持仓成本</th><th>均价</th><th>买入总额</th><th>卖出总额</th><th>卖出本金</th></tr></thead><tbody>';
+    users_list.forEach(u => {
+      const badgeClass = u.status === 'dealer' ? 'badge-dealer' : (u.status === 'retail' ? 'badge-retail' : 'badge-unknown');
+      const conditionsStr = Array.isArray(u.conditions) ? u.conditions.join(', ') : (u.conditions || '-');
+      html += `<tr>
+        <td><code>${u.address.slice(0, 16)}...</code></td>
+        <td><span class="badge ${badgeClass}">${u.status}</span></td>
+        <td>${conditionsStr}</td>
+        <td>${u.holdingQty.toFixed(2)}</td>
+        <td>${u.holdingCost.toFixed(4)}</td>
+        <td>${u.avgPrice.toFixed(8)}</td>
+        <td>${u.totalBuyAmount.toFixed(4)}</td>
+        <td>${u.totalSellAmount.toFixed(4)}</td>
+        <td>${u.totalSellPrincipal.toFixed(4)}</td>
+      </tr>`;
+    });
+    html += '</tbody></table>';
+  } else {
+    html += '<div class="empty-state">暂无用户数据</div>';
+  }
+  html += '</div>';
+  
+  return html;
+}
+
+function showTab(tab) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  event.target.classList.add('active');
+  document.getElementById('tab-rpc').style.display = tab === 'rpc' ? 'block' : 'none';
+  document.getElementById('tab-ws').style.display = tab === 'ws' ? 'block' : 'none';
+}
+
+async function viewTxDetail(sig) {
+  try {
+    const resp = await fetch(`/admin/api/redis/tx-detail?sig=${encodeURIComponent(sig)}`);
+    const data = await resp.json();
+    document.getElementById('txDetailContent').textContent = JSON.stringify(data.tx, null, 2);
+    document.getElementById('txDetailModal').classList.add('show');
+  } catch (e) {
+    alert('加载交易详情失败: ' + e.message);
+  }
+}
+
+function closeTxDetail() {
+  document.getElementById('txDetailModal').classList.remove('show');
+}
+
+// 点击弹窗外部关闭
+document.getElementById('txDetailModal').addEventListener('click', function(e) {
+  if (e.target === this) closeTxDetail();
+});
+
+// 回车搜索
+document.getElementById('mintInput').addEventListener('keypress', function(e) {
+  if (e.key === 'Enter') loadMintData();
+});
+
+// 初始化加载
+loadMints();
+</script>
+{% endblock %}

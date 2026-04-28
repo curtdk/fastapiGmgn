@@ -21,3 +21,13 @@ class SettingsView(BaseView):
     @expose("/settings", methods=["GET"])
     async def settings_page(self, request: Request):
         return await self.templates.TemplateResponse(request, "settings.html")
+
+
+class DealerSettingsView(BaseView):
+    """庄家检测条件设置页面"""
+    name = "庄家设置"
+    icon = "fa-solid fa-user-shield"
+
+    @expose("/dealer-settings", methods=["GET"])
+    async def dealer_settings_page(self, request: Request):
+        return await self.templates.TemplateResponse(request, "dealer_settings.html")

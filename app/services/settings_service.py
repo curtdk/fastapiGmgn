@@ -16,10 +16,14 @@ DEFAULT_SETTINGS = {
     "trade_page_size": "50",       # 前端显示交易行数
     "helius_api_key": "",          # Helius API 密钥
     # 庄家检测条件设置
-    "dealer_alt_enabled": "false", # 是否启用 ALT 条件
-    "dealer_gas_max": "0.00001",   # Gas费最大值 (SOL)
+    "dealer_c001_enabled": "false", # C001 首笔交易 closeAccount 条件启用
+    "dealer_alt_enabled": "false", # ALT 条件启用
+    "dealer_gas_enabled": "false", # Gas 费条件启用
+    "dealer_gas_max": "0.00001",   # Gas 费最大值 (SOL)
+    "dealer_cu_enabled": "false",  # CU 条件启用
     "dealer_cu_min": "0",         # CU 最小值
     "dealer_cu_max": "200000",     # CU 最大值
+    "dealer_risk_enabled": "false", # 风险分条件启用
     "dealer_risk_min": "0",        # 风险分最小值
 }
 
