@@ -148,150 +148,7 @@ class TradeMonitorView(BaseView):
     async def dealer_settings_page(self, request: Request):
         return await self.templates.TemplateResponse(request, "dealer_settings.html")
 
-
-class DealerSettingsMenu(BaseView):
-    """庄家设置菜单项"""
-    name = "庄家设置"
-    icon = "fa-solid fa-user-shield"
-
-    @expose("/dealer-settings", methods=["GET"])
-    async def dealer_settings_page(self, request: Request):
-        return await self.templates.TemplateResponse(request, "dealer_settings.html")
-
-
-class TradeLiveMenu(BaseView):
-    """实时交易菜单项"""
-    name = "实时交易"
-    icon = "fa-solid fa-bolt"
-
-    @expose("/trade", methods=["GET"])
-    async def trade_page(self, request: Request):
-        return await self.templates.TemplateResponse(request, "trade_live.html")
-
-
-class RedisViewerMenu(BaseView):
-    """Redis 信息菜单项"""
-    name = "Redis 信息"
-    icon = "fa-solid fa-database"
-    endpoint = "/admin/redis-viewer"
-
-    @expose("/admin/redis-viewer", methods=["GET"], identity="redis-viewer")
-    async def redis_viewer_page(self, request: Request):
-        return await self.templates.TemplateResponse(request, "redis_viewer.html")
-
-    # ===== Redis 数据查询 API =====
-
-    @expose("/api/redis/mints", methods=["GET"])
-    async def api_get_mints(self, request: Request):
-        """获取所有有数据的 mint 列表"""
-        from app.services.trade_processor import _get_redis
-        redis = await _get_redis()
-        mints = []
-        if redis:
-            # 从 metrics:* 和 txlist:* 中提取 mint
-            seen = set()
-            cursor = 0
-            while True:
-                cursor, keys = await redis.scan(cursor, match="metrics:*", count=200)
-                for key in keys:
-                    mint = key.replace("metrics:", "")
-                    if mint not in seen:
-                        seen.add(mint)
-                        # 获取 metrics 数据
-                        metrics = await redis.hgetall(key)
-                        mints.append({
-                            "mint": mint,
-                            "total_bet": float(metrics.get("total_bet", 0)),
-                            "realized_profit": float(metrics.get("realized_profit", 0)),
-                            "dealer_count": int(metrics.get("dealer_count", 0)),
-                        })
-                cursor, keys = await redis.scan(cursor, match="txlist:*", count=200)
-                for key in keys:
-                    # 解析 txlist:source:mint 格式
-                    parts = key.split(":")
-                    if len(parts) >= 3:
-                        source = parts[1]
-                        mint = ":".join(parts[2:]).replace(":counter", "")
-                        if mint not in seen and ":counter" not in key:
-                            seen.add(mint)
-                if cursor == 0:
-                    break
-        return JSONResponse({"mints": sorted(mints, key=lambda x: x["total_bet"], reverse=True), "count": len(mints)})
-
-    @expose("/api/redis/txlist", methods=["GET"])
-    async def api_get_txlist(self, request: Request):
-        mint = request.query_params.get("mint", "")
-        source = request.query_params.get("source", "rpc_fill")
-        from app.services import tx_redis
-        sigs = await tx_redis.get_tx_list(mint, source)
-        count = await tx_redis.get_tx_count(mint, source)
-        return JSONResponse({"sigs": sigs, "count": count})
-
-    @expose("/api/redis/tx-detail", methods=["GET"])
-    async def api_get_tx_detail(self, request: Request):
-        """获取单个交易详情"""
-        sig = request.query_params.get("sig", "")
-        if not sig:
-            return JSONResponse({"error": "sig is required"}, status_code=400)
-        from app.services import tx_redis
-        tx = await tx_redis.get_tx(sig)
-        return JSONResponse({"tx": tx})
-
-    @expose("/api/redis/metrics", methods=["GET"])
-    async def api_get_metrics(self, request: Request):
-        mint = request.query_params.get("mint", "")
-        from app.services.trade_processor import _get_redis
-        redis = await _get_redis()
-        metrics = {}
-        if redis:
-            key = f"metrics:{mint}"
-            data = await redis.hgetall(key)
-            for k, v in data.items():
-                try:
-                    metrics[k] = float(v)
-                except:
-                    metrics[k] = v
-        return JSONResponse({"metrics": metrics})
-
-    @expose("/api/redis/users", methods=["GET"])
-    async def api_get_users(self, request: Request):
-        mint = request.query_params.get("mint", "")
-        from app.services.trade_processor import _get_redis
-        redis = await _get_redis()
-        users = []
-        if redis:
-            # 扫描所有 user:* keys
-            cursor = 0
-            while True:
-                cursor, keys = await redis.scan(cursor, match="user:*", count=100)
-                for key in keys:
-                    user_data = await redis.hgetall(key)
-                    if user_data:
-                        # 检查该用户是否有当前 mint 的数据
-                        holding_qty = user_data.get(f"{mint}_holdingQty")
-                        if holding_qty and float(holding_qty) > 0:
-                            try:
-                                conditions = json.loads(user_data.get("conditions", "[]"))
-                            except:
-                                conditions = []
-                            users.append({
-                                "address": key.replace("user:", ""),
-                                "status": user_data.get("status", "unknown"),
-                                "conditions": conditions,
-                                "holdingQty": float(holding_qty),
-                                "holdingCost": float(user_data.get(f"{mint}_holdingCost", "0")),
-                                "avgPrice": float(user_data.get(f"{mint}_avgPrice", "0")),
-                                "totalBuyAmount": float(user_data.get(f"{mint}_totalBuyAmount", "0")),
-                                "totalSellAmount": float(user_data.get(f"{mint}_totalSellAmount", "0")),
-                                "totalSellPrincipal": float(user_data.get(f"{mint}_totalSellPrincipal", "0")),
-                            })
-                if cursor == 0:
-                    break
-        # 按持仓成本排序
-        users.sort(key=lambda x: x["holdingCost"], reverse=True)
-        return JSONResponse({"users": users, "count": len(users)})
-
-    # ===== API 端点（使用 query params 避免 sqladmin 菜单解析 path params 出错） =====
+    # ===== API 端点 =====
 
     @expose("/api/trades", methods=["GET"])
     async def api_get_trades(self, request: Request):
@@ -333,23 +190,19 @@ class RedisViewerMenu(BaseView):
                     "net_token_flow": analysis.net_token_flow if analysis else 0.0,
                     "price_per_token": analysis.price_per_token if analysis else 0.0,
                     "wallet_tag": analysis.wallet_tag if analysis else None,
-                    # 风险相关
                     "risk_score": tx.risk_score or 0,
                     "risk_verdict": tx.risk_verdict,
                     "risk_indicators": tx.risk_indicators,
-                    # Compute Unit
                     "priority_fee": tx.priority_fee,
                     "cu_consumed": tx.cu_consumed or 0,
                     "cu_limit": tx.cu_limit or 200000,
                     "cu_price": tx.cu_price or 0,
-                    # 指令统计
                     "instructions_count": tx.instructions_count or 0,
                     "inner_instructions_count": tx.inner_instructions_count or 0,
                     "total_instruction_count": tx.total_instruction_count or 0,
                     "account_keys_count": tx.account_keys_count or 0,
                     "uses_lookup_table": tx.uses_lookup_table or False,
                     "signers_count": tx.signers_count or 0,
-                    # 指令详情
                     "main_instructions": tx.main_instructions,
                     "inner_instructions": tx.inner_instructions,
                     "program_ids": tx.program_ids,
@@ -386,7 +239,6 @@ class RedisViewerMenu(BaseView):
             if st: await st.stop()
             del active_monitors[mint]
 
-            # 清理 trade_processor 全局状态 + 删除 DB 记录
             from app.services.trade_processor import reset_processor
             _reset_db = SessionLocal()
             try:
@@ -402,10 +254,8 @@ class RedisViewerMenu(BaseView):
             backfill = TradeBackfill(db=db, mint=mint, stream=stream)
             active_monitors[mint] = {"backfill": backfill, "stream": stream}
 
-            # 先启动实时流
             asyncio.create_task(stream.start())
 
-            # 实时流启动后立即启动回填
             async def start_backfill_after():
                 while not stream.running:
                     await asyncio.sleep(0.2)
@@ -429,7 +279,6 @@ class RedisViewerMenu(BaseView):
         if st: await st.stop()
         del active_monitors[mint]
 
-        # 清理 trade_processor 全局状态 + 删除 DB 记录
         from app.services.trade_processor import reset_processor
         db = SessionLocal()
         try:
@@ -459,6 +308,37 @@ class RedisViewerMenu(BaseView):
             return JSONResponse({"key": result.key, "value": result.value})
         finally:
             db.close()
+
+
+class DealerSettingsMenu(BaseView):
+    """庄家设置菜单项"""
+    name = "庄家设置"
+    icon = "fa-solid fa-user-shield"
+
+    @expose("/dealer-settings", methods=["GET"])
+    async def dealer_settings_page(self, request: Request):
+        return await self.templates.TemplateResponse(request, "dealer_settings.html")
+
+
+class TradeLiveMenu(BaseView):
+    """实时交易菜单项"""
+    name = "实时交易"
+    icon = "fa-solid fa-bolt"
+
+    @expose("/trade", methods=["GET"])
+    async def trade_page(self, request: Request):
+        return await self.templates.TemplateResponse(request, "trade_live.html")
+
+
+class RedisViewerMenu(BaseView):
+    """Redis 信息菜单项"""
+    name = "Redis 信息"
+    icon = "fa-solid fa-database"
+    endpoint = "/admin/redis-viewer"
+
+    @expose("/admin/redis-viewer", methods=["GET"], identity="redis-viewer")
+    async def redis_viewer_page(self, request: Request):
+        return await self.templates.TemplateResponse(request, "redis_viewer.html")
 
 
 # ========== SQLAdmin 配置 ==========
