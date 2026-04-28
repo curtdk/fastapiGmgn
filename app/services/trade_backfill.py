@@ -10,8 +10,6 @@ import httpx
 from sqlalchemy.orm import Session
 from sqlalchemy.dialects.sqlite import insert
 
-from app.models.models import Transaction
-from app.models.trade import TradeAnalysis
 from app.services.settings_service import get_int_setting, get_float_setting
 from app.services import tx_redis
 from app.websocket.manager import ws_manager

@@ -6,14 +6,12 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends, HTTPExce
 from fastapi.responses import JSONResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
-from sqlalchemy import case
 
 # Jinja2 模板（用于独立页面）
 templates = Jinja2Templates(directory="app/templates")
 
 from app.utils.database import get_db, SessionLocal
-from app.models.models import Transaction
-from app.models.trade import TradeAnalysis, Setting
+from app.models.trade import Setting
 from app.schemas.trade import (
     TradeListResponse, TradeData, MonitorStatus, FourMetrics, WsMessage
 )
@@ -23,6 +21,7 @@ from app.services.trade_processor import calculate_metrics
 from app.services.settings_service import (
     get_all_settings, update_setting, init_default_settings, SettingResponse
 )
+from app.services import tx_redis
 from app.websocket.manager import ws_manager
 
 logger = logging.getLogger(__name__)
@@ -44,77 +43,79 @@ async def startup_event():
 
 
 @router.get("/{mint}")
-def get_trades(
+async def get_trades(
     mint: str,
     page: int = 1,
     page_size: int = 50,
     db: Session = Depends(get_db),
 ):
-    """获取某 mint 的交易列表（最新在前）"""
-    total = db.query(Transaction).filter(Transaction.token_mint == mint).count()
-
-    trades = (
-        db.query(Transaction, TradeAnalysis)
-        .outerjoin(TradeAnalysis, Transaction.sig == TradeAnalysis.sig)
-        .filter(Transaction.token_mint == mint)
-        .order_by(
-            case((Transaction.source == "rpc_fill", 0), else_=1),  # rpc_fill 先显示
-            Transaction.slot.desc(),
-            Transaction.block_time.desc(),
-            Transaction.id.desc(),
-        )
-        .offset((page - 1) * page_size)
-        .limit(page_size)
-        .all()
-    )
-
+    """获取某 mint 的交易列表（最新在前）- 从 Redis 获取"""
+    # 从 Redis 获取交易总数
+    rpc_sigs = await tx_redis.get_tx_list(mint, "rpc_fill")
+    ws_sigs = await tx_redis.get_tx_list(mint, "ws")
+    total = len(rpc_sigs) + len(ws_sigs)
+    
+    # 分页计算
+    start = (page - 1) * page_size
+    end = start + page_size
+    
+    # 合并签名列表（rpc_fill 在前，然后按 score 排序）
+    all_sigs = rpc_sigs + ws_sigs
+    
+    # 分页
+    paginated_sigs = all_sigs[start:end]
+    
     trade_list = []
-    for tx, analysis in trades:
+    for sig in paginated_sigs:
+        tx_detail = await tx_redis.get_tx(sig)
+        if not tx_detail:
+            continue
+        
         trade_list.append(TradeData(
-            sig=tx.sig,
-            slot=tx.slot,
-            block_time=tx.block_time,
-            from_address=tx.from_address,
-            to_address=tx.to_address,
-            amount=tx.amount,
-            token_mint=tx.token_mint,
-            token_symbol=tx.token_symbol,
-            transaction_type=tx.transaction_type,
-            dex=tx.dex,
-            pool_address=tx.pool_address,
-            sol_spent=round(tx.sol_spent, 6) if tx.sol_spent is not None else None,
-            fee=tx.fee,
-            source=tx.source,
-            net_sol_flow=analysis.net_sol_flow if analysis else 0.0,
-            net_token_flow=analysis.net_token_flow if analysis else 0.0,
-            price_per_token=analysis.price_per_token if analysis else 0.0,
-            wallet_tag=analysis.wallet_tag if analysis else None,
+            sig=tx_detail.get("sig", ""),
+            slot=tx_detail.get("slot", 0),
+            block_time=tx_detail.get("block_time"),
+            from_address=tx_detail.get("from_address", ""),
+            to_address=tx_detail.get("to_address", ""),
+            amount=tx_detail.get("amount", 0),
+            token_mint=tx_detail.get("token_mint", mint),
+            token_symbol=tx_detail.get("token_symbol", ""),
+            transaction_type=tx_detail.get("transaction_type", ""),
+            dex=tx_detail.get("dex", ""),
+            pool_address=tx_detail.get("pool_address", ""),
+            sol_spent=round(tx_detail.get("sol_spent", 0) or 0, 6),
+            fee=tx_detail.get("fee", 0),
+            source=tx_detail.get("source", ""),
+            net_sol_flow=tx_detail.get("net_sol_flow", 0.0),
+            net_token_flow=tx_detail.get("net_token_flow", 0.0),
+            price_per_token=tx_detail.get("price_per_token", 0.0),
+            wallet_tag=tx_detail.get("wallet_tag"),
             # 风险相关
-            risk_score=tx.risk_score or 0,
-            risk_verdict=tx.risk_verdict,
-            risk_indicators=tx.risk_indicators,
+            risk_score=tx_detail.get("risk_score", 0) or 0,
+            risk_verdict=tx_detail.get("risk_verdict", ""),
+            risk_indicators=tx_detail.get("risk_indicators", "[]"),
             # Compute Unit
-            priority_fee=tx.priority_fee,
-            cu_consumed=tx.cu_consumed or 0,
-            cu_limit=tx.cu_limit or 200000,
-            cu_price=tx.cu_price or 0,
+            priority_fee=tx_detail.get("priority_fee", 0),
+            cu_consumed=tx_detail.get("cu_consumed", 0) or 0,
+            cu_limit=tx_detail.get("cu_limit", 200000) or 200000,
+            cu_price=tx_detail.get("cu_price", 0) or 0,
             # 指令统计
-            instructions_count=tx.instructions_count or 0,
-            inner_instructions_count=tx.inner_instructions_count or 0,
-            total_instruction_count=tx.total_instruction_count or 0,
-            account_keys_count=tx.account_keys_count or 0,
-            uses_lookup_table=tx.uses_lookup_table or False,
-            signers_count=tx.signers_count or 0,
+            instructions_count=tx_detail.get("instructions_count", 0) or 0,
+            inner_instructions_count=tx_detail.get("inner_instructions_count", 0) or 0,
+            total_instruction_count=tx_detail.get("total_instruction_count", 0) or 0,
+            account_keys_count=tx_detail.get("account_keys_count", 0) or 0,
+            uses_lookup_table=tx_detail.get("uses_lookup_table", False) or False,
+            signers_count=tx_detail.get("signers_count", 0) or 0,
             # 指令详情
-            main_instructions=tx.main_instructions,
-            inner_instructions=tx.inner_instructions,
-            program_ids=tx.program_ids,
+            main_instructions=tx_detail.get("main_instructions", "[]"),
+            inner_instructions=tx_detail.get("inner_instructions", "[]"),
+            program_ids=tx_detail.get("program_ids", "[]"),
         ))
 
     return TradeListResponse(
         trades=trade_list,
         total=total,
-        has_more=(page * page_size < total),
+        has_more=(end < total),
     )
 
 

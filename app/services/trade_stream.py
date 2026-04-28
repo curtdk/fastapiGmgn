@@ -10,7 +10,6 @@ from typing import Optional, Dict, Any
 import httpx
 import websockets
 
-from app.models.models import Transaction
 from app.services.trade_processor import enqueue_trade
 from app.services import tx_redis
 from app.websocket.manager import ws_manager

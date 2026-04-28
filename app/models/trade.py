@@ -14,14 +14,14 @@ class Setting(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
-class TradeAnalysis(Base):
-    """交易分析结果表"""
-    __tablename__ = "trade_analysis"
+# class TradeAnalysis(Base):
+#     """交易分析结果表"""
+#     __tablename__ = "trade_analysis"
 
-    id = Column(Integer, primary_key=True, index=True)
-    sig = Column(String, unique=True, index=True, nullable=False)
-    net_sol_flow = Column(Float, default=0.0)       # SOL净流入
-    net_token_flow = Column(Float, default=0.0)      # Token净流入
-    price_per_token = Column(Float, default=0.0)     # 单价(SOL)
-    wallet_tag = Column(String)                       # 钱包标记
-    processed_at = Column(DateTime, default=datetime.utcnow)
+#     id = Column(Integer, primary_key=True, index=True)
+#     sig = Column(String, unique=True, index=True, nullable=False)
+#     net_sol_flow = Column(Float, default=0.0)       # SOL净流入
+#     net_token_flow = Column(Float, default=0.0)      # Token净流入
+#     price_per_token = Column(Float, default=0.0)     # 单价(SOL)
+#     wallet_tag = Column(String)                       # 钱包标记
+#     processed_at = Column(DateTime, default=datetime.utcnow)

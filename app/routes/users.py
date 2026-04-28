@@ -2,8 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
 from app.utils.database import get_db
-from app.models.models import User, Transaction
-from app.schemas.schemas import UserResponse, TransactionResponse, UserUpdate
+from app.models.models import User
+from app.schemas.schemas import UserResponse, UserUpdate
 from app.routes.auth import oauth2_scheme, verify_password
 from jose import jwt, JWTError
 from datetime import datetime, timedelta
@@ -80,26 +80,3 @@ def delete_user(user_id: int, db: Session = Depends(get_db), current_user: User 
     db.delete(user)
     db.commit()
     return {"message": "User deleted"}
-
-# Transaction endpoints
-@router.get("/transactions/", response_model=List[TransactionResponse])
-def get_transactions(
-    skip: int = 0, 
-    limit: int = 100,
-    token_mint: str = None,
-    dex: str = None,
-    source: str = None,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    query = db.query(Transaction)
-    
-    if token_mint:
-        query = query.filter(Transaction.token_mint == token_mint)
-    if dex:
-        query = query.filter(Transaction.dex == dex)
-    if source:
-        query = query.filter(Transaction.source == source)
-    
-    transactions = query.order_by(Transaction.block_time.desc()).offset(skip).limit(limit).all()
-    return transactions

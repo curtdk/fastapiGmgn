@@ -13,8 +13,8 @@ from sqladmin.authentication import AuthenticationBackend
 from app.routes import users, auth
 from app.routes.trades import router as trades_router, settings_router, active_monitors
 from app.utils.database import engine, Base, SessionLocal
-from app.models.models import User, Transaction, Token
-from app.models.trade import Setting, TradeAnalysis
+from app.models.models import User, Token
+from app.models.trade import Setting
 from app.routes.auth import verify_password
 from app.websocket.manager import ws_manager
 
@@ -40,9 +40,6 @@ logger = logging.getLogger(__name__)
 # 创建数据库表
 Base.metadata.create_all(bind=engine)
 
-# 迁移 transactions 表（添加新列）
-from app.utils.database import migrate_transactions_table
-migrate_transactions_table()
 
 SESSION_SECRET = "your-secret-key-change-in-production"
 
@@ -94,15 +91,6 @@ class UserAdmin(ModelView, model=User):
     can_create = True
     can_edit = True
 
-class TransactionAdmin(ModelView, model=Transaction):
-    column_list = [Transaction.id, Transaction.sig, Transaction.from_address, Transaction.to_address,
-                   Transaction.token_mint, Transaction.dex, Transaction.source, Transaction.block_time]
-    column_searchable_list = [Transaction.sig, Transaction.from_address, Transaction.to_address, Transaction.token_mint]
-    column_sortable_list = [Transaction.block_time]
-    can_delete = True
-    can_create = False
-    can_edit = False
-
 class TokenAdmin(ModelView, model=Token):
     column_list = [Token.id, Token.mint_address, Token.symbol, Token.name, Token.price, Token.market_cap]
     column_searchable_list = [Token.mint_address, Token.symbol, Token.name]
@@ -117,16 +105,6 @@ class SettingAdmin(ModelView, model=Setting):
     can_delete = False
     can_create = False
     can_edit = True
-
-class TradeAnalysisAdmin(ModelView, model=TradeAnalysis):
-    column_list = [TradeAnalysis.id, TradeAnalysis.sig, TradeAnalysis.net_sol_flow,
-                   TradeAnalysis.net_token_flow, TradeAnalysis.price_per_token,
-                   TradeAnalysis.wallet_tag, TradeAnalysis.processed_at]
-    column_searchable_list = [TradeAnalysis.sig]
-    column_sortable_list = [TradeAnalysis.processed_at]
-    can_delete = True
-    can_create = False
-    can_edit = False
 
 # ========== 自定义 Admin 页面（含页面 + API） ==========
 active_monitors: dict = {}
@@ -152,64 +130,64 @@ class TradeMonitorView(BaseView):
 
     @expose("/api/trades", methods=["GET"])
     async def api_get_trades(self, request: Request):
+        from app.services import tx_redis
         mint = request.query_params.get("mint", "")
         page = int(request.query_params.get("page", 1))
         page_size = int(request.query_params.get("page_size", 300))
-        db = SessionLocal()
-        try:
-            from app.models.models import Transaction
-            from app.models.trade import TradeAnalysis
-            total = db.query(Transaction).filter(Transaction.token_mint == mint).count()
-            trades = (
-                db.query(Transaction, TradeAnalysis)
-                .outerjoin(TradeAnalysis, Transaction.sig == TradeAnalysis.sig)
-                .filter(Transaction.token_mint == mint)
-                .order_by(Transaction.slot.desc(), Transaction.block_time.desc(), Transaction.id.desc())
-                .offset((page - 1) * page_size)
-                .limit(page_size)
-                .all()
-            )
-            trade_list = []
-            for tx, analysis in trades:
-                trade_list.append({
-                    "sig": tx.sig,
-                    "slot": tx.slot,
-                    "block_time": tx.block_time.isoformat() if tx.block_time else None,
-                    "from_address": tx.from_address,
-                    "to_address": tx.to_address,
-                    "amount": tx.amount,
-                    "token_mint": tx.token_mint,
-                    "token_symbol": tx.token_symbol,
-                    "transaction_type": tx.transaction_type,
-                    "dex": tx.dex,
-                    "pool_address": tx.pool_address,
-                    "sol_spent": round(tx.sol_spent, 6) if tx.sol_spent is not None else None,
-                    "fee": tx.fee,
-                    "source": tx.source,
-                    "net_sol_flow": analysis.net_sol_flow if analysis else 0.0,
-                    "net_token_flow": analysis.net_token_flow if analysis else 0.0,
-                    "price_per_token": analysis.price_per_token if analysis else 0.0,
-                    "wallet_tag": analysis.wallet_tag if analysis else None,
-                    "risk_score": tx.risk_score or 0,
-                    "risk_verdict": tx.risk_verdict,
-                    "risk_indicators": tx.risk_indicators,
-                    "priority_fee": tx.priority_fee,
-                    "cu_consumed": tx.cu_consumed or 0,
-                    "cu_limit": tx.cu_limit or 200000,
-                    "cu_price": tx.cu_price or 0,
-                    "instructions_count": tx.instructions_count or 0,
-                    "inner_instructions_count": tx.inner_instructions_count or 0,
-                    "total_instruction_count": tx.total_instruction_count or 0,
-                    "account_keys_count": tx.account_keys_count or 0,
-                    "uses_lookup_table": tx.uses_lookup_table or False,
-                    "signers_count": tx.signers_count or 0,
-                    "main_instructions": tx.main_instructions,
-                    "inner_instructions": tx.inner_instructions,
-                    "program_ids": tx.program_ids,
-                })
-            return JSONResponse({"trades": trade_list, "total": total, "has_more": (page * page_size < total)})
-        finally:
-            db.close()
+        
+        # 从 Redis 获取交易列表
+        rpc_sigs = await tx_redis.get_tx_list(mint, "rpc_fill")
+        ws_sigs = await tx_redis.get_tx_list(mint, "ws")
+        total = len(rpc_sigs) + len(ws_sigs)
+        
+        # 分页
+        start = (page - 1) * page_size
+        end = start + page_size
+        all_sigs = rpc_sigs + ws_sigs
+        paginated_sigs = all_sigs[start:end]
+        
+        trade_list = []
+        for sig in paginated_sigs:
+            tx_detail = await tx_redis.get_tx(sig)
+            if not tx_detail:
+                continue
+            trade_list.append({
+                "sig": tx_detail.get("sig", ""),
+                "slot": tx_detail.get("slot", 0),
+                "block_time": tx_detail.get("block_time"),
+                "from_address": tx_detail.get("from_address", ""),
+                "to_address": tx_detail.get("to_address", ""),
+                "amount": tx_detail.get("amount", 0),
+                "token_mint": tx_detail.get("token_mint", mint),
+                "token_symbol": tx_detail.get("token_symbol", ""),
+                "transaction_type": tx_detail.get("transaction_type", ""),
+                "dex": tx_detail.get("dex", ""),
+                "pool_address": tx_detail.get("pool_address", ""),
+                "sol_spent": round(tx_detail.get("sol_spent", 0) or 0, 6),
+                "fee": tx_detail.get("fee", 0),
+                "source": tx_detail.get("source", ""),
+                "net_sol_flow": tx_detail.get("net_sol_flow", 0.0),
+                "net_token_flow": tx_detail.get("net_token_flow", 0.0),
+                "price_per_token": tx_detail.get("price_per_token", 0.0),
+                "wallet_tag": tx_detail.get("wallet_tag"),
+                "risk_score": tx_detail.get("risk_score", 0) or 0,
+                "risk_verdict": tx_detail.get("risk_verdict", ""),
+                "risk_indicators": tx_detail.get("risk_indicators", "[]"),
+                "priority_fee": tx_detail.get("priority_fee", 0),
+                "cu_consumed": tx_detail.get("cu_consumed", 0) or 0,
+                "cu_limit": tx_detail.get("cu_limit", 200000) or 200000,
+                "cu_price": tx_detail.get("cu_price", 0) or 0,
+                "instructions_count": tx_detail.get("instructions_count", 0) or 0,
+                "inner_instructions_count": tx_detail.get("inner_instructions_count", 0) or 0,
+                "total_instruction_count": tx_detail.get("total_instruction_count", 0) or 0,
+                "account_keys_count": tx_detail.get("account_keys_count", 0) or 0,
+                "uses_lookup_table": tx_detail.get("uses_lookup_table", False) or False,
+                "signers_count": tx_detail.get("signers_count", 0) or 0,
+                "main_instructions": tx_detail.get("main_instructions", "[]"),
+                "inner_instructions": tx_detail.get("inner_instructions", "[]"),
+                "program_ids": tx_detail.get("program_ids", "[]"),
+            })
+        return JSONResponse({"trades": trade_list, "total": total, "has_more": (end < total)})
 
     @expose("/api/metrics", methods=["GET"])
     async def api_get_metrics(self, request: Request):
@@ -575,10 +553,8 @@ admin = Admin(
 
 # 注册视图
 admin.add_view(UserAdmin)
-admin.add_view(TransactionAdmin)
 admin.add_view(TokenAdmin)
 admin.add_view(SettingAdmin)
-admin.add_view(TradeAnalysisAdmin)
 admin.add_base_view(TradeMonitorView)
 admin.add_base_view(DealerSettingsMenu)
 admin.add_base_view(TradeLiveMenu)

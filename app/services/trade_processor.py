@@ -7,7 +7,6 @@ from typing import Dict, Any, Optional
 
 from sqlalchemy.orm import Session
 
-from app.models.models import Transaction
 from app.services import tx_redis
 from app.websocket.manager import ws_manager
 
@@ -372,40 +371,6 @@ async def _consumer_loop(mint: str):
             logger.error(f"[消费者] {sig[:8]}... 异常: {e}", exc_info=True)
 
 
-async def process_trade(db: Session, tx_detail: Dict[str, Any]):
-    """处理单条交易（保留兼容）"""
-    sig = tx_detail.get("sig", "")
-    if not sig:
-        return
-
-    try:
-        existing = db.query(TradeAnalysis).filter(TradeAnalysis.sig == sig).first()
-        if existing:
-            return
-
-        analysis = TradeAnalysis(
-            sig=sig,
-            net_sol_flow=0.0,
-            net_token_flow=0.0,
-            price_per_token=0.0,
-            wallet_tag=None,
-            processed_at=datetime.utcnow(),
-        )
-        db.add(analysis)
-        db.commit()
-
-        await ws_manager.broadcast(tx_detail.get("token_mint", ""), {
-            "type": "trade",
-            "data": tx_detail,
-        })
-
-        logger.debug(f"[处理] {sig[:8]}... 完成")
-
-    except Exception as e:
-        logger.error(f"[处理] {sig[:8]}... 异常: {e}", exc_info=True)
-        db.rollback()
-
-
 async def run_full_calculation(db: Session, mint: str):
     """全量指数计算（从 Redis 获取交易数据）"""
     logger.info(f"[全量计算] 开始计算 mint={mint}")
@@ -479,18 +444,12 @@ async def reset_processor(mint: str, db: Session):
     # 3. 清理 Redis 指标数据（不清理用户数据）
     await clear_mint_redis(mint)
 
-    # 4. 删除 DB 中该 mint 的记录
-    try:
-        sigs = [row.sig for row in db.query(Transaction.sig).filter(Transaction.token_mint == mint).all()]
-        if sigs:
-            deleted_analysis = db.query(TradeAnalysis).filter(TradeAnalysis.sig.in_(sigs)).delete(synchronize_session=False)
-            logger.info(f"[重置] 删除 TradeAnalysis {deleted_analysis} 条")
-        deleted_tx = db.query(Transaction).filter(Transaction.token_mint == mint).delete(synchronize_session=False)
-        logger.info(f"[重置] 删除 Transaction {deleted_tx} 条")
-        db.commit()
-    except Exception as e:
-        logger.error(f"[重置] 删除 DB 记录失败: {e}", exc_info=True)
-        db.rollback()
+    # 4. 删除 Redis 中该 mint 的交易数据（txlist 和 tx:*）
+    from app.services.dealer_detector import _redis
+    if _redis:
+        await _redis.delete(f"txlist:rpc_fill:{mint}")
+        await _redis.delete(f"txlist:ws:{mint}")
+        logger.info(f"[重置] 已删除 Redis 交易列表: txlist:rpc_fill:{mint}, txlist:ws:{mint}")
 
     # 5. 重置全局变量
     _trade_queue = asyncio.Queue()
@@ -508,7 +467,11 @@ async def calculate_metrics(db: Session, mint: str) -> Dict[str, float]:
         return {"current_bet": 0, "current_cost": 0, "realized_profit": 0, "trade_count": 0}
 
     metrics = await get_metrics(redis, mint)
-    trade_count = db.query(Transaction).filter(Transaction.token_mint == mint).count()
+    
+    # 从 Redis 获取交易数量（两个有序集合的总和）
+    rpc_count = await redis.zcard(f"txlist:rpc_fill:{mint}")
+    ws_count = await redis.zcard(f"txlist:ws:{mint}")
+    trade_count = rpc_count + ws_count
     
     total_bet = metrics.get("total_bet", 0)
     realized_profit = metrics.get("realized_profit", 0)
