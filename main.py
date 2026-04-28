@@ -279,14 +279,15 @@ class TradeMonitorView(BaseView):
         if st: await st.stop()
         del active_monitors[mint]
 
-        from app.services.trade_processor import reset_processor
-        db = SessionLocal()
-        try:
-            await reset_processor(mint, db)
-        finally:
-            db.close()
+        # 不再删除数据库记录，只清理 Redis 内存状态
+        # from app.services.trade_processor import reset_processor
+        # db = SessionLocal()
+        # try:
+        #     await reset_processor(mint, db)
+        # finally:
+        #     db.close()
 
-        return JSONResponse({"message": f"已停止监听 {mint}"})
+        return JSONResponse({"message": f"已停止监听 {mint}，数据库记录已保留"})
 
     @expose("/api/settings", methods=["GET"])
     async def api_get_settings(self, request: Request):
@@ -448,6 +449,85 @@ class RedisApiView(BaseView):
                     break
         users.sort(key=lambda x: x["holdingCost"], reverse=True)
         return JSONResponse({"users": users, "count": len(users)})
+
+    @expose("/api/redis/clear-users", methods=["POST"])
+    async def api_clear_users(self, request: Request):
+        """清除指定 mint 的全部用户数据"""
+        body = await request.json()
+        mint = body.get("mint", "")
+        if not mint:
+            return JSONResponse({"error": "mint is required"}, status_code=400)
+        from app.services.dealer_detector import _redis
+        deleted = 0
+        if _redis:
+            cursor = 0
+            while True:
+                cursor, keys = await _redis.scan(cursor, match="user:*", count=100)
+                for key in keys:
+                    user_data = await _redis.hgetall(key)
+                    holding_qty = user_data.get(f"{mint}_holdingQty")
+                    if holding_qty:
+                        # 清理该用户在此 mint 的数据
+                        await _redis.hdel(key, f"{mint}_holdingQty")
+                        await _redis.hdel(key, f"{mint}_holdingCost")
+                        await _redis.hdel(key, f"{mint}_avgPrice")
+                        await _redis.hdel(key, f"{mint}_totalBuyAmount")
+                        await _redis.hdel(key, f"{mint}_totalSellAmount")
+                        await _redis.hdel(key, f"{mint}_totalSellPrincipal")
+                        deleted += 1
+                if cursor == 0:
+                    break
+        return JSONResponse({"message": f"已清除 {deleted} 个用户的 {mint} 数据"})
+
+    @expose("/api/redis/clear-user", methods=["POST"])
+    async def api_clear_user(self, request: Request):
+        """清除单个用户数据"""
+        body = await request.json()
+        address = body.get("address", "")
+        mint = body.get("mint", "")
+        if not address:
+            return JSONResponse({"error": "address is required"}, status_code=400)
+        from app.services.dealer_detector import _redis
+        key = f"user:{address}"
+        if _redis:
+            if mint:
+                await _redis.hdel(key, f"{mint}_holdingQty")
+                await _redis.hdel(key, f"{mint}_holdingCost")
+                await _redis.hdel(key, f"{mint}_avgPrice")
+                await _redis.hdel(key, f"{mint}_totalBuyAmount")
+                await _redis.hdel(key, f"{mint}_totalSellAmount")
+                await _redis.hdel(key, f"{mint}_totalSellPrincipal")
+                return JSONResponse({"message": f"已清除用户 {address} 的 {mint} 数据"})
+            else:
+                await _redis.delete(key)
+                return JSONResponse({"message": f"已清除用户 {address} 的全部数据"})
+        return JSONResponse({"error": "Redis 未连接"}, status_code=500)
+
+    @expose("/api/redis/clear-all-tx", methods=["POST"])
+    async def api_clear_all_tx(self, request: Request):
+        """清除全部 Redis 交易记录（txlist:* 和 tx:*）"""
+        from app.services.dealer_detector import _redis
+        deleted = 0
+        if _redis:
+            # 清除 txlist:* 
+            cursor = 0
+            while True:
+                cursor, keys = await _redis.scan(cursor, match="txlist:*", count=200)
+                if keys:
+                    await _redis.delete(*keys)
+                    deleted += len(keys)
+                if cursor == 0:
+                    break
+            # 清除 tx:*
+            cursor = 0
+            while True:
+                cursor, keys = await _redis.scan(cursor, match="tx:*", count=200)
+                if keys:
+                    await _redis.delete(*keys)
+                    deleted += len(keys)
+                if cursor == 0:
+                    break
+        return JSONResponse({"message": f"已清除 {deleted} 个交易相关 keys"})
 
 
 # ========== SQLAdmin 配置 ==========

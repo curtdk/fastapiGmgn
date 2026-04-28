@@ -8,9 +8,14 @@
   .search-box { display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; align-items: center; }
   .search-box input { padding: 8px 12px; border: 1px solid #ced4da; border-radius: 4px; width: 280px; }
   .search-box select { padding: 8px 12px; border: 1px solid #ced4da; border-radius: 4px; max-width: 220px; }
-  .btn { padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; }
+  .btn { padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; }
   .btn-primary { background: #007bff; color: #fff; }
   .btn-primary:hover { background: #0056b3; }
+  .btn-danger { background: #dc3545; color: #fff; }
+  .btn-danger:hover { background: #c82333; }
+  .btn-warning { background: #ffc107; color: #212529; }
+  .btn-warning:hover { background: #e0a800; }
+  .btn-sm { padding: 4px 10px; font-size: 12px; }
   .section { margin-bottom: 24px; }
   .section-title { font-weight: 600; margin-bottom: 12px; color: #495057; border-bottom: 2px solid #dee2e6; padding-bottom: 8px; display: flex; justify-content: space-between; align-items: center; }
   .data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
@@ -31,23 +36,23 @@
   .metric-card .label { font-size: 11px; color: #6c757d; }
   .metric-card .value { font-size: 18px; font-weight: 600; color: #333; }
   .mint-select-area { margin-bottom: 16px; }
-  .mint-list { max-height: 200px; overflow-y: auto; border: 1px solid #dee2e6; border-radius: 4px; }
-  .mint-item { padding: 8px 12px; cursor: pointer; border-bottom: 1px solid #f0f0f0; }
-  .mint-item:hover { background: #f8f9fa; }
-  .mint-item.selected { background: #e7f1ff; }
-  .mint-item .mint-addr { font-size: 12px; word-break: break-all; }
-  .mint-item .mint-stats { font-size: 11px; color: #6c757d; }
-  .filter-row { margin-bottom: 12px; display: flex; gap: 12px; align-items: center; }
-  .tx-detail-modal { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1000; }
-  .tx-detail-modal.show { display: flex; align-items: center; justify-content: center; }
-  .tx-detail-content { background: #fff; border-radius: 8px; padding: 24px; max-width: 900px; max-height: 80vh; overflow: auto; width: 90%; }
-  .tx-detail-close { float: right; cursor: pointer; font-size: 24px; }
-  pre { background: #f8f9fa; padding: 12px; border-radius: 4px; overflow-x: auto; font-size: 12px; }
+  .key-info { background: #f8f9fa; padding: 8px 12px; border-radius: 4px; font-size: 12px; color: #6c757d; margin-bottom: 16px; }
   .nav-tabs { display: flex; gap: 4px; border-bottom: 2px solid #dee2e6; margin-bottom: 16px; }
   .nav-tab { padding: 8px 16px; cursor: pointer; border: none; background: #f8f9fa; border-radius: 4px 4px 0 0; }
   .nav-tab.active { background: #007bff; color: #fff; }
   .tab-content { display: none; }
   .tab-content.active { display: block; }
+  .action-bar { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+  .confirm-modal { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center; }
+  .confirm-modal.show { display: flex; }
+  .confirm-content { background: #fff; border-radius: 8px; padding: 24px; max-width: 400px; width: 90%; }
+  .confirm-buttons { display: flex; gap: 12px; justify-content: flex-end; margin-top: 20px; }
+  .user-action-btn { padding: 2px 8px; font-size: 11px; }
+  .tx-detail-modal { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1000; }
+  .tx-detail-modal.show { display: flex; align-items: center; justify-content: center; }
+  .tx-detail-content { background: #fff; border-radius: 8px; padding: 24px; max-width: 900px; max-height: 80vh; overflow: auto; width: 90%; }
+  .tx-detail-close { float: right; cursor: pointer; font-size: 24px; }
+  pre { background: #f8f9fa; padding: 12px; border-radius: 4px; overflow-x: auto; font-size: 12px; }
 </style>
 
 <div class="viewer-container">
@@ -72,12 +77,32 @@
       <button class="btn btn-primary" onclick="loadMintData()">查询</button>
     </div>
     
-    <div class="key-info" id="keyInfo" style="background:#f8f9fa;padding:8px 12px;border-radius:4px;font-size:12px;color:#6c757d;margin-bottom:16px;">
+    <div class="key-info" id="keyInfo">
       加载中...
     </div>
     
     <div id="contentArea">
       <div class="empty-state">请选择一个 Mint 后点击查询</div>
+    </div>
+  </div>
+
+  <div class="viewer-card">
+    <div class="card-title">Redis 管理</div>
+    <div class="action-bar">
+      <button class="btn btn-warning" onclick="confirmClearAllTx()">清除全部交易记录</button>
+    </div>
+    <p style="font-size:12px;color:#6c757d;">清除操作不可恢复，确认后再执行。</p>
+  </div>
+</div>
+
+<!-- 确认弹窗 -->
+<div class="confirm-modal" id="confirmModal">
+  <div class="confirm-content">
+    <h3 id="confirmTitle">确认操作</h3>
+    <p id="confirmMessage" style="margin-top:12px;color:#495057;"></p>
+    <div class="confirm-buttons">
+      <button class="btn" style="background:#6c757d;color:#fff;" onclick="closeConfirm()">取消</button>
+      <button class="btn btn-danger" id="confirmBtn" onclick="executeConfirm()">确认</button>
     </div>
   </div>
 </div>
@@ -93,6 +118,7 @@
 
 <script>
 let currentMint = '';
+let confirmCallback = null;
 
 async function loadMints() {
   try {
@@ -108,7 +134,7 @@ async function loadMints() {
       select.appendChild(opt);
     });
     
-    document.getElementById('keyInfo').innerHTML = `共 ${data.count} 个 Mint，Redis 总计 6930+ keys`;
+    document.getElementById('keyInfo').innerHTML = `共 ${data.count} 个 Mint`;
   } catch (e) {
     document.getElementById('keyInfo').innerHTML = '加载 Mint 列表失败: ' + e.message;
   }
@@ -177,7 +203,10 @@ function renderMetrics(metrics) {
   const m = metrics.metrics || {};
   return `
     <div class="section">
-      <div class="section-title">全局指标 (metrics:${currentMint})</div>
+      <div class="section-title">
+        全局指标 (metrics:${currentMint})
+        <button class="btn btn-danger btn-sm" onclick="confirmClearUsers()">清除用户数据</button>
+      </div>
       <div class="metric-card">
         <div class="label">总投注 (total_bet)</div>
         <div class="value">${m.total_bet || 0}</div>
@@ -241,7 +270,7 @@ function renderUsers(users) {
   const users_list = users.users || [];
   let html = '<div class="section">';
   if (users_list.length > 0) {
-    html += '<table class="data-table"><thead><tr><th>地址</th><th>状态</th><th>条件</th><th>持仓数量</th><th>持仓成本</th><th>均价</th><th>买入总额</th><th>卖出总额</th><th>卖出本金</th></tr></thead><tbody>';
+    html += '<table class="data-table"><thead><tr><th>地址</th><th>状态</th><th>条件</th><th>持仓数量</th><th>持仓成本</th><th>均价</th><th>买入总额</th><th>卖出总额</th><th>卖出本金</th><th>操作</th></tr></thead><tbody>';
     users_list.forEach(u => {
       const badgeClass = u.status === 'dealer' ? 'badge-dealer' : (u.status === 'retail' ? 'badge-retail' : 'badge-unknown');
       const conditionsStr = Array.isArray(u.conditions) ? u.conditions.join(', ') : '-';
@@ -255,6 +284,7 @@ function renderUsers(users) {
         <td>${u.totalBuyAmount.toFixed(4)}</td>
         <td>${u.totalSellAmount.toFixed(4)}</td>
         <td>${u.totalSellPrincipal.toFixed(4)}</td>
+        <td><button class="btn btn-danger btn-sm user-action-btn" onclick="confirmClearUser('${u.address}')">清除</button></td>
       </tr>`;
     });
     html += '</tbody></table>';
@@ -284,19 +314,70 @@ document.getElementById('txDetailModal').addEventListener('click', function(e) {
   if (e.target === this) closeTxDetail();
 });
 
+// ===== 确认弹窗 =====
+function showConfirm(title, message, callback) {
+  document.getElementById('confirmTitle').textContent = title;
+  document.getElementById('confirmMessage').textContent = message;
+  confirmCallback = callback;
+  document.getElementById('confirmModal').classList.add('show');
+}
+
+function closeConfirm() {
+  document.getElementById('confirmModal').classList.remove('show');
+  confirmCallback = null;
+}
+
+function executeConfirm() {
+  if (confirmCallback) {
+    confirmCallback();
+  }
+  closeConfirm();
+}
+
+function confirmClearAllTx() {
+  showConfirm('清除全部交易记录', '确定要清除 Redis 中的全部交易记录 (txlist:* 和 tx:*) 吗？此操作不可恢复。', async () => {
+    try {
+      const resp = await fetch('/admin/api/redis/clear-all-tx', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}' });
+      const data = await resp.json();
+      alert(data.message);
+      if (currentMint) loadMintData();
+    } catch (e) {
+      alert('清除失败: ' + e.message);
+    }
+  });
+}
+
+function confirmClearUsers() {
+  if (!currentMint) return;
+  showConfirm('清除用户数据', `确定要清除 ${currentMint.slice(0, 20)}... 的全部用户数据吗？`, async () => {
+    try {
+      const resp = await fetch('/admin/api/redis/clear-users', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ mint: currentMint }) });
+      const data = await resp.json();
+      alert(data.message);
+      if (currentMint) loadMintData();
+    } catch (e) {
+      alert('清除失败: ' + e.message);
+    }
+  });
+}
+
+function confirmClearUser(address) {
+  showConfirm('清除用户数据', `确定要清除用户 ${address.slice(0, 20)}... 的 ${currentMint.slice(0, 20)}... 数据吗？`, async () => {
+    try {
+      const resp = await fetch('/admin/api/redis/clear-user', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ address: address, mint: currentMint }) });
+      const data = await resp.json();
+      alert(data.message);
+      if (currentMint) loadMintData();
+    } catch (e) {
+      alert('清除失败: ' + e.message);
+    }
+  });
+}
+
 document.getElementById('mintInput').addEventListener('keypress', function(e) {
   if (e.key === 'Enter') loadMintData();
 });
 
-// 从 URL 参数加载 mint
-const urlParams = new URLSearchParams(window.location.search);
-const mintParam = urlParams.get('mint');
-if (mintParam) {
-  document.getElementById('mintInput').value = mintParam;
-}
-
-loadMints().then(() => {
-  if (mintParam) loadMintData();
-});
+loadMints();
 </script>
 {% endblock %}
