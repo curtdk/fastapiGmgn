@@ -381,12 +381,18 @@ class RedisApiView(BaseView):
     async def api_get_txlist(self, request: Request):
         mint = request.query_params.get("mint", "")
         source = request.query_params.get("source", "rpc_fill")
+        page = int(request.query_params.get("page", 1))
+        page_size = int(request.query_params.get("page_size", 500))
         if not mint:
             return JSONResponse({"sigs": [], "count": 0})
         from app.services import tx_redis
         sigs = await tx_redis.get_tx_list(mint, source)
         count = await tx_redis.get_tx_count(mint, source)
-        return JSONResponse({"sigs": sigs, "count": count})
+        # 分页
+        start = (page - 1) * page_size
+        end = start + page_size
+        paginated = sigs[start:end]
+        return JSONResponse({"sigs": paginated, "count": count, "page": page, "page_size": page_size, "has_more": end < count})
 
     @expose("/api/redis/tx-detail", methods=["GET"])
     async def api_get_tx_detail(self, request: Request):

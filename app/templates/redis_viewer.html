@@ -50,9 +50,17 @@
   .user-action-btn { padding: 2px 8px; font-size: 11px; }
   .tx-detail-modal { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1000; }
   .tx-detail-modal.show { display: flex; align-items: center; justify-content: center; }
-  .tx-detail-content { background: #fff; border-radius: 8px; padding: 24px; max-width: 900px; max-height: 80vh; overflow: auto; width: 90%; }
-  .tx-detail-close { float: right; cursor: pointer; font-size: 24px; }
-  pre { background: #f8f9fa; padding: 12px; border-radius: 4px; overflow-x: auto; font-size: 12px; }
+  .tx-detail-content { background: #fff; border-radius: 8px; padding: 24px; max-width: 900px; max-height: 85vh; overflow: auto; width: 95%; }
+  .tx-detail-close { float: right; cursor: pointer; font-size: 24px; line-height: 1; }
+  pre { background: #f8f9fa; padding: 12px; border-radius: 4px; overflow-x: auto; font-size: 12px; white-space: pre-wrap; word-break: break-all; }
+  .pagination { display: flex; gap: 8px; align-items: center; justify-content: center; margin-top: 16px; }
+  .pagination button { padding: 6px 12px; }
+  .pagination .page-info { padding: 6px 12px; background: #f8f9fa; border-radius: 4px; font-size: 13px; }
+  .tx-detail-table { width: 100%; border-collapse: collapse; margin-bottom: 12px; }
+  .tx-detail-table th { background: #f8f9fa; padding: 8px 12px; text-align: left; border: 1px solid #dee2e6; width: 150px; }
+  .tx-detail-table td { padding: 8px 12px; border: 1px solid #dee2e6; }
+  .tx-detail-section { margin-bottom: 16px; }
+  .tx-detail-section h4 { margin: 0 0 8px 0; padding-bottom: 4px; border-bottom: 1px solid #dee2e6; }
 </style>
 
 <div class="viewer-container">
@@ -112,13 +120,17 @@
   <div class="tx-detail-content">
     <span class="tx-detail-close" onclick="closeTxDetail()">&times;</span>
     <h3>交易详情</h3>
-    <pre id="txDetailContent"></pre>
+    <div id="txDetailContent"></div>
   </div>
 </div>
 
 <script>
 let currentMint = '';
 let confirmCallback = null;
+let currentRpcPage = 1;
+let currentWsPage = 1;
+let currentUsersPage = 1;
+const PAGE_SIZE = 500;
 
 async function loadMints() {
   try {
@@ -154,27 +166,32 @@ async function loadMintData() {
     return;
   }
   currentMint = mint;
+  currentRpcPage = 1;
+  currentWsPage = 1;
+  currentUsersPage = 1;
   
   document.getElementById('keyInfo').innerHTML = '加载中... <i class="fa-solid fa-spinner fa-spin"></i>';
   document.getElementById('contentArea').innerHTML = '<div class="loading"><i class="fa-solid fa-spinner fa-spin"></i> 加载中...</div>';
   
   try {
-    const [metricsResp, rpcListResp, wsListResp, usersResp] = await Promise.all([
+    const [metricsResp, usersResp] = await Promise.all([
       fetch(`/admin/api/redis/metrics?mint=${encodeURIComponent(mint)}`),
-      fetch(`/admin/api/redis/txlist?mint=${encodeURIComponent(mint)}&source=rpc_fill`),
-      fetch(`/admin/api/redis/txlist?mint=${encodeURIComponent(mint)}&source=ws`),
       fetch(`/admin/api/redis/users?mint=${encodeURIComponent(mint)}&status=${document.getElementById('statusFilter').value}`)
     ]);
     
     const metrics = await metricsResp.json();
-    const rpcList = await rpcListResp.json();
-    const wsList = await wsListResp.json();
     const users = await usersResp.json();
+    
+    // 获取交易列表计数
+    const rpcListResp = await fetch(`/admin/api/redis/txlist?mint=${encodeURIComponent(mint)}&source=rpc_fill&page=1&page_size=1`);
+    const rpcListData = await rpcListResp.json();
+    const wsListResp = await fetch(`/admin/api/redis/txlist?mint=${encodeURIComponent(mint)}&source=ws&page=1&page_size=1`);
+    const wsListData = await wsListResp.json();
     
     document.getElementById('keyInfo').innerHTML = `
       <strong>Redis Keys:</strong> 
-      txlist:rpc_fill:${mint.slice(0,16)}... (${rpcList.count} 条) | 
-      txlist:ws:${mint.slice(0,16)}... (${wsList.count} 条) | 
+      txlist:rpc_fill:${mint.slice(0,16)}... (${rpcListData.count} 条) | 
+      txlist:ws:${mint.slice(0,16)}... (${wsListData.count} 条) | 
       metrics:${mint.slice(0,16)}... | 
       user:*:${mint.slice(0,16)}..._*
     `;
@@ -183,8 +200,8 @@ async function loadMintData() {
     html += renderMetrics(metrics);
     html += '<div class="nav-tabs"><button class="nav-tab active" onclick="showNavTab(' + "'tx'" + ')">交易列表</button>';
     html += '<button class="nav-tab" onclick="showNavTab(' + "'users'" + ')">用户列表 (' + (users.count || 0) + ')</button></div>';
-    html += '<div id="tab-tx" class="tab-content active">' + renderTxLists(rpcList, wsList) + '</div>';
-    html += '<div id="tab-users" class="tab-content">' + renderUsers(users) + '</div>';
+    html += '<div id="tab-tx" class="tab-content active">' + renderTxLists(rpcListData, wsListData) + '</div>';
+    html += '<div id="tab-users" class="tab-content">' + renderUsers(users, users.count) + '</div>';
     
     document.getElementById('contentArea').innerHTML = html;
   } catch (e) {
@@ -197,6 +214,66 @@ function showNavTab(tab) {
   document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
   event.target.classList.add('active');
   document.getElementById('tab-' + tab).classList.add('active');
+}
+
+async function loadTxPage(source, page) {
+  const mint = currentMint;
+  try {
+    const resp = await fetch(`/admin/api/redis/txlist?mint=${encodeURIComponent(mint)}&source=${source}&page=${page}&page_size=${PAGE_SIZE}`);
+    const data = await resp.json();
+    if (source === 'rpc_fill') {
+      currentRpcPage = page;
+      document.getElementById('rpcListContent').innerHTML = renderTxTable(data.sigs, data.count, page, 'rpc');
+    } else {
+      currentWsPage = page;
+      document.getElementById('wsListContent').innerHTML = renderTxTable(data.sigs, data.count, page, 'ws');
+    }
+  } catch (e) {
+    alert('加载失败: ' + e.message);
+  }
+}
+
+function renderTxTable(sigs, total, page, source) {
+  let html = '';
+  if (sigs && sigs.length > 0) {
+    html += '<table class="data-table"><thead><tr><th>#</th><th>签名</th><th>操作</th></tr></thead><tbody>';
+    sigs.forEach((sig, i) => {
+      const idx = (page - 1) * PAGE_SIZE + i + 1;
+      html += `<tr><td>${idx}</td><td style="font-family:monospace;font-size:11px;">${sig.slice(0, 40)}...</td><td><button class="btn btn-primary btn-sm" onclick="viewTxDetail('${sig}')">查看</button></td></tr>`;
+    });
+    html += '</tbody></table>';
+  } else {
+    html += '<div class="empty-state">暂无交易数据</div>';
+  }
+  
+  // 分页
+  const totalPages = Math.ceil(total / PAGE_SIZE);
+  if (totalPages > 1) {
+    html += '<div class="pagination">';
+    html += `<button class="btn btn-primary btn-sm" onclick="loadTxPage('${source}', ${page - 1})" ${page <= 1 ? 'disabled' : ''}>上一页</button>`;
+    html += `<span class="page-info">第 ${page} / ${totalPages} 页，共 ${total} 条</span>`;
+    html += `<button class="btn btn-primary btn-sm" onclick="loadTxPage('${source}', ${page + 1})" ${page >= totalPages ? 'disabled' : ''}>下一页</button>`;
+    html += '</div>';
+  }
+  return html;
+}
+
+async function loadUsersPage(page) {
+  const mint = currentMint;
+  const status = document.getElementById('statusFilter').value;
+  try {
+    const resp = await fetch(`/admin/api/redis/users?mint=${encodeURIComponent(mint)}&status=${status}`);
+    const data = await resp.json();
+    currentUsersPage = page;
+    const PAGE_SIZE_USERS = 500;
+    const totalPages = Math.ceil((data.count || 0) / PAGE_SIZE_USERS);
+    const start = (page - 1) * PAGE_SIZE_USERS;
+    const end = start + PAGE_SIZE_USERS;
+    const paginatedUsers = (data.users || []).slice(start, end);
+    document.getElementById('usersListContent').innerHTML = renderUsersTable(paginatedUsers, data.count, page);
+  } catch (e) {
+    alert('加载失败: ' + e.message);
+  }
 }
 
 function renderMetrics(metrics) {
@@ -223,58 +300,46 @@ function renderMetrics(metrics) {
   `;
 }
 
-function renderTxLists(rpcList, wsList) {
+function renderTxLists(rpcListData, wsListData) {
   let html = '<div class="section"><div class="section-title">交易列表</div>';
   html += '<div class="tabs">';
-  html += `<button class="tab active" onclick="showTab('rpc')">历史交易 (${rpcList.count || 0})</button>`;
-  html += `<button class="tab" onclick="showTab('ws')">实时交易 (${wsList.count || 0})</button>`;
+  html += `<button class="tab active" onclick="showTxTab('rpc')">历史交易 (${rpcListData.count || 0})</button>`;
+  html += `<button class="tab" onclick="showTxTab('ws')">实时交易 (${wsListData.count || 0})</button>`;
   html += '</div>';
   
   html += `<div id="tab-rpc" style="display:block;">`;
-  if (rpcList.sigs && rpcList.sigs.length > 0) {
-    html += '<table class="data-table"><thead><tr><th>#</th><th>签名</th><th>操作</th></tr></thead><tbody>';
-    rpcList.sigs.slice(0, 100).forEach((sig, i) => {
-      html += `<tr><td>${i + 1}</td><td style="font-family:monospace;font-size:11px;">${sig.slice(0, 40)}...</td><td><a href="javascript:viewTxDetail('${sig}')" style="color:#007bff;">查看</a></td></tr>`;
-    });
-    html += '</tbody></table>';
-    if (rpcList.sigs.length > 100) html += '<div style="padding:10px;color:#6c757d;">仅显示前 100 条</div>';
-  } else {
-    html += '<div class="empty-state">暂无历史交易数据</div>';
-  }
+  html += `<div id="rpcListContent">`;
+  html += renderTxTable(rpcListData.sigs || [], rpcListData.count || 0, currentRpcPage, 'rpc');
+  html += '</div>';
   html += '</div>';
   
   html += `<div id="tab-ws" style="display:none;">`;
-  if (wsList.sigs && wsList.sigs.length > 0) {
-    html += '<table class="data-table"><thead><tr><th>#</th><th>签名</th><th>操作</th></tr></thead><tbody>';
-    wsList.sigs.slice(0, 100).forEach((sig, i) => {
-      html += `<tr><td>${i + 1}</td><td style="font-family:monospace;font-size:11px;">${sig.slice(0, 40)}...</td><td><a href="javascript:viewTxDetail('${sig}')" style="color:#007bff;">查看</a></td></tr>`;
-    });
-    html += '</tbody></table>';
-    if (wsList.sigs.length > 100) html += '<div style="padding:10px;color:#6c757d;">仅显示前 100 条</div>';
-  } else {
-    html += '<div class="empty-state">暂无实时交易数据</div>';
-  }
+  html += `<div id="wsListContent">`;
+  html += renderTxTable(wsListData.sigs || [], wsListData.count || 0, currentWsPage, 'ws');
+  html += '</div>';
   html += '</div></div>';
   
   return html;
 }
 
-function showTab(tab) {
+function showTxTab(tab) {
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   document.getElementById('tab-rpc').style.display = tab === 'rpc' ? 'block' : 'none';
   document.getElementById('tab-ws').style.display = tab === 'ws' ? 'block' : 'none';
   event.target.classList.add('active');
 }
 
-function renderUsers(users) {
-  const users_list = users.users || [];
-  let html = '<div class="section">';
+function renderUsersTable(users_list, total, page) {
+  let html = '';
+  const PAGE_SIZE_USERS = 500;
   if (users_list.length > 0) {
-    html += '<table class="data-table"><thead><tr><th>地址</th><th>状态</th><th>条件</th><th>持仓数量</th><th>持仓成本</th><th>均价</th><th>买入总额</th><th>卖出总额</th><th>卖出本金</th><th>操作</th></tr></thead><tbody>';
-    users_list.forEach(u => {
+    html += '<table class="data-table"><thead><tr><th>#</th><th>地址</th><th>状态</th><th>条件</th><th>持仓数量</th><th>持仓成本</th><th>均价</th><th>买入总额</th><th>卖出总额</th><th>卖出本金</th><th>操作</th></tr></thead><tbody>';
+    users_list.forEach((u, idx) => {
+      const rowIdx = (page - 1) * PAGE_SIZE_USERS + idx + 1;
       const badgeClass = u.status === 'dealer' ? 'badge-dealer' : (u.status === 'retail' ? 'badge-retail' : 'badge-unknown');
       const conditionsStr = Array.isArray(u.conditions) ? u.conditions.join(', ') : '-';
       html += `<tr>
+        <td>${rowIdx}</td>
         <td style="font-family:monospace;font-size:11px;">${u.address.slice(0, 20)}...</td>
         <td><span class="badge ${badgeClass}">${u.status}</span></td>
         <td>${conditionsStr}</td>
@@ -289,8 +354,31 @@ function renderUsers(users) {
     });
     html += '</tbody></table>';
   } else {
-    html += '<div class="empty-state">暂无用户数据（可能该 Mint 尚未处理交易）</div>';
+    html += '<div class="empty-state">暂无用户数据</div>';
   }
+  
+  const totalPages = Math.ceil(total / PAGE_SIZE_USERS);
+  if (totalPages > 1) {
+    html += '<div class="pagination">';
+    html += `<button class="btn btn-primary btn-sm" onclick="loadUsersPage(${page - 1})" ${page <= 1 ? 'disabled' : ''}>上一页</button>`;
+    html += `<span class="page-info">第 ${page} / ${totalPages} 页，共 ${total} 条</span>`;
+    html += `<button class="btn btn-primary btn-sm" onclick="loadUsersPage(${page + 1})" ${page >= totalPages ? 'disabled' : ''}>下一页</button>`;
+    html += '</div>';
+  }
+  return html;
+}
+
+function renderUsers(users, total) {
+  const PAGE_SIZE_USERS = 500;
+  const page = 1;
+  const start = (page - 1) * PAGE_SIZE_USERS;
+  const end = start + PAGE_SIZE_USERS;
+  const paginatedUsers = (users.users || []).slice(start, end);
+  
+  let html = '<div class="section">';
+  html += `<div id="usersListContent">`;
+  html += renderUsersTable(paginatedUsers, users.count || 0, page);
+  html += '</div>';
   html += '</div>';
   return html;
 }
@@ -299,7 +387,56 @@ async function viewTxDetail(sig) {
   try {
     const resp = await fetch(`/admin/api/redis/tx-detail?sig=${encodeURIComponent(sig)}`);
     const data = await resp.json();
-    document.getElementById('txDetailContent').textContent = JSON.stringify(data.tx, null, 2);
+    const tx = data.tx;
+    
+    let html = '';
+    if (tx) {
+      html = `<div class="tx-detail-section">
+        <h4>基本信息</h4>
+        <table class="tx-detail-table">
+          <tr><th>Signature</th><td style="font-family:monospace;font-size:11px;word-break:break-all;">${tx.sig || sig}</td></tr>
+          <tr><th>Mint</th><td style="font-family:monospace;font-size:11px;">${tx.mint || '-'}</td></tr>
+          <tr><th>类型</th><td>${tx.type || '-'}</td></tr>
+          <tr><th>DEX</th><td>${tx.dex || '-'}</td></tr>
+          <tr><th>池子</th><td style="font-family:monospace;font-size:11px;">${tx.pool || '-'}</td></tr>
+          <tr><th>SOL 金额</th><td>${tx.sol_amount !== undefined ? tx.sol_amount : (tx.amount || '-')}</td></tr>
+          <tr><th>代币数量</th><td>${tx.token_amount !== undefined ? tx.token_amount : '-'}</td></tr>
+          <tr><th>价格</th><td>${tx.price || '-'}</td></tr>
+          <tr><th>来源</th><td>${tx.source || '-'}</td></tr>
+          <tr><th>时间</th><td>${tx.time || tx.block_time || '-'}</td></tr>
+          <tr><th>Slot</th><td>${tx.slot || '-'}</td></tr>
+        </table>
+      </div>`;
+      
+      if (tx.accounts && tx.accounts.length > 0) {
+        html += `<div class="tx-detail-section">
+          <h4>账户列表</h4>
+          <table class="tx-detail-table">
+            <thead><tr><th>#</th><th>地址</th></tr></thead><tbody>`;
+        tx.accounts.forEach((acc, i) => {
+          html += `<tr><td>${i}</td><td style="font-family:monospace;font-size:11px;">${acc}</td></tr>`;
+        });
+        html += '</tbody></table></div>';
+      }
+      
+      if (tx.instructions && tx.instructions.length > 0) {
+        html += `<div class="tx-detail-section">
+          <h4>指令</h4>
+          <pre>${JSON.stringify(tx.instructions, null, 2)}</pre>
+        </div>`;
+      }
+      
+      if (tx.raw_data) {
+        html += `<div class="tx-detail-section">
+          <h4>原始数据</h4>
+          <pre>${typeof tx.raw_data === 'string' ? tx.raw_data : JSON.stringify(tx.raw_data, null, 2)}</pre>
+        </div>`;
+      }
+    } else {
+      html = '<div class="empty-state">未找到交易详情</div>';
+    }
+    
+    document.getElementById('txDetailContent').innerHTML = html;
     document.getElementById('txDetailModal').classList.add('show');
   } catch (e) {
     alert('加载交易详情失败: ' + e.message);
