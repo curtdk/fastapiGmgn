@@ -87,14 +87,6 @@ async def get_trader_state(redis, mint: str, address: str, sig: str = None) -> d
         state["status"] = status
         state["conditions"] = conditions
         
-        # 读取 mint 相关字段
-        state["holdingQty"] = float(state.get(f"{mint}_holdingQty", "0"))
-        state["holdingCost"] = float(state.get(f"{mint}_holdingCost", "0"))
-        state["avgPrice"] = float(state.get(f"{mint}_avgPrice", "0"))
-        state["totalBuyAmount"] = float(state.get(f"{mint}_totalBuyAmount", "0"))
-        state["totalSellAmount"] = float(state.get(f"{mint}_totalSellAmount", "0"))
-        state["totalSellPrincipal"] = float(state.get(f"{mint}_totalSellPrincipal", "0"))
-        
         # 如果是 unknown 且有 sig，自动入队检测
         if status == "unknown" and sig:
             await _enqueue_dealer_check(address, mint, sig)
@@ -114,16 +106,10 @@ async def _enqueue_dealer_check(address: str, mint: str, sig: str):
 
 
 def _default_trader_state() -> dict:
-    """默认交易员状态"""
+    """默认交易员状态（只保留 status 和 conditions，持仓数据从 Redis 读取）"""
     return {
         "status": "unknown",
         "conditions": [],
-        "holdingQty": 0.0,
-        "holdingCost": 0.0,
-        "avgPrice": 0.0,
-        "totalBuyAmount": 0.0,
-        "totalSellAmount": 0.0,
-        "totalSellPrincipal": 0.0,
     }
 
 
@@ -241,18 +227,26 @@ async def _calculate_index(tx_detail: Dict[str, Any], mint: str) -> Dict[str, An
     if state.get("status") == "dealer":
         return {"is_dealer": True}
     
-    old_holding_cost = state.get("holdingCost", 0)
-    old_realized = state.get("totalSellAmount", 0) - state.get("totalSellPrincipal", 0)
+    # 从 Redis 读取当前持仓数据（统一用 {mint}_xxx key）
+    holding_qty = float(state.get(f"{mint}_holdingQty", "0"))
+    holding_cost = float(state.get(f"{mint}_holdingCost", "0"))
+    avg_price = float(state.get(f"{mint}_avgPrice", "0"))
+    total_buy_amount = float(state.get(f"{mint}_totalBuyAmount", "0"))
+    total_sell_amount = float(state.get(f"{mint}_totalSellAmount", "0"))
+    total_sell_principal = float(state.get(f"{mint}_totalSellPrincipal", "0"))
+    
+    old_holding_cost = holding_cost
+    old_realized = total_sell_amount - total_sell_principal
     
     if tx_type == "BUY":
         buy_amount = abs(sol_spent)
         buy_qty = amount
         
-        state["holdingQty"] += buy_qty
-        state["holdingCost"] += buy_amount
-        state["totalBuyAmount"] += buy_amount
-        if state["holdingQty"] > 0:
-            state["avgPrice"] = state["holdingCost"] / state["holdingQty"]
+        holding_qty += buy_qty
+        holding_cost += buy_amount
+        total_buy_amount += buy_amount
+        if holding_qty > 0:
+            avg_price = holding_cost / holding_qty
         
         logger.debug(f"[计算] {address[:8]}... BUY {buy_qty} @ {buy_amount} SOL")
     
@@ -261,32 +255,41 @@ async def _calculate_index(tx_detail: Dict[str, Any], mint: str) -> Dict[str, An
         sell_amount = abs(sol_spent)
         
         # 卖出本金 = 卖出数量 × 当时均价
-        sell_principal = sell_qty * state.get("avgPrice", 0)
+        sell_principal = sell_qty * avg_price
         
-        state["totalSellPrincipal"] += sell_principal
-        state["totalSellAmount"] += sell_amount
-        state["holdingQty"] -= sell_qty
-        state["holdingCost"] -= sell_principal
+        total_sell_principal += sell_principal
+        total_sell_amount += sell_amount
+        holding_qty -= sell_qty
+        holding_cost -= sell_principal
         
         # 防负值
-        if state["holdingQty"] < 0.001:
-            state["holdingQty"] = 0
-            state["holdingCost"] = 0
-            state["avgPrice"] = 0
+        if holding_qty < 0.001:
+            holding_qty = 0
+            holding_cost = 0
+            avg_price = 0
         
         # 更新均价
-        if state["holdingQty"] > 0:
-            state["avgPrice"] = state["holdingCost"] / state["holdingQty"]
+        if holding_qty > 0:
+            avg_price = holding_cost / holding_qty
         
         realized = sell_amount - sell_principal
         logger.debug(f"[计算] {address[:8]}... SELL {sell_qty} @ {sell_amount} SOL, 落袋: {realized:.6f} SOL")
     
-    # 保存状态
-    await save_trader_state(redis, mint, address, state)
+    # 直接保存状态（传字典而不是修改 state）
+    await save_trader_state(redis, mint, address, {
+        "status": state["status"],
+        "conditions": state["conditions"],
+        "holdingQty": holding_qty,
+        "holdingCost": holding_cost,
+        "avgPrice": avg_price,
+        "totalBuyAmount": total_buy_amount,
+        "totalSellAmount": total_sell_amount,
+        "totalSellPrincipal": total_sell_principal,
+    })
     
     # 更新全局指标
-    new_holding_cost = state.get("holdingCost", 0)
-    new_realized = state.get("totalSellAmount", 0) - state.get("totalSellPrincipal", 0)
+    new_holding_cost = holding_cost
+    new_realized = total_sell_amount - total_sell_principal
     
     delta_bet = new_holding_cost - old_holding_cost
     delta_profit = new_realized - old_realized
@@ -297,16 +300,16 @@ async def _calculate_index(tx_detail: Dict[str, Any], mint: str) -> Dict[str, An
     await tx_redis.update_tx_analysis(sig, {
         "net_sol_flow": sol_spent,
         "net_token_flow": amount,
-        "price_per_token": state.get("avgPrice", 0),
-        "wallet_tag": "dealer" if state.get("status") == "dealer" else "unknown",
+        "price_per_token": avg_price,
+        "wallet_tag": "dealer" if state["status"] == "dealer" else "unknown",
         "processed_at": datetime.utcnow().isoformat(),
     })
     
     return {
-        "holdingQty": state.get("holdingQty", 0),
-        "holdingCost": state.get("holdingCost", 0),
-        "avgPrice": state.get("avgPrice", 0),
-        "is_dealer": state.get("status") == "dealer"
+        "holdingQty": holding_qty,
+        "holdingCost": holding_cost,
+        "avgPrice": avg_price,
+        "is_dealer": state["status"] == "dealer"
     }
 
 
