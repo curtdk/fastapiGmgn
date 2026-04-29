@@ -62,8 +62,20 @@ async def get_trader_state(redis, mint: str, address: str, sig: str = None) -> d
     
     if not state:
         state = _default_trader_state()
-        # 如果是新用户且有 sig，自动入队检测
+        # 新用户：尝试本地快速判断庄家（C002-C005）
         if sig:
+            tx_detail = await tx_redis.get_tx(sig)
+            if tx_detail:
+                from app.services.dealer_detector import _check_local_dealer_conditions
+                is_dealer, conditions = _check_local_dealer_conditions(tx_detail, state)
+                state["conditions"] = conditions
+                if is_dealer:
+                    state["status"] = "dealer"
+                    await save_trader_state(redis, mint, address, state)
+                    logger.info(f"[庄家判定] {address[:8]}... 新用户本地判断为庄家 (C002-C005)")
+                    return state
+                logger.info(f"[庄家判定] {address[:8]}... 新用户本地判断为非庄家 (C002-C005)，入队等待 C001")
+            # 本地判断不是庄家或无交易详情：入队等待 C001 检测
             await _enqueue_dealer_check(address, mint, sig)
     else:
         # 读取 status 和 conditions
