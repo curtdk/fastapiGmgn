@@ -93,6 +93,7 @@
         <button class="quick-btn" onclick="searchPrefix('user:', this)">user: <span class="count" id="countUser">-</span></button>
         <button class="quick-btn" onclick="searchPrefix('stream:', this)">stream: <span class="count" id="countStream">-</span></button>
         <button class="quick-btn" onclick="searchPrefix('retry:', this)">retry: <span class="count" id="countRetry">-</span></button>
+        <button class="quick-btn" onclick="searchPrefix('trader:', this)">trader: <span class="count" id="countTrader">-</span></button>
       </div>
       <div class="section-divider"></div>
       <div class="card-title" style="font-size:14px;">批量删除</div>
@@ -103,6 +104,7 @@
         <button class="btn btn-danger btn-sm" onclick="deletePrefix('user:')">删除 user:</button>
         <button class="btn btn-danger btn-sm" onclick="deletePrefix('stream:')">删除 stream:</button>
         <button class="btn btn-danger btn-sm" onclick="deletePrefix('retry:')">删除 retry:</button>
+        <button class="btn btn-danger btn-sm" onclick="deletePrefix('trader:')">删除 trader:</button>
       </div>
       <div class="action-row" style="margin-top:12px;">
         <button class="btn btn-warning btn-sm" onclick="deleteAll()">⚠️ 全部删除</button>
@@ -239,7 +241,7 @@ function toggleSection(sectionId) {
 
 async function loadPrefixCounts() {
   try {
-    const prefixes = ['metrics:', 'tx:', 'txlist:', 'user:', 'stream:', 'retry:'];
+    const prefixes = ['metrics:', 'tx:', 'txlist:', 'user:', 'stream:', 'retry:', 'trader:'];
     for (const prefix of prefixes) {
       const resp = await fetch(`/admin/api/redis/keys?prefix=${prefix}&page_size=1`);
       const data = await resp.json();
@@ -512,7 +514,7 @@ async function deleteAll() {
     return;
   }
   try {
-    const prefixes = ['metrics:', 'tx:', 'txlist:', 'user:', 'stream:', 'retry:'];
+    const prefixes = ['metrics:', 'tx:', 'txlist:', 'user:', 'stream:', 'retry:', 'trader:'];
     for (const prefix of prefixes) {
       await fetch('/admin/api/redis/delete-by-prefix', {
         method: 'DELETE',
