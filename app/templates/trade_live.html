@@ -230,6 +230,29 @@ function connectWS() {
         alert('错误: ' + (msg.data.message || '未知'));
       } else if (msg.type === 'user_status') {
         handleUserStatus(msg.data);
+      } else if (msg.type === 'dealer_detected') {
+        const cd = msg.data.conditions || {};
+        console.warn('🚨 庄家交易检测:', msg.data);
+        console.log('满足条件详情:');
+        if (cd.conditions && cd.conditions.length > 0) {
+          cd.conditions.forEach(c => {
+            const d = cd.details && cd.details[c];
+            if (d) {
+              console.log(`  ${c}: ${d.name}`);
+              if (d.threshold) {
+                console.log(`     阈值: ${d.threshold}, 实际: ${d.value}`);
+              }
+            }
+          });
+        }
+        console.table({
+          '地址': msg.data.address,
+          '签名': msg.data.sig,
+          '类型': msg.data.tx_type,
+          '数量': msg.data.amount,
+          'SOL': msg.data.sol_spent,
+          '条件': cd.conditions?.join(', ') || '-'
+        });
       }
     } catch (e) {
       console.error('WS 消息解析失败:', e);

@@ -189,6 +189,79 @@ async def clear_mint_redis(mint: str):
 
 
 # ──────────────────────────────────────────────────────────
+# 庄家条件详情
+# ──────────────────────────────────────────────────────────
+
+async def _get_dealer_conditions_detail(redis, address: str, tx_detail: dict) -> dict:
+    """
+    获取庄家条件详情（包含阈值对比信息）
+    """
+    from app.utils.database import SessionLocal
+    from app.services.settings_service import get_setting, get_float_setting, get_int_setting
+    
+    key = user_key(address)
+    state = await redis.hgetall(key)
+    
+    try:
+        conditions = json.loads(state.get("conditions", "[]"))
+    except:
+        conditions = []
+    
+    result = {"conditions": conditions, "details": {}}
+    db = SessionLocal()
+    try:
+        # C001: closeAccount
+        if "C001" in conditions:
+            result["details"]["C001"] = {
+                "name": "首笔交易包含 closeAccount",
+                "enabled": get_setting(db, "dealer_c001_enabled") == "true"
+            }
+        
+        # C002: ALT
+        if "C002" in conditions:
+            result["details"]["C002"] = {
+                "name": "使用 ALT（地址查找表）",
+                "enabled": get_setting(db, "dealer_alt_enabled") == "true",
+                "value": tx_detail.get("uses_lookup_table", False)
+            }
+        
+        # C003: Gas 费
+        if "C003" in conditions:
+            gas_max = get_float_setting(db, "dealer_gas_max", 0.00001)
+            result["details"]["C003"] = {
+                "name": "Gas 费小于阈值",
+                "enabled": get_setting(db, "dealer_gas_enabled") == "true",
+                "threshold": f"< {gas_max:.8f} SOL",
+                "value": f"{tx_detail.get('fee', 0):.8f} SOL"
+            }
+        
+        # C004: CU
+        if "C004" in conditions:
+            cu_min = get_int_setting(db, "dealer_cu_min", 0)
+            cu_max = get_int_setting(db, "dealer_cu_max", 200000)
+            result["details"]["C004"] = {
+                "name": "CU 在范围内",
+                "enabled": get_setting(db, "dealer_cu_enabled") == "true",
+                "threshold": f"{cu_min} - {cu_max}",
+                "value": tx_detail.get("cu_consumed", 0)
+            }
+        
+        # C005: Risk Score
+        if "C005" in conditions:
+            risk_min = get_int_setting(db, "dealer_risk_min", 0)
+            result["details"]["C005"] = {
+                "name": "风险分大于阈值",
+                "enabled": get_setting(db, "dealer_risk_enabled") == "true",
+                "threshold": f"> {risk_min}",
+                "value": tx_detail.get("risk_score", 0)
+            }
+    finally:
+        db.close()
+    
+    return result
+
+
+# ──────────────────────────────────────────────────────────
 # 指数计算核心
 # ──────────────────────────────────────────────────────────
 
@@ -225,6 +298,21 @@ async def _calculate_index(tx_detail: Dict[str, Any], mint: str) -> Dict[str, An
     
     # 庄家直接跳过计算
     if state.get("status") == "dealer":
+        # 获取条件详情（阈值信息）
+        conditions_detail = await _get_dealer_conditions_detail(redis, address, tx_detail)
+        
+        # 广播庄家信息到浏览器控制台
+        await ws_manager.broadcast(mint, {
+            "type": "dealer_detected",
+            "data": {
+                "address": address,
+                "sig": sig,
+                "tx_type": tx_type,
+                "amount": amount,
+                "sol_spent": sol_spent,
+                "conditions": conditions_detail,
+            }
+        })
         return {"is_dealer": True}
     
     # 从 Redis 读取当前持仓数据（统一用 {mint}_xxx key）
