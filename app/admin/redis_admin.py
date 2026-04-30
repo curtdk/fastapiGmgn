@@ -240,6 +240,7 @@ class RedisApiView(BaseView):
         import redis.asyncio as aioredis
         
         prefix = request.query_params.get("prefix", "")
+        search_mode = request.query_params.get("mode", "prefix")  # prefix | exact | contains
         key_type = request.query_params.get("type", "")  # hash, string, zset, list, set
         page = int(request.query_params.get("page", 1))
         page_size = int(request.query_params.get("page_size", 500))
@@ -258,15 +259,29 @@ class RedisApiView(BaseView):
         
         # 构建匹配模式（Redis SCAN 需要 glob 通配符）
         if prefix:
-            match_pattern = prefix if prefix.endswith("*") else f"{prefix}*"
+            if search_mode == "exact":
+                # 精确匹配：直接用 key 名（但 SCAN 需要通配符，用 *key* 然后筛选）
+                match_pattern = "*"
+                exact_match_filter = prefix
+            elif search_mode == "contains":
+                # 包含匹配：*keyword*
+                match_pattern = f"*{prefix}*"
+            else:
+                # 前缀匹配（默认）：keyword*
+                match_pattern = f"{prefix}*"
         else:
             match_pattern = "*"
+            exact_match_filter = None
         
         all_keys = []
         cursor = 0
         while True:
             cursor, keys = await redis_client.scan(cursor, match=match_pattern, count=500)
             for key in keys:
+                # 精确匹配二次筛选
+                if exact_match_filter and key != exact_match_filter:
+                    continue
+                    
                 try:
                     key_type_name = await redis_client.type(key)
                     if key_type and key_type_name != key_type:
@@ -294,14 +309,24 @@ class RedisApiView(BaseView):
                     except:
                         pass
                     
-                    all_keys.append({
+                    # 获取 key 的详细信息
+                    key_info = {
                         "key": key,
                         "type": key_type_name,
                         "size": size,
                         "ttl": ttl if ttl > 0 else -1
-                    })
-                except:
+                    }
+                    
+                    # 如果是 user:* key，额外获取 status
+                    if key.startswith("user:"):
+                        user_data = await redis_client.hgetall(key)
+                        key_info["status"] = user_data.get("status", "-")
+                        key_info["conditions"] = user_data.get("conditions", "[]")
+                    
+                    all_keys.append(key_info)
+                except Exception as e:
                     pass
+                    
             if cursor == 0:
                 break
         

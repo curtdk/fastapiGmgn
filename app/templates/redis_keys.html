@@ -42,6 +42,10 @@
   .type-zset { background: #fff3e0; color: #ef6c00; }
   .type-list { background: #f3e5f5; color: #7b1fa2; }
   .type-set { background: #fce4ec; color: #c2185b; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 500; }
+  .badge-dealer { background: #dc3545; color: #fff; }
+  .badge-retail { background: #28a745; color: #fff; }
+  .badge-unknown { background: #6c757d; color: #fff; }
   .pagination { display: flex; gap: 8px; align-items: center; justify-content: center; margin-top: 16px; }
   .pagination button { padding: 6px 12px; }
   .pagination .page-info { padding: 6px 12px; background: #f8f9fa; border-radius: 4px; font-size: 13px; }
@@ -135,7 +139,12 @@
         <option value="list">List</option>
         <option value="set">Set</option>
       </select>
-      <input type="text" id="prefixInput" placeholder="输入前缀关键词搜索">
+      <select id="searchMode">
+        <option value="prefix">前缀匹配</option>
+        <option value="exact">精确匹配</option>
+        <option value="contains">包含匹配</option>
+      </select>
+      <input type="text" id="prefixInput" placeholder="输入关键词搜索">
       <button class="btn btn-primary" onclick="loadKeys(1)">搜索</button>
       <button class="btn btn-secondary" onclick="clearFilter()">清除筛选</button>
     </div>
@@ -213,6 +222,22 @@
     <div class="modal-buttons">
       <button class="btn btn-secondary" onclick="closeImport()">取消</button>
       <button class="btn btn-success" onclick="doImport()">导入</button>
+    </div>
+  </div>
+</div>
+
+<!-- 状态修改弹窗 -->
+<div class="modal" id="statusModal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h3>修改用户状态</h3>
+      <span class="modal-close" onclick="closeStatus()">&times;</span>
+    </div>
+    <p id="statusKey" style="color:#495057;margin-bottom:12px;"></p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <button class="btn btn-sm badge-dealer" style="padding:8px 16px;" onclick="setUserStatus('dealer')">Dealer</button>
+      <button class="btn btn-sm badge-retail" style="padding:8px 16px;" onclick="setUserStatus('retail')">Retail</button>
+      <button class="btn btn-sm badge-unknown" style="padding:8px 16px;" onclick="setUserStatus('unknown')">Unknown</button>
     </div>
   </div>
 </div>
@@ -324,11 +349,19 @@ async function loadKeys(page) {
       keys.forEach((k, idx) => {
         const rowIdx = (page - 1) * 500 + idx + 1;
         const typeClass = `type-${k.type}`;
+        let statusCol = '';
+        if (k.key.startsWith('user:')) {
+          const statusClass = k.status === 'dealer' ? 'badge-dealer' : (k.status === 'retail' ? 'badge-retail' : 'badge-unknown');
+          statusCol = `<td><span class="badge ${statusClass}" style="cursor:pointer;" onclick="showStatusModal('${escapeHtml(k.key)}', '${k.status || '-'}')">${k.status || '-'}</span></td>`;
+        } else {
+          statusCol = '<td>-</td>';
+        }
         html += `
           <tr>
             <td>${rowIdx}</td>
             <td class="key-name" title="${k.key}">${k.key}</td>
             <td><span class="type-badge ${typeClass}">${k.type}</span></td>
+            ${statusCol}
             <td>${formatSize(k.size, k.type)}</td>
             <td>${k.ttl > 0 ? k.ttl + 's' : (k.ttl === -1 ? '永不过期' : k.ttl)}</td>
             <td>
@@ -626,6 +659,42 @@ async function doImport() {
     loadPrefixCounts();
   } catch (e) {
     alert('导入失败: ' + e.message);
+  }
+}
+
+// 状态修改相关函数
+function showStatusModal(key, currentStatus) {
+  currentKey = key;
+  const address = key.replace('user:', '');
+  document.getElementById('statusKey').innerHTML = `<strong>用户:</strong> ${address}<br><strong>当前状态:</strong> ${currentStatus || '-'}`;
+  document.getElementById('statusModal').classList.add('show');
+}
+
+function closeStatus() {
+  document.getElementById('statusModal').classList.remove('show');
+}
+
+async function setUserStatus(status) {
+  try {
+    const address = currentKey.replace('user:', '');
+    const resp = await fetch('/admin/api/redis/key', {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ 
+        key: currentKey, 
+        value: `status:${status}`
+      })
+    });
+    const data = await resp.json();
+    if (data.error) {
+      alert('修改失败: ' + data.error);
+    } else {
+      alert(`已修改用户状态为 ${status}`);
+      closeStatus();
+      loadKeys(currentPage);
+    }
+  } catch (e) {
+    alert('修改失败: ' + e.message);
   }
 }
 
