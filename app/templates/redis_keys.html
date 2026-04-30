@@ -1,0 +1,457 @@
+{% extends "sqladmin/layout.html" %}
+{% block title %}Redis 信息管理{% endblock %}
+{% block content %}
+<style>
+  .keys-container { max-width: 1600px; margin: 20px auto; }
+  .keys-card { background: #fff; border-radius: 8px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 20px; }
+  .card-title { font-size: 18px; font-weight: 600; margin-bottom: 16px; color: #333; }
+  .stats-bar { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+  .stat-item { padding: 8px 16px; background: #f8f9fa; border-radius: 4px; font-size: 13px; }
+  .stat-item strong { color: #007bff; }
+  .search-box { display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; align-items: center; }
+  .search-box input, .search-box select { padding: 8px 12px; border: 1px solid #ced4da; border-radius: 4px; }
+  .search-box input { width: 300px; }
+  .btn { padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; }
+  .btn-primary { background: #007bff; color: #fff; }
+  .btn-primary:hover { background: #0056b3; }
+  .btn-danger { background: #dc3545; color: #fff; }
+  .btn-danger:hover { background: #c82333; }
+  .btn-success { background: #28a745; color: #fff; }
+  .btn-success:hover { background: #218838; }
+  .btn-secondary { background: #6c757d; color: #fff; }
+  .btn-secondary:hover { background: #545b62; }
+  .btn-sm { padding: 4px 10px; font-size: 12px; }
+  .data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .data-table th { background: #f8f9fa; padding: 10px 12px; text-align: left; border: 1px solid #dee2e6; white-space: nowrap; }
+  .data-table td { padding: 8px 12px; border: 1px solid #dee2e6; word-break: break-all; }
+  .data-table tr:hover { background: #f8f9fa; }
+  .data-table tr:nth-child(even) { background: #fafafa; }
+  .key-name { font-family: monospace; font-size: 11px; color: #333; max-width: 400px; overflow: hidden; text-overflow: ellipsis; }
+  .type-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 500; }
+  .type-hash { background: #e3f2fd; color: #1565c0; }
+  .type-string { background: #e8f5e9; color: #2e7d32; }
+  .type-zset { background: #fff3e0; color: #ef6c00; }
+  .type-list { background: #f3e5f5; color: #7b1fa2; }
+  .type-set { background: #fce4ec; color: #c2185b; }
+  .pagination { display: flex; gap: 8px; align-items: center; justify-content: center; margin-top: 16px; }
+  .pagination button { padding: 6px 12px; }
+  .pagination .page-info { padding: 6px 12px; background: #f8f9fa; border-radius: 4px; font-size: 13px; }
+  .loading { text-align: center; padding: 40px; color: #6c757d; }
+  .empty-state { text-align: center; padding: 30px; color: #6c757d; }
+  .action-btn { padding: 2px 8px; font-size: 11px; margin-right: 4px; }
+  .confirm-modal, .detail-modal, .edit-modal { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1000; }
+  .confirm-modal.show, .detail-modal.show, .edit-modal.show { display: flex; align-items: center; justify-content: center; }
+  .modal-content { background: #fff; border-radius: 8px; padding: 24px; max-width: 600px; width: 95%; max-height: 85vh; overflow: auto; }
+  .modal-content.wide { max-width: 900px; }
+  .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+  .modal-header h3 { margin: 0; }
+  .modal-close { cursor: pointer; font-size: 24px; line-height: 1; }
+  .modal-buttons { display: flex; gap: 12px; justify-content: flex-end; margin-top: 20px; }
+  pre { background: #f8f9fa; padding: 12px; border-radius: 4px; overflow-x: auto; font-size: 12px; max-height: 400px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; }
+  .detail-section { margin-bottom: 16px; }
+  .detail-section h4 { margin: 0 0 8px 0; padding-bottom: 4px; border-bottom: 1px solid #dee2e6; }
+  .detail-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .detail-table th, .detail-table td { padding: 6px 10px; border: 1px solid #dee2e6; text-align: left; }
+  .detail-table th { background: #f8f9fa; width: 120px; }
+  .edit-textarea { width: 100%; min-height: 200px; padding: 12px; border: 1px solid #ced4da; border-radius: 4px; font-family: monospace; font-size: 12px; }
+  .file-input { padding: 8px; border: 1px solid #ced4da; border-radius: 4px; width: 100%; }
+</style>
+
+<div class="keys-container">
+  <h2 class="page-title">Redis 信息管理</h2>
+  
+  <div class="keys-card">
+    <div class="card-title">数据统计</div>
+    <div class="stats-bar" id="statsBar">
+      <div class="stat-item">总计: <strong id="statTotal">-</strong></div>
+      <div class="stat-item">Hash: <strong id="statHash">-</strong></div>
+      <div class="stat-item">String: <strong id="statString">-</strong></div>
+      <div class="stat-item">ZSet: <strong id="statZset">-</strong></div>
+      <div class="stat-item">List: <strong id="statList">-</strong></div>
+      <div class="stat-item">Set: <strong id="statSet">-</strong></div>
+    </div>
+  </div>
+
+  <div class="keys-card">
+    <div class="card-title">操作</div>
+    <div class="search-box">
+      <select id="typeFilter">
+        <option value="">全部类型</option>
+        <option value="hash">Hash</option>
+        <option value="string">String</option>
+        <option value="zset">ZSet</option>
+        <option value="list">List</option>
+        <option value="set">Set</option>
+      </select>
+      <input type="text" id="prefixInput" placeholder="Key 前缀筛选 (如 user:, tx:, metrics:)">
+      <button class="btn btn-primary" onclick="loadKeys(1)">搜索</button>
+      <button class="btn btn-success" onclick="exportUsers()">导出用户数据</button>
+      <button class="btn btn-secondary" onclick="showImportModal()">导入用户数据</button>
+    </div>
+  </div>
+
+  <div class="keys-card">
+    <div class="card-title">Key 列表</div>
+    <div id="keysTable">
+      <div class="loading"><i class="fa-solid fa-spinner fa-spin"></i> 加载中...</div>
+    </div>
+  </div>
+</div>
+
+<!-- 详情弹窗 -->
+<div class="detail-modal" id="detailModal">
+  <div class="modal-content wide">
+    <div class="modal-header">
+      <h3>Key 详情</h3>
+      <span class="modal-close" onclick="closeDetail()">&times;</span>
+    </div>
+    <div id="detailContent"></div>
+    <div class="modal-buttons">
+      <button class="btn btn-secondary" onclick="closeDetail()">关闭</button>
+      <button class="btn btn-primary" onclick="editKey()">编辑</button>
+      <button class="btn btn-danger" onclick="confirmDelete()">删除</button>
+    </div>
+  </div>
+</div>
+
+<!-- 编辑弹窗 -->
+<div class="edit-modal" id="editModal">
+  <div class="modal-content wide">
+    <div class="modal-header">
+      <h3>编辑 Key</h3>
+      <span class="modal-close" onclick="closeEdit()">&times;</span>
+    </div>
+    <div id="editContent"></div>
+    <div class="modal-buttons">
+      <button class="btn btn-secondary" onclick="closeEdit()">取消</button>
+      <button class="btn btn-primary" onclick="saveKey()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- 删除确认弹窗 -->
+<div class="confirm-modal" id="confirmModal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h3>确认删除</h3>
+      <span class="modal-close" onclick="closeConfirm()">&times;</span>
+    </div>
+    <p id="confirmMessage" style="color:#495057;"></p>
+    <div class="modal-buttons">
+      <button class="btn btn-secondary" onclick="closeConfirm()">取消</button>
+      <button class="btn btn-danger" onclick="executeDelete()">确认删除</button>
+    </div>
+  </div>
+</div>
+
+<!-- 导入弹窗 -->
+<div class="edit-modal" id="importModal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h3>导入用户数据</h3>
+      <span class="modal-close" onclick="closeImport()">&times;</span>
+    </div>
+    <p style="color:#6c757d;font-size:12px;">导入将覆盖已存在的用户数据</p>
+    <input type="file" id="importFile" class="file-input" accept=".json">
+    <div class="modal-buttons">
+      <button class="btn btn-secondary" onclick="closeImport()">取消</button>
+      <button class="btn btn-success" onclick="importUsers()">导入</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let currentPage = 1;
+let currentKey = '';
+let deleteCallback = null;
+
+async function loadKeys(page) {
+  currentPage = page;
+  const prefix = document.getElementById('prefixInput').value.trim();
+  const type = document.getElementById('typeFilter').value;
+  
+  document.getElementById('keysTable').innerHTML = '<div class="loading"><i class="fa-solid fa-spinner fa-spin"></i> 加载中...</div>';
+  
+  try {
+    let url = `/admin/api/redis/keys?page=${page}&page_size=500`;
+    if (prefix) url += `&prefix=${encodeURIComponent(prefix)}`;
+    if (type) url += `&type=${type}`;
+    
+    const resp = await fetch(url);
+    const data = await resp.json();
+    
+    // 更新统计
+    const stats = data.stats || {};
+    document.getElementById('statTotal').textContent = stats.total || 0;
+    document.getElementById('statHash').textContent = stats.hash || 0;
+    document.getElementById('statString').textContent = stats.string || 0;
+    document.getElementById('statZset').textContent = stats.zset || 0;
+    document.getElementById('statList').textContent = stats.list || 0;
+    document.getElementById('statSet').textContent = stats.set || 0;
+    
+    // 渲染表格
+    const keys = data.keys || [];
+    let html = '';
+    if (keys.length === 0) {
+      html = '<div class="empty-state">暂无数据</div>';
+    } else {
+      html = `
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Key 名称</th>
+              <th>类型</th>
+              <th>大小</th>
+              <th>TTL</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+      `;
+      keys.forEach((k, idx) => {
+        const rowIdx = (page - 1) * 500 + idx + 1;
+        const typeClass = `type-${k.type}`;
+        html += `
+          <tr>
+            <td>${rowIdx}</td>
+            <td class="key-name" title="${k.key}">${k.key}</td>
+            <td><span class="type-badge ${typeClass}">${k.type}</span></td>
+            <td>${formatSize(k.size, k.type)}</td>
+            <td>${k.ttl > 0 ? k.ttl + 's' : (k.ttl === -1 ? '永不过期' : k.ttl)}</td>
+            <td>
+              <button class="btn btn-primary btn-sm action-btn" onclick="viewDetail('${escapeHtml(k.key)}')">详情</button>
+              <button class="btn btn-secondary btn-sm action-btn" onclick="viewAndEdit('${escapeHtml(k.key)}')">编辑</button>
+              <button class="btn btn-danger btn-sm action-btn" onclick="deleteKey('${escapeHtml(k.key)}')">删除</button>
+            </td>
+          </tr>
+        `;
+      });
+      html += '</tbody></table>';
+      
+      // 分页
+      const totalPages = Math.ceil(data.count / 500);
+      if (totalPages > 1) {
+        html += '<div class="pagination">';
+        html += `<button class="btn btn-primary btn-sm" onclick="loadKeys(${page - 1})" ${page <= 1 ? 'disabled' : ''}>上一页</button>`;
+        html += `<span class="page-info">第 ${page} / ${totalPages} 页，共 ${data.count} 条</span>`;
+        html += `<button class="btn btn-primary btn-sm" onclick="loadKeys(${page + 1})" ${page >= totalPages ? 'disabled' : ''}>下一页</button>`;
+        html += '</div>';
+      }
+    }
+    
+    document.getElementById('keysTable').innerHTML = html;
+  } catch (e) {
+    document.getElementById('keysTable').innerHTML = `<div style="color:red;padding:20px;">加载失败: ${e.message}</div>`;
+  }
+}
+
+function formatSize(size, type) {
+  if (type === 'string') {
+    return size + ' 字符';
+  }
+  return size + ' 项';
+}
+
+function escapeHtml(str) {
+  return str.replace(/'/g, "\\'").replace(/\\/g, "\\\\");
+}
+
+async function viewDetail(key) {
+  currentKey = key;
+  try {
+    const resp = await fetch(`/admin/api/redis/key-detail?key=${encodeURIComponent(key)}`);
+    const data = await resp.json();
+    
+    let html = '<div class="detail-section">';
+    html += `<h4>基本信息</h4>`;
+    html += `<table class="detail-table"><tr><th>Key</th><td style="word-break:break-all;">${data.key}</td></tr>`;
+    html += `<tr><th>类型</th><td><span class="type-badge type-${data.type}">${data.type}</span></td></tr>`;
+    html += `<tr><th>TTL</th><td>${data.ttl > 0 ? data.ttl + '秒' : (data.ttl === -1 ? '永不过期' : data.ttl)}</td></tr>`;
+    html += '</table></div>';
+    
+    if (data.type === 'string') {
+      html += `<div class="detail-section"><h4>值 (${(data.value || '').length} 字符)</h4>`;
+      html += `<pre>${escapePre(data.value || '')}</pre></div>`;
+    } else if (data.type === 'hash') {
+      html += `<div class="detail-section"><h4>字段 (${data.count || 0} 个)</h4>`;
+      html += `<pre>${escapePre(JSON.stringify(data.fields || {}, null, 2))}</pre></div>`;
+    } else if (data.type === 'zset') {
+      html += `<div class="detail-section"><h4>成员 (显示前100个，共${data.total || 0}个)</h4>`;
+      html += `<pre>${escapePre(JSON.stringify(data.members || [], null, 2))}</pre></div>`;
+    } else if (data.type === 'list') {
+      html += `<div class="detail-section"><h4>元素 (显示前100个，共${data.total || 0}个)</h4>`;
+      html += `<pre>${escapePre(JSON.stringify(data.items || [], null, 2))}</pre></div>`;
+    } else if (data.type === 'set') {
+      html += `<div class="detail-section"><h4>成员 (显示前100个，共${data.total || 0}个)</h4>`;
+      html += `<pre>${escapePre(JSON.stringify(data.members || [], null, 2))}</pre></div>`;
+    }
+    
+    document.getElementById('detailContent').innerHTML = html;
+    document.getElementById('detailModal').classList.add('show');
+  } catch (e) {
+    alert('加载失败: ' + e.message);
+  }
+}
+
+function escapePre(str) {
+  return str.replace(/</g, '<').replace(/>/g, '>');
+}
+
+function closeDetail() {
+  document.getElementById('detailModal').classList.remove('show');
+}
+
+async function viewAndEdit(key) {
+  currentKey = key;
+  await viewDetail(key);
+  await editKey();
+}
+
+async function editKey() {
+  closeDetail();
+  try {
+    const resp = await fetch(`/admin/api/redis/key-detail?key=${encodeURIComponent(currentKey)}`);
+    const data = await resp.json();
+    
+    let inputHtml = '';
+    if (data.type === 'string') {
+      inputHtml = `<textarea id="editValue" class="edit-textarea">${escapeHtml(data.value || '')}</textarea>`;
+    } else if (data.type === 'hash') {
+      let lines = [];
+      for (const [k, v] of Object.entries(data.fields || {})) {
+        lines.push(`${k}:${v}`);
+      }
+      inputHtml = `<textarea id="editValue" class="edit-textarea" placeholder="每行格式: field:value">${lines.join('\n')}</textarea>`;
+    } else if (data.type === 'zset') {
+      let lines = [];
+      for (const item of (data.members || [])) {
+        lines.push(`${item.member}:${item.score}`);
+      }
+      inputHtml = `<textarea id="editValue" class="edit-textarea" placeholder="每行格式: member:score">${lines.join('\n')}</textarea>`;
+    } else if (data.type === 'list') {
+      inputHtml = `<textarea id="editValue" class="edit-textarea" placeholder="每行一个元素">${(data.items || []).join('\n')}</textarea>`;
+    } else if (data.type === 'set') {
+      inputHtml = `<textarea id="editValue" class="edit-textarea" placeholder="每行一个成员">${(data.members || []).join('\n')}</textarea>`;
+    }
+    
+    document.getElementById('editContent').innerHTML = `
+      <p><strong>Key:</strong> ${currentKey}</p>
+      <p><strong>类型:</strong> ${data.type}</p>
+      ${inputHtml}
+    `;
+    document.getElementById('editModal').classList.add('show');
+  } catch (e) {
+    alert('加载失败: ' + e.message);
+  }
+}
+
+function closeEdit() {
+  document.getElementById('editModal').classList.remove('show');
+}
+
+async function saveKey() {
+  const value = document.getElementById('editValue').value;
+  try {
+    const resp = await fetch('/admin/api/redis/key', {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ key: currentKey, value: value })
+    });
+    const data = await resp.json();
+    if (data.error) {
+      alert('保存失败: ' + data.error);
+    } else {
+      alert(data.message);
+      closeEdit();
+      loadKeys(currentPage);
+    }
+  } catch (e) {
+    alert('保存失败: ' + e.message);
+  }
+}
+
+function deleteKey(key) {
+  currentKey = key;
+  document.getElementById('confirmMessage').textContent = `确定要删除 key "${key}" 吗？此操作不可恢复。`;
+  document.getElementById('confirmModal').classList.add('show');
+}
+
+function closeConfirm() {
+  document.getElementById('confirmModal').classList.remove('show');
+}
+
+async function executeDelete() {
+  try {
+    const resp = await fetch('/admin/api/redis/key', {
+      method: 'DELETE',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ key: currentKey })
+    });
+    const data = await resp.json();
+    alert(data.message || data.error);
+    closeConfirm();
+    loadKeys(currentPage);
+  } catch (e) {
+    alert('删除失败: ' + e.message);
+  }
+}
+
+async function exportUsers() {
+  try {
+    const resp = await fetch('/admin/api/redis/export/users');
+    const data = await resp.json();
+    
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `redis_users_${new Date().toISOString().slice(0,10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    alert(`已导出 ${data.count || 0} 个用户`);
+  } catch (e) {
+    alert('导出失败: ' + e.message);
+  }
+}
+
+function showImportModal() {
+  document.getElementById('importFile').value = '';
+  document.getElementById('importModal').classList.add('show');
+}
+
+function closeImport() {
+  document.getElementById('importModal').classList.remove('show');
+}
+
+async function importUsers() {
+  const file = document.getElementById('importFile').files[0];
+  if (!file) {
+    alert('请选择文件');
+    return;
+  }
+  
+  try {
+    const text = await file.text();
+    const data = JSON.parse(text);
+    
+    const resp = await fetch('/admin/api/redis/import/users', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(data)
+    });
+    const result = await resp.json();
+    alert(result.message);
+    if (result.errors && result.errors.length > 0) {
+      console.log('导入错误:', result.errors);
+    }
+    closeImport();
+  } catch (e) {
+    alert('导入失败: ' + e.message);
+  }
+}
+
+// 初始化
+loadKeys(1);
+</script>
+{% endblock %}

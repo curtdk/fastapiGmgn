@@ -98,6 +98,7 @@
     <div class="card-title">Redis 管理</div>
     <div class="action-bar">
       <button class="btn btn-warning" onclick="confirmClearAllTx()">清除全部交易记录</button>
+      <button class="btn btn-danger" onclick="confirmClearAllUsers()">清除全部用户</button>
     </div>
     <p style="font-size:12px;color:#6c757d;">清除操作不可恢复，确认后再执行。</p>
   </div>
@@ -282,7 +283,7 @@ function renderMetrics(metrics) {
     <div class="section">
       <div class="section-title">
         全局指标 (metrics:${currentMint})
-        <button class="btn btn-danger btn-sm" onclick="confirmClearUsers()">清除用户数据</button>
+        <button class="btn btn-danger btn-sm" onclick="confirmClearMintUsers()">清除用户数据</button>
       </div>
       <div class="metric-card">
         <div class="label">总投注 (total_bet)</div>
@@ -484,7 +485,20 @@ function confirmClearAllTx() {
   });
 }
 
-function confirmClearUsers() {
+function confirmClearAllUsers() {
+  showConfirm('清除全部用户', '确定要清除 Redis 中的全部用户数据 (user:*) 吗？此操作不可恢复。', async () => {
+    try {
+      const resp = await fetch('/admin/api/redis/clear-all-users', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}' });
+      const data = await resp.json();
+      alert(data.message);
+      if (currentMint) loadMintData();
+    } catch (e) {
+      alert('清除失败: ' + e.message);
+    }
+  });
+}
+
+function confirmClearMintUsers() {
   if (!currentMint) return;
   showConfirm('清除用户数据', `确定要清除 ${currentMint.slice(0, 20)}... 的全部用户数据吗？`, async () => {
     try {
