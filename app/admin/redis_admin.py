@@ -490,9 +490,7 @@ class RedisApiView(BaseView):
                 continue
             
             try:
-                # 先删除旧数据
                 await _redis.delete(key)
-                # 写入新数据
                 if data:
                     await _redis.hset(key, mapping=data)
                 imported += 1
@@ -501,5 +499,131 @@ class RedisApiView(BaseView):
         
         return JSONResponse({
             "message": f"已导入 {imported} 个用户",
-            "errors": errors[:10]  # 只返回前10个错误
+            "errors": errors[:10]
+        })
+
+    @expose("/api/redis/export/all", methods=["GET"])
+    async def api_export_all(self, request: Request):
+        """导出全部 Redis 数据"""
+        from app.services.dealer_detector import _redis
+        
+        if not _redis:
+            return JSONResponse({"error": "Redis 未连接"}, status_code=500)
+        
+        all_data = []
+        cursor = 0
+        while True:
+            cursor, keys = await _redis.scan(cursor, match="*", count=500)
+            for key in keys:
+                try:
+                    key_type = await _redis.type(key)
+                    item = {"key": key, "type": key_type}
+                    
+                    if key_type == "string":
+                        item["value"] = await _redis.get(key)
+                    elif key_type == "hash":
+                        item["fields"] = await _redis.hgetall(key)
+                    elif key_type == "zset":
+                        members = await _redis.zrange(key, 0, -1, withscores=True)
+                        item["members"] = [{"member": m, "score": s} for m, s in members]
+                    elif key_type == "list":
+                        item["items"] = await _redis.lrange(key, 0, -1)
+                    elif key_type == "set":
+                        item["members"] = list(await _redis.smembers(key))
+                    
+                    all_data.append(item)
+                except:
+                    pass
+            if cursor == 0:
+                break
+        
+        return JSONResponse({
+            "count": len(all_data),
+            "data": all_data
+        })
+
+    @expose("/api/redis/import/all", methods=["POST"])
+    async def api_import_all(self, request: Request):
+        """导入全部数据（覆盖）"""
+        from app.services.dealer_detector import _redis
+        
+        body = await request.json()
+        all_data = body.get("data", [])
+        
+        if not _redis:
+            return JSONResponse({"error": "Redis 未连接"}, status_code=500)
+        
+        imported = 0
+        errors = []
+        
+        for item in all_data:
+            key = item.get("key", "")
+            key_type = item.get("type", "")
+            
+            if not key:
+                continue
+            
+            try:
+                await _redis.delete(key)
+                
+                if key_type == "string":
+                    value = item.get("value", "")
+                    if value:
+                        await _redis.set(key, value)
+                elif key_type == "hash":
+                    fields = item.get("fields", {})
+                    if fields:
+                        await _redis.hset(key, mapping=fields)
+                elif key_type == "zset":
+                    members = item.get("members", [])
+                    if members:
+                        mapping = {m["member"]: m["score"] for m in members}
+                        await _redis.zadd(key, mapping)
+                elif key_type == "list":
+                    items = item.get("items", [])
+                    if items:
+                        for i in items:
+                            await _redis.rpush(key, i)
+                elif key_type == "set":
+                    members = item.get("members", [])
+                    if members:
+                        for m in members:
+                            await _redis.sadd(key, m)
+                
+                imported += 1
+            except Exception as e:
+                errors.append(f"Error importing {key}: {str(e)}")
+        
+        return JSONResponse({
+            "message": f"已导入 {imported} 条数据",
+            "errors": errors[:20]
+        })
+
+    @expose("/api/redis/delete-by-prefix", methods=["DELETE"])
+    async def api_delete_by_prefix(self, request: Request):
+        """按前缀删除 key"""
+        from app.services.dealer_detector import _redis
+        
+        body = await request.json()
+        prefix = body.get("prefix", "")
+        
+        if not prefix:
+            return JSONResponse({"error": "prefix is required"}, status_code=400)
+        
+        if not _redis:
+            return JSONResponse({"error": "Redis 未连接"}, status_code=500)
+        
+        deleted = 0
+        cursor = 0
+        while True:
+            cursor, keys = await _redis.scan(cursor, match=f"{prefix}*", count=500)
+            if keys:
+                await _redis.delete(*keys)
+                deleted += len(keys)
+            if cursor == 0:
+                break
+        
+        return JSONResponse({
+            "message": f"已删除 {deleted} 个 key (前缀: {prefix})",
+            "deleted": deleted
         })

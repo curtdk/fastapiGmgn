@@ -8,6 +8,12 @@
   .stats-bar { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
   .stat-item { padding: 8px 16px; background: #f8f9fa; border-radius: 4px; font-size: 13px; }
   .stat-item strong { color: #007bff; }
+  .quick-btns { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+  .quick-btn { padding: 6px 12px; border: 1px solid #ced4da; border-radius: 4px; background: #fff; cursor: pointer; font-size: 12px; transition: all 0.2s; }
+  .quick-btn:hover { background: #e9ecef; }
+  .quick-btn.active { background: #007bff; color: #fff; border-color: #007bff; }
+  .quick-btn .count { color: #6c757d; margin-left: 4px; }
+  .quick-btn.active .count { color: #fff; }
   .search-box { display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; align-items: center; }
   .search-box input, .search-box select { padding: 8px 12px; border: 1px solid #ced4da; border-radius: 4px; }
   .search-box input { width: 300px; }
@@ -20,6 +26,8 @@
   .btn-success:hover { background: #218838; }
   .btn-secondary { background: #6c757d; color: #fff; }
   .btn-secondary:hover { background: #545b62; }
+  .btn-warning { background: #ffc107; color: #212529; }
+  .btn-warning:hover { background: #e0a800; }
   .btn-sm { padding: 4px 10px; font-size: 12px; }
   .data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
   .data-table th { background: #f8f9fa; padding: 10px 12px; text-align: left; border: 1px solid #dee2e6; white-space: nowrap; }
@@ -39,8 +47,8 @@
   .loading { text-align: center; padding: 40px; color: #6c757d; }
   .empty-state { text-align: center; padding: 30px; color: #6c757d; }
   .action-btn { padding: 2px 8px; font-size: 11px; margin-right: 4px; }
-  .confirm-modal, .detail-modal, .edit-modal { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1000; }
-  .confirm-modal.show, .detail-modal.show, .edit-modal.show { display: flex; align-items: center; justify-content: center; }
+  .modal, .detail-modal, .edit-modal { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1000; }
+  .modal.show, .detail-modal.show, .edit-modal.show { display: flex; align-items: center; justify-content: center; }
   .modal-content { background: #fff; border-radius: 8px; padding: 24px; max-width: 600px; width: 95%; max-height: 85vh; overflow: auto; }
   .modal-content.wide { max-width: 900px; }
   .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
@@ -55,11 +63,33 @@
   .detail-table th { background: #f8f9fa; width: 120px; }
   .edit-textarea { width: 100%; min-height: 200px; padding: 12px; border: 1px solid #ced4da; border-radius: 4px; font-family: monospace; font-size: 12px; }
   .file-input { padding: 8px; border: 1px solid #ced4da; border-radius: 4px; width: 100%; }
+  .section-divider { margin: 20px 0; padding-top: 16px; border-top: 2px dashed #dee2e6; }
+  .action-row { display: flex; gap: 8px; flex-wrap: wrap; }
 </style>
 
 <div class="keys-container">
   <h2 class="page-title">Redis 信息管理</h2>
   
+  <div class="keys-card">
+    <div class="card-title">快捷搜索 & 批量操作</div>
+    <div class="quick-btns" id="quickBtns">
+      <button class="quick-btn" onclick="searchPrefix('metrics:', this)">metrics: <span class="count" id="countMetrics">-</span></button>
+      <button class="quick-btn" onclick="searchPrefix('tx:', this)">tx: <span class="count" id="countTx">-</span></button>
+      <button class="quick-btn" onclick="searchPrefix('txlist:', this)">txlist: <span class="count" id="countTxlist">-</span></button>
+      <button class="quick-btn" onclick="searchPrefix('user:', this)">user: <span class="count" id="countUser">-</span></button>
+      <button class="quick-btn" onclick="searchPrefix('stream:', this)">stream: <span class="count" id="countStream">-</span></button>
+    </div>
+    <div class="section-divider"></div>
+    <div class="card-title">批量删除</div>
+    <div class="action-row">
+      <button class="btn btn-danger btn-sm" onclick="deletePrefix('metrics:')">删除 metrics:</button>
+      <button class="btn btn-danger btn-sm" onclick="deletePrefix('tx:')">删除 tx:</button>
+      <button class="btn btn-danger btn-sm" onclick="deletePrefix('txlist:')">删除 txlist:</button>
+      <button class="btn btn-danger btn-sm" onclick="deletePrefix('user:')">删除 user:</button>
+      <button class="btn btn-danger btn-sm" onclick="deletePrefix('stream:')">删除 stream:</button>
+    </div>
+  </div>
+
   <div class="keys-card">
     <div class="card-title">数据统计</div>
     <div class="stats-bar" id="statsBar">
@@ -83,10 +113,15 @@
         <option value="list">List</option>
         <option value="set">Set</option>
       </select>
-      <input type="text" id="prefixInput" placeholder="Key 前缀筛选 (如 user:, tx:, metrics:)">
+      <input type="text" id="prefixInput" placeholder="Key 前缀筛选">
       <button class="btn btn-primary" onclick="loadKeys(1)">搜索</button>
+      <button class="btn btn-secondary" onclick="clearFilter()">清除筛选</button>
+    </div>
+    <div class="action-row" style="margin-top:12px;">
       <button class="btn btn-success" onclick="exportUsers()">导出用户数据</button>
-      <button class="btn btn-secondary" onclick="showImportModal()">导入用户数据</button>
+      <button class="btn btn-secondary" onclick="showImportModal('users')">导入用户数据</button>
+      <button class="btn btn-success" onclick="exportAll()">导出全部数据</button>
+      <button class="btn btn-secondary" onclick="showImportModal('all')">导入全部数据</button>
     </div>
   </div>
 
@@ -130,7 +165,7 @@
 </div>
 
 <!-- 删除确认弹窗 -->
-<div class="confirm-modal" id="confirmModal">
+<div class="modal" id="confirmModal">
   <div class="modal-content">
     <div class="modal-header">
       <h3>确认删除</h3>
@@ -145,17 +180,17 @@
 </div>
 
 <!-- 导入弹窗 -->
-<div class="edit-modal" id="importModal">
+<div class="modal" id="importModal">
   <div class="modal-content">
     <div class="modal-header">
-      <h3>导入用户数据</h3>
+      <h3>导入数据</h3>
       <span class="modal-close" onclick="closeImport()">&times;</span>
     </div>
-    <p style="color:#6c757d;font-size:12px;">导入将覆盖已存在的用户数据</p>
+    <p id="importTip" style="color:#6c757d;font-size:12px;">导入将覆盖已存在的数据</p>
     <input type="file" id="importFile" class="file-input" accept=".json">
     <div class="modal-buttons">
       <button class="btn btn-secondary" onclick="closeImport()">取消</button>
-      <button class="btn btn-success" onclick="importUsers()">导入</button>
+      <button class="btn btn-success" onclick="doImport()">导入</button>
     </div>
   </div>
 </div>
@@ -163,7 +198,37 @@
 <script>
 let currentPage = 1;
 let currentKey = '';
-let deleteCallback = null;
+let currentPrefix = '';
+let importType = 'users';
+
+async function loadPrefixCounts() {
+  try {
+    const prefixes = ['metrics:', 'tx:', 'txlist:', 'user:', 'stream:'];
+    for (const prefix of prefixes) {
+      const resp = await fetch(`/admin/api/redis/keys?prefix=${prefix}&page_size=1`);
+      const data = await resp.json();
+      document.getElementById('count' + prefix.charAt(0).toUpperCase() + prefix.slice(1, -1)).textContent = data.count || 0;
+    }
+  } catch (e) {
+    console.log('加载前缀数量失败:', e);
+  }
+}
+
+function searchPrefix(prefix, btn) {
+  document.getElementById('prefixInput').value = prefix;
+  currentPrefix = prefix;
+  document.querySelectorAll('.quick-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  loadKeys(1);
+}
+
+function clearFilter() {
+  document.getElementById('prefixInput').value = '';
+  document.getElementById('typeFilter').value = '';
+  currentPrefix = '';
+  document.querySelectorAll('.quick-btn').forEach(b => b.classList.remove('active'));
+  loadKeys(1);
+}
 
 async function loadKeys(page) {
   currentPage = page;
@@ -247,9 +312,7 @@ async function loadKeys(page) {
 }
 
 function formatSize(size, type) {
-  if (type === 'string') {
-    return size + ' 字符';
-  }
+  if (type === 'string') return size + ' 字符';
   return size + ' 项';
 }
 
@@ -377,6 +440,25 @@ function deleteKey(key) {
   document.getElementById('confirmModal').classList.add('show');
 }
 
+async function deletePrefix(prefix) {
+  if (!confirm(`确定要删除所有前缀为 "${prefix}" 的 key 吗？此操作不可恢复！`)) {
+    return;
+  }
+  try {
+    const resp = await fetch('/admin/api/redis/delete-by-prefix', {
+      method: 'DELETE',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ prefix: prefix })
+    });
+    const data = await resp.json();
+    alert(data.message);
+    loadKeys(1);
+    loadPrefixCounts();
+  } catch (e) {
+    alert('删除失败: ' + e.message);
+  }
+}
+
 function closeConfirm() {
   document.getElementById('confirmModal').classList.remove('show');
 }
@@ -392,6 +474,7 @@ async function executeDelete() {
     alert(data.message || data.error);
     closeConfirm();
     loadKeys(currentPage);
+    loadPrefixCounts();
   } catch (e) {
     alert('删除失败: ' + e.message);
   }
@@ -401,21 +484,43 @@ async function exportUsers() {
   try {
     const resp = await fetch('/admin/api/redis/export/users');
     const data = await resp.json();
-    
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `redis_users_${new Date().toISOString().slice(0,10)}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadJson(data, `redis_users_${getDate()}.json`);
     alert(`已导出 ${data.count || 0} 个用户`);
   } catch (e) {
     alert('导出失败: ' + e.message);
   }
 }
 
-function showImportModal() {
+async function exportAll() {
+  try {
+    const resp = await fetch('/admin/api/redis/export/all');
+    const data = await resp.json();
+    downloadJson(data, `redis_all_${getDate()}.json`);
+    alert(`已导出 ${data.count || 0} 条数据`);
+  } catch (e) {
+    alert('导出失败: ' + e.message);
+  }
+}
+
+function getDate() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function downloadJson(data, filename) {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function showImportModal(type) {
+  importType = type;
+  document.getElementById('importTip').textContent = type === 'users' 
+    ? '导入用户数据，将覆盖已存在的用户' 
+    : '导入全部数据，将覆盖所有匹配的 key';
   document.getElementById('importFile').value = '';
   document.getElementById('importModal').classList.add('show');
 }
@@ -424,7 +529,7 @@ function closeImport() {
   document.getElementById('importModal').classList.remove('show');
 }
 
-async function importUsers() {
+async function doImport() {
   const file = document.getElementById('importFile').files[0];
   if (!file) {
     alert('请选择文件');
@@ -435,17 +540,19 @@ async function importUsers() {
     const text = await file.text();
     const data = JSON.parse(text);
     
-    const resp = await fetch('/admin/api/redis/import/users', {
+    const endpoint = importType === 'users' ? '/admin/api/redis/import/users' : '/admin/api/redis/import/all';
+    const bodyKey = importType === 'users' ? 'users' : 'data';
+    
+    const resp = await fetch(endpoint, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify(data)
+      body: JSON.stringify({ [bodyKey]: data[bodyKey] || data.users || data.data || [] })
     });
     const result = await resp.json();
     alert(result.message);
-    if (result.errors && result.errors.length > 0) {
-      console.log('导入错误:', result.errors);
-    }
     closeImport();
+    loadKeys(1);
+    loadPrefixCounts();
   } catch (e) {
     alert('导入失败: ' + e.message);
   }
@@ -453,5 +560,6 @@ async function importUsers() {
 
 // 初始化
 loadKeys(1);
+loadPrefixCounts();
 </script>
 {% endblock %}
