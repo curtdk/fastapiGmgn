@@ -245,3 +245,20 @@ async def get_trader_state(redis, mint: str, address: str, sig: str = None) -> d
         "totalBuyAmount": 0.0,
         "totalSellAmount": 0.0,
         "totalSellPrincipal": 0.0,
+
+
+
+
+run_full_calculation 方法中     
+# 指数计算（_calculate_index 内部更新 wallet_tag）
+            metrics = await _calculate_index(tx_detail, mint)
+
+            # 非庄家交易 → WebSocket 广播
+            if not metrics.get("is_dealer"):
+                await ws_manager.broadcast(mint, {
+                    "type": "trade",
+                    "data": {
+                        **tx_detail,
+                        "wallet_tag": "unknown",
+                    }
+                })

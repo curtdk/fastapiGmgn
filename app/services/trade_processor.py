@@ -74,6 +74,8 @@ async def get_trader_state(redis, mint: str, address: str, sig: str = None) -> d
                     await save_trader_state(redis, mint, address, state)
                     logger.info(f"[庄家判定] {address[:8]}... 新用户本地判断为庄家 (C002-C005)")
                     return state
+                # 非庄家也要保存状态，记录所有用户
+                await save_trader_state(redis, mint, address, state)
                 logger.info(f"[庄家判定] {address[:8]}... 新用户本地判断为非庄家 (C002-C005)，入队等待 C001")
             # 本地判断不是庄家或无交易详情：入队等待 C001 检测
             await _enqueue_dealer_check(address, mint, sig)
@@ -464,7 +466,7 @@ async def _consumer_loop(mint: str):
                     "type": "trade",
                     "data": {
                         **tx_detail,
-                        "wallet_tag": "unknown",
+                        "wallet_tag": "dealer" if metrics.get("is_dealer") else "unknown",
                     }
                 })
 
@@ -503,7 +505,7 @@ async def run_full_calculation(db: Session, mint: str):
                     "type": "trade",
                     "data": {
                         **tx_detail,
-                        "wallet_tag": "unknown",
+                        "wallet_tag": "dealer" if metrics.get("is_dealer") else "unknown",
                     }
                 })
 
