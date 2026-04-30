@@ -236,29 +236,39 @@ class RedisApiView(BaseView):
     @expose("/api/redis/keys", methods=["GET"])
     async def api_get_keys(self, request: Request):
         """获取 Redis key 列表（分页、筛选）"""
-        from app.services.dealer_detector import _redis
+        import app.services.dealer_detector as dealer_module
+        import redis.asyncio as aioredis
         
         prefix = request.query_params.get("prefix", "")
         key_type = request.query_params.get("type", "")  # hash, string, zset, list, set
         page = int(request.query_params.get("page", 1))
         page_size = int(request.query_params.get("page_size", 500))
         
-        if not _redis:
-            return JSONResponse({"keys": [], "count": 0, "stats": {}})
+        # 使用模块方式访问 _redis，确保获取最新值
+        _redis = dealer_module._redis
+        REDIS_URL = dealer_module.REDIS_URL
+        
+        if _redis:
+            redis_client = _redis
+        else:
+            redis_client = aioredis.from_url(REDIS_URL, decode_responses=True)
         
         # 统计各类型数量
         stats = {"hash": 0, "string": 0, "zset": 0, "list": 0, "set": 0, "total": 0}
         
-        # 构建匹配模式
-        match_pattern = prefix if prefix else "*"
+        # 构建匹配模式（Redis SCAN 需要 glob 通配符）
+        if prefix:
+            match_pattern = prefix if prefix.endswith("*") else f"{prefix}*"
+        else:
+            match_pattern = "*"
         
         all_keys = []
         cursor = 0
         while True:
-            cursor, keys = await _redis.scan(cursor, match=match_pattern, count=500)
+            cursor, keys = await redis_client.scan(cursor, match=match_pattern, count=500)
             for key in keys:
                 try:
-                    key_type_name = await _redis.type(key)
+                    key_type_name = await redis_client.type(key)
                     if key_type and key_type_name != key_type:
                         continue
                     
@@ -268,19 +278,19 @@ class RedisApiView(BaseView):
                     stats["total"] += 1
                     
                     # 获取大小
-                    ttl = await _redis.ttl(key)
+                    ttl = await redis_client.ttl(key)
                     size = 0
                     try:
                         if key_type_name == "string":
-                            size = len(await _redis.get(key) or "")
+                            size = len(await redis_client.get(key) or "")
                         elif key_type_name == "hash":
-                            size = await _redis.hlen(key)
+                            size = await redis_client.hlen(key)
                         elif key_type_name == "zset":
-                            size = await _redis.zcard(key)
+                            size = await redis_client.zcard(key)
                         elif key_type_name == "list":
-                            size = await _redis.llen(key)
+                            size = await redis_client.llen(key)
                         elif key_type_name == "set":
-                            size = await _redis.scard(key)
+                            size = await redis_client.scard(key)
                     except:
                         pass
                     
