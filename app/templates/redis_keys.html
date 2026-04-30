@@ -298,20 +298,15 @@ function clearFilter() {
 async function loadKeys(page) {
   currentPage = page;
   let prefix = document.getElementById('prefixInput').value.trim();
-  
-  // 如果输入不含冒号，自动补充冒号
-  if (prefix && !prefix.includes(':')) {
-    prefix = prefix + ':';
-    document.getElementById('prefixInput').value = prefix;
-  }
-  
-  const type = document.getElementById('typeFilter').value;
+  const searchMode = document.getElementById('searchMode').value;
   
   document.getElementById('keysTable').innerHTML = '<div class="loading"><i class="fa-solid fa-spinner fa-spin"></i> 加载中...</div>';
   
   try {
     let url = `/admin/api/redis/keys?page=${page}&page_size=500`;
     if (prefix) url += `&prefix=${encodeURIComponent(prefix)}`;
+    url += `&mode=${searchMode}`;
+    const type = document.getElementById('typeFilter').value;
     if (type) url += `&type=${type}`;
     
     const resp = await fetch(url);

@@ -271,7 +271,9 @@ class RedisApiView(BaseView):
                 match_pattern = f"{prefix}*"
         else:
             match_pattern = "*"
-            exact_match_filter = None
+        
+        # 确保 exact_match_filter 始终定义
+        exact_match_filter = locals().get('exact_match_filter')
         
         all_keys = []
         cursor = 0
