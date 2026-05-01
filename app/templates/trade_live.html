@@ -56,6 +56,7 @@
       <button id="stopBtn" class="btn btn-danger" onclick="stopMonitor()">关闭</button>
       <span id="statusBadge" class="status-badge status-IDLE">状态: 未启动</span>
       <span id="statusMsg" style="font-size:13px; color:#666;"></span>
+      <button id="currencyToggle" class="btn btn-outline-secondary btn-sm" onclick="toggleCurrency()">SOL → USDT</button>
     </div>
 
     <!-- 四个指标 -->
@@ -108,6 +109,71 @@ let currentMint = '';
 let tradeCount = 0;
 const MAX_ROWS = 200;
 
+// 货币切换相关
+let currencyMode = 'SOL'; // 'SOL' 或 'USDT'
+let solPrice = 0;          // SOL/USD 价格
+
+// 获取 SOL 价格（通过后端 API，使用 Helius）
+async function fetchSolPrice() {
+  try {
+    const resp = await fetch('/admin/api/sol-price');
+    const data = await resp.json();
+    if (data.price) {
+      return data.price;
+    }
+    console.error('获取 SOL 价格失败:', data.error);
+    return 0;
+  } catch (e) {
+    console.error('获取 SOL 价格失败:', e);
+    return 0;
+  }
+}
+
+// 切换货币显示模式
+async function toggleCurrency() {
+  if (currencyMode === 'SOL') {
+    // 切换到 USDT
+    solPrice = await fetchSolPrice();
+    if (solPrice > 0) {
+      currencyMode = 'USDT';
+      document.getElementById('currencyToggle').textContent = `USDT → SOL ($${solPrice.toFixed(2)})`;
+      updateAllDisplays();
+    } else {
+      alert('获取 SOL 价格失败，请重试');
+    }
+  } else {
+    // 切换回 SOL
+    currencyMode = 'SOL';
+    document.getElementById('currencyToggle').textContent = 'SOL → USDT';
+    updateAllDisplays();
+  }
+}
+
+// 更新所有显示（指标卡片 + 表格）
+function updateAllDisplays() {
+  // 更新指标卡片标签
+  const isUsdt = currencyMode === 'USDT';
+  document.querySelector('#metricBet').closest('.metric-card').querySelector('.label').textContent = isUsdt ? '本轮下注 (USDT)' : '本轮下注 (SOL)';
+  document.querySelector('#metricCost').closest('.metric-card').querySelector('.label').textContent = isUsdt ? '本轮成本 (USDT)' : '本轮成本 (SOL)';
+  document.querySelector('#metricProfit').closest('.metric-card').querySelector('.label').textContent = isUsdt ? '已落袋 (USDT)' : '已落袋 (SOL)';
+  
+  // 更新表格 SOL 列标题
+  const ths = document.querySelectorAll('thead th');
+  if (ths[3]) ths[3].textContent = isUsdt ? 'USDT' : 'SOL';
+  
+  // 重新获取指标和交易数据以刷新显示
+  fetchMetrics();
+  fetchHistory();
+}
+
+// 格式化 SOL 值为 USDT（如果是 USDT 模式）
+function fmtSolValue(solValue, decimals) {
+  if (currencyMode === 'USDT' && solPrice > 0) {
+    return (solValue * solPrice).toFixed(2);
+  }
+  return fmtNum(solValue, decimals);
+}
+
 // 截断地址
 function shortAddr(addr) {
   if (!addr) return '-';
@@ -159,11 +225,15 @@ function addTradeRow(data, isNew) {
   const cuLimit = data.cu_limit || 200000;
   const cuDisplay = cuConsumed > 0 ? `${fmtNum(cuConsumed, 0)}/${fmtNum(cuLimit, 0)}` : '-';
 
+  // 根据货币模式显示 SOL 值
+  const isUsdt = currencyMode === 'USDT';
+  const solDisplay = isUsdt ? fmtSolValue(netFlow, 2) : fmtNum(netFlow, 4);
+
   tr.innerHTML = `
     <td><span class="badge ${data.transaction_type === 'SWAP' ? 'bg-primary' : 'bg-secondary'}">${data.transaction_type || '-'}</span></td>
     <td title="${data.from_address || ''}">${shortAddr(data.from_address)}</td>
     <td>${fmtNum(data.amount, 2)}</td>
-    <td class="${netClass}" style="font-weight:600">${fmtNum(netFlow, 4)}</td>
+    <td class="${netClass}" style="font-weight:600">${solDisplay}</td>
     <td class="${riskClass}">${riskScore > 0 ? riskScore : '-'}</td>
     <td style="font-size:11px; max-width:80px; overflow:hidden; text-overflow:ellipsis;" title="${reasons}">${reasons || '-'}</td>
     <td style="font-size:11px; white-space:nowrap;">${cuDisplay}</td>
@@ -184,9 +254,10 @@ function addTradeRow(data, isNew) {
 
 // 更新指标
 function updateMetrics(data) {
-  document.getElementById('metricBet').textContent = fmtNum(data.current_bet, 4);
-  document.getElementById('metricCost').textContent = fmtNum(data.current_cost, 4);
-  document.getElementById('metricProfit').textContent = fmtNum(data.realized_profit, 4);
+  const isUsdt = currencyMode === 'USDT';
+  document.getElementById('metricBet').textContent = fmtSolValue(data.current_bet, isUsdt ? 2 : 4);
+  document.getElementById('metricCost').textContent = fmtSolValue(data.current_cost, isUsdt ? 2 : 4);
+  document.getElementById('metricProfit').textContent = fmtSolValue(data.realized_profit, isUsdt ? 2 : 4);
   document.getElementById('metricCount').textContent = data.trade_count || 0;
 }
 

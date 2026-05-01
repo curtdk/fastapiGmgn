@@ -288,6 +288,22 @@ class TradeMonitorView(BaseView):
         finally:
             db.close()
 
+    @expose("/api/sol-price", methods=["GET"])
+    async def api_get_sol_price(self, request: Request):
+        """从 Binance API 获取 SOL/USD 价格（后端转发避免 CORS）"""
+        try:
+            import httpx
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get("https://api.binance.com/api/v3/ticker/price?symbol=SOLUSDT")
+            data = resp.json()
+            price = float(data.get("price", 0))
+            if price > 0:
+                return JSONResponse({"price": price})
+            return JSONResponse({"error": "无法获取价格"}, status_code=500)
+        except Exception as e:
+            logger.error(f"[SOL价格] 获取失败: {e}")
+            return JSONResponse({"error": str(e)}, status_code=500)
+
 
 class DealerSettingsMenu(BaseView):
     """庄家设置菜单项"""
