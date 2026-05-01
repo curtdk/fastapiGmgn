@@ -287,15 +287,15 @@ async def _run_dealer_check(address: str, mint: str, sig: str):
     retry_count = await redis.get(retry_key)
     retry_count = int(retry_count) if retry_count else 0
     
+    db = SessionLocal()
     try:
         state = await get_trader_state(redis, mint, address)
         conditions = list(state.get("conditions", []))
         
         # ── 条件 C001：首笔交易包含 closeAccount（Helius API） ──
-        c001_enabled = get_setting(SessionLocal(), "dealer_c001_enabled")
+        c001_enabled = get_setting(db, "dealer_c001_enabled")
         if c001_enabled != "true":
-            # C001 未启用，标记为散户
-            await _apply_dealer_result(redis, address, mint, sig, state, conditions, False)
+            # C001 未启用，直接跳过检测，保持 unknown 状态
             return
 
         api_key = await _get_helius_api_key()
@@ -320,8 +320,9 @@ async def _run_dealer_check(address: str, mint: str, sig: str):
 
     except Exception as e:
         logger.error(f"[庄家判定] {address[:8]}... 判定异常: {e}", exc_info=True)
-        await _handle_detection_failed(redis, address, mint, sig, retry_count, str(e))
+        # await _handle_detection_failed(redis, address, mint, sig, retry_count, str(e))
     finally:
+        db.close()
         if _dealer_semaphore:
             _dealer_semaphore.release()
 
