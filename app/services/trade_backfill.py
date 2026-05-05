@@ -534,6 +534,8 @@ class TradeBackfill:
 
     def _extract_trade_info(self, tx: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """从标准 Solana RPC 交易数据中提取关键信息（资金流向优先协议 + 增强版）"""
+        from datetime import datetime as dt  # 修复 datetime 引用错误
+        
         try:
             sig = tx.get("_signature", "")
             if not sig:
@@ -545,7 +547,7 @@ class TradeBackfill:
 
             block_time = tx.get("blockTime")
             if block_time:
-                block_time = datetime.utcfromtimestamp(block_time)
+                block_time = dt.utcfromtimestamp(block_time)
 
             slot = tx.get("slot", 0)
             message = tx.get("transaction", {}).get("message", {})

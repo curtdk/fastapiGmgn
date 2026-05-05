@@ -1,0 +1,268 @@
+{% extends "sqladmin/layout.html" %}
+{% block title %}簇组管理{% endblock %}
+{% block content %}
+<style>
+  .container { max-width: 1400px; margin: 20px auto; }
+  .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+  .stats { display: flex; gap: 20px; margin-bottom: 20px; }
+  .stat-card { background: #fff; padding: 16px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); min-width: 120px; }
+  .stat-value { font-size: 24px; font-weight: bold; color: #007bff; }
+  .stat-label { font-size: 12px; color: #666; }
+  .table-container { background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); overflow: hidden; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { padding: 12px 8px; text-align: left; border-bottom: 1px solid #e9ecef; }
+  th { background: #f8f9fa; font-weight: 600; }
+  tr:hover { background: #f8f9fa; }
+  .cluster-type { padding: 4px 8px; border-radius: 4px; font-size: 12px; }
+  .type-undefined { background: #e9ecef; color: #495057; }
+  .type-retail { background: #d4edda; color: #155724; }
+  .type-dealer { background: #f8d7da; color: #721c24; }
+  .judgment-type { font-size: 11px; color: #868e96; }
+  .btn { padding: 6px 12px; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; }
+  .btn-primary { background: #007bff; color: #fff; }
+  .btn-danger { background: #dc3545; color: #fff; }
+  .btn-success { background: #28a745; color: #fff; }
+  .btn-sm { padding: 4px 8px; font-size: 11px; }
+  .filter-bar { display: flex; gap: 16px; margin-bottom: 16px; align-items: center; }
+  .filter-bar select, .filter-bar input { padding: 6px; border: 1px solid #ced4da; border-radius: 4px; }
+  .cluster-name { font-family: monospace; font-size: 11px; }
+</style>
+
+<div class="container">
+  <div class="header">
+    <h2>簇组管理</h2>
+    <div>
+      <button class="btn btn-primary" onclick="loadClusters()">刷新</button>
+    </div>
+  </div>
+
+  <div class="stats">
+    <div class="stat-card">
+      <div class="stat-value" id="totalClusters">-</div>
+      <div class="stat-label">总簇组数</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" id="dealerClusters">-</div>
+      <div class="stat-label">庄家簇组</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" id="retailClusters">-</div>
+      <div class="stat-label">散户簇组</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" id="totalTxs">-</div>
+      <div class="stat-label">总交易数</div>
+    </div>
+  </div>
+
+  <div class="filter-bar">
+    <label>类型筛选：</label>
+    <select id="typeFilter" onchange="loadClusters()">
+      <option value="">全部</option>
+      <option value="undefined">未定义</option>
+      <option value="retail">散户</option>
+      <option value="dealer">庄家</option>
+    </select>
+    <label>判定来源：</label>
+    <select id="judgmentFilter" onchange="loadClusters()">
+      <option value="">全部</option>
+      <option value="system">系统判定</option>
+      <option value="manual">手动锁定</option>
+    </select>
+  </div>
+
+  <div class="table-container">
+    <table>
+      <thead>
+        <tr>
+          <th>簇组名称</th>
+          <th>类型</th>
+          <th>判定来源</th>
+          <th>文件夹</th>
+          <th>基准CU</th>
+          <th>基准程序数</th>
+          <th>主指令数</th>
+          <th>内部指令数</th>
+          <th>Tx数</th>
+          <th>用户数</th>
+          <th>创建时间</th>
+          <th>操作</th>
+        </tr>
+      </thead>
+      <tbody id="clusterTable">
+        <tr><td colspan="12" style="text-align: center;">加载中...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- 详情模态框 -->
+<div id="detailModal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1000;">
+  <div style="background: #fff; margin: 50px auto; padding: 20px; width: 80%; max-height: 80%; overflow: auto; border-radius: 8px;">
+    <h3>簇组详情</h3>
+    <div id="clusterDetail"></div>
+    <button class="btn btn-primary" onclick="closeDetail()">关闭</button>
+  </div>
+</div>
+
+<!-- 修改类型模态框 -->
+<div id="typeModal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1000;">
+  <div style="background: #fff; margin: 50px auto; padding: 20px; width: 400px; border-radius: 8px;">
+    <h3>修改簇组类型</h3>
+    <input type="hidden" id="editClusterName" />
+    <p>簇组名称：<span id="editClusterNameDisplay"></span></p>
+    <p>
+      类型：
+      <select id="editClusterType">
+        <option value="undefined">未定义</option>
+        <option value="retail">散户</option>
+        <option value="dealer">庄家</option>
+      </select>
+    </p>
+    <p style="font-size: 12px; color: #dc3545;">注意：手动修改类型后将永久锁定，系统不再自动覆盖</p>
+    <div style="margin-top: 16px;">
+      <button class="btn btn-success" onclick="saveClusterType()">保存</button>
+      <button class="btn btn-primary" onclick="closeTypeModal()">取消</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let clusters = [];
+
+async function loadClusters() {
+  try {
+    const resp = await fetch('/admin/api/clusters');
+    clusters = await resp.json();
+    renderTable();
+    updateStats();
+  } catch (e) {
+    console.error('加载失败:', e);
+  }
+}
+
+function renderTable() {
+  const tbody = document.getElementById('clusterTable');
+  const typeFilter = document.getElementById('typeFilter').value;
+  const judgmentFilter = document.getElementById('judgmentFilter').value;
+  
+  const filtered = clusters.filter(c => {
+    if (typeFilter && c.cluster_type !== typeFilter) return false;
+    if (judgmentFilter && c.judgment_type !== judgmentFilter) return false;
+    return true;
+  });
+  
+  if (filtered.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="12" style="text-align: center;">暂无数据</td></tr>';
+    return;
+  }
+  
+  let html = '';
+  for (const c of filtered) {
+    const typeClass = `type-${c.cluster_type}`;
+    const typeText = c.cluster_type === 'undefined' ? '未定义' : c.cluster_type === 'retail' ? '散户' : '庄家';
+    const judgmentText = c.judgment_type === 'system' ? '系统' : '手动';
+    const createdAt = new Date(c.created_at * 1000).toLocaleString();
+    
+    html += `<tr>
+      <td><span class="cluster-name">${c.name.substring(0, 16)}...</span></td>
+      <td><span class="cluster-type ${typeClass}">${typeText}</span></td>
+      <td><span class="judgment-type">${judgmentText}</span></td>
+      <td>${c.folder || '-'}</td>
+      <td>${c.base_cu || 0}</td>
+      <td>${c.base_program_count || 0}</td>
+      <td>${c.base_main_instruction_count || 0}</td>
+      <td>${c.base_inner_instruction_count || 0}</td>
+      <td>${c.tx_count || 0}</td>
+      <td>${c.user_count || 0}</td>
+      <td>${createdAt}</td>
+      <td>
+        <button class="btn btn-sm btn-primary" onclick="showDetail('${c.name}')">详情</button>
+        <button class="btn btn-sm btn-success" onclick="openTypeModal('${c.name}', '${c.cluster_type}')">改类型</button>
+        <button class="btn btn-sm btn-danger" onclick="deleteCluster('${c.name}')">删除</button>
+      </td>
+    </tr>`;
+  }
+  
+  tbody.innerHTML = html;
+}
+
+function updateStats() {
+  document.getElementById('totalClusters').textContent = clusters.length;
+  document.getElementById('dealerClusters').textContent = clusters.filter(c => c.cluster_type === 'dealer').length;
+  document.getElementById('retailClusters').textContent = clusters.filter(c => c.cluster_type === 'retail').length;
+  document.getElementById('totalTxs').textContent = clusters.reduce((sum, c) => sum + (c.tx_count || 0), 0);
+}
+
+function showDetail(name) {
+  const c = clusters.find(x => x.name === name);
+  if (!c) return;
+  
+  const html = `
+    <table style="width: 100%;">
+      <tr><td style="width: 150px;"><strong>簇组名称</strong></td><td style="font-family: monospace;">${c.name}</td></tr>
+      <tr><td><strong>类型</strong></td><td>${c.cluster_type}</td></tr>
+      <tr><td><strong>判定来源</strong></td><td>${c.judgment_type}</td></tr>
+      <tr><td><strong>文件夹</strong></td><td>${c.folder || '-'}</td></tr>
+      <tr><td><strong>基准CU</strong></td><td>${c.base_cu} ± ${c.base_cu_offset}</td></tr>
+      <tr><td><strong>基准程序数</strong></td><td>${c.base_program_count} ± ${c.base_program_offset}</td></tr>
+      <tr><td><strong>主指令数</strong></td><td>${c.base_main_instruction_count} ± ${c.base_main_offset}</td></tr>
+      <tr><td><strong>内部指令数</strong></td><td>${c.base_inner_instruction_count} ± ${c.base_inner_offset}</td></tr>
+      <tr><td><strong>Tx数</strong></td><td>${c.tx_count}</td></tr>
+      <tr><td><strong>用户数</strong></td><td>${c.user_count}</td></tr>
+      <tr><td><strong>程序ID列表</strong></td><td><pre style="font-size: 10px; overflow: auto;">${JSON.stringify(c.base_programs || [], null, 2)}</pre></td></tr>
+    </table>
+  `;
+  
+  document.getElementById('clusterDetail').innerHTML = html;
+  document.getElementById('detailModal').style.display = 'block';
+}
+
+function closeDetail() {
+  document.getElementById('detailModal').style.display = 'none';
+}
+
+function openTypeModal(name, type) {
+  document.getElementById('editClusterName').value = name;
+  document.getElementById('editClusterNameDisplay').textContent = name.substring(0, 20) + '...';
+  document.getElementById('editClusterType').value = type;
+  document.getElementById('typeModal').style.display = 'block';
+}
+
+function closeTypeModal() {
+  document.getElementById('typeModal').style.display = 'none';
+}
+
+async function saveClusterType() {
+  const name = document.getElementById('editClusterName').value;
+  const type = document.getElementById('editClusterType').value;
+  
+  try {
+    await fetch(`/admin/api/clusters/${encodeURIComponent(name)}/type`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cluster_type: type, judgment_type: 'manual' }),
+    });
+    closeTypeModal();
+    loadClusters();
+  } catch (e) {
+    alert('保存失败: ' + e);
+  }
+}
+
+async function deleteCluster(name) {
+  if (!confirm('确定要删除簇组 ' + name.substring(0, 16) + '... ?')) return;
+  
+  try {
+    await fetch(`/admin/api/clusters/${encodeURIComponent(name)}`, {
+      method: 'DELETE',
+    });
+    loadClusters();
+  } catch (e) {
+    alert('删除失败: ' + e);
+  }
+}
+
+window.addEventListener('DOMContentLoaded', loadClusters);
+</script>
+{% endblock %}
