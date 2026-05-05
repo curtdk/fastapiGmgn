@@ -31,3 +31,17 @@ class DealerSettingsView(BaseView):
     @expose("/dealer-settings", methods=["GET"])
     async def dealer_settings_page(self, request: Request):
         return await self.templates.TemplateResponse(request, "dealer_settings.html")
+
+
+class ClusterSettingsView(BaseView):
+    """簇组管理页面"""
+    name = "簇组管理"
+    icon = "fa-solid fa-layer-group"
+
+    @expose("/cluster-settings", methods=["GET"])
+    async def cluster_settings_page(self, request: Request):
+        return await self.templates.TemplateResponse(
+            request, 
+            "cluster/cluster.html",
+            {"request": request}
+        )

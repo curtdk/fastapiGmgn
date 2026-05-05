@@ -26,6 +26,18 @@ DEFAULT_SETTINGS = {
     "dealer_cu_max": "200000",     # CU 最大值
     "dealer_risk_enabled": "false", # 风险分条件启用
     "dealer_risk_min": "0",        # 风险分最小值
+    # 簇组（C006）设置
+    "cluster_enabled": "false",              # 簇组功能总开关
+    "cluster_match_cu_enabled": "false",     # CU 匹配条件
+    "cluster_match_program_enabled": "false", # 程序ID数量匹配
+    "cluster_match_main_instruction_enabled": "false", # 主指令数量匹配
+    "cluster_match_inner_instruction_enabled": "false", # 内部指令数量匹配
+    "cluster_cu_offset": "0",                # CU 偏移量
+    "cluster_program_offset": "0",          # 程序ID数量偏移量
+    "cluster_main_instruction_offset": "0", # 主指令数量偏移量
+    "cluster_inner_instruction_offset": "0", # 内部指令数量偏移量
+    "cluster_tx_threshold": "50",           # 自动判定庄家 Tx数阈值
+    "cluster_user_threshold": "50",         # 自动判定庄家用户数阈值
 }
 
 

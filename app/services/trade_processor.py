@@ -295,6 +295,58 @@ async def _calculate_index(tx_detail: Dict[str, Any], mint: str) -> Dict[str, An
     if not address:
         return {}
     
+    # ── C006 簇组检测（优先执行） ──
+    from app.utils.database import SessionLocal
+    from app.services.cluster import run_cluster_detection
+    
+    db = SessionLocal()
+    try:
+        cluster_result = await run_cluster_detection(db, tx_detail, mint)
+        
+        # 如果匹配到已定义簇组（retail/dealer），直接确定身份
+        if cluster_result.matched and cluster_result.cluster_type in ("retail", "dealer"):
+            logger.info(f"[C006] {address[:8]}... 匹配到 {cluster_result.cluster_type} 簇组，跳过 C001-C005")
+            
+            # 保存用户状态
+            state = _default_trader_state()
+            state["status"] = cluster_result.cluster_type  # retail 或 dealer
+            state["conditions"] = ["C006"]
+            await save_trader_state(redis, mint, address, state)
+            
+            if cluster_result.cluster_type == "dealer":
+                await exclude_dealer(mint, address)
+            
+            # 广播簇组信息
+            await ws_manager.broadcast(mint, {
+                "type": "cluster_matched",
+                "data": {
+                    "address": address,
+                    "sig": sig,
+                    "cluster_name": cluster_result.cluster.name if cluster_result.cluster else None,
+                    "cluster_type": cluster_result.cluster_type,
+                }
+            })
+            
+            return {"is_dealer": cluster_result.cluster_type == "dealer"}
+        
+        # 如果匹配到 undefined 簇组，继续 C001-C005，但记录簇组信息
+        if cluster_result.matched and cluster_result.cluster_type == "undefined":
+            logger.info(f"[C006] {address[:8]}... 匹配到 undefined 簇组，继续 C001-C005")
+            
+            # 广播簇组信息
+            await ws_manager.broadcast(mint, {
+                "type": "cluster_matched",
+                "data": {
+                    "address": address,
+                    "sig": sig,
+                    "cluster_name": cluster_result.cluster.name if cluster_result.cluster else None,
+                    "cluster_type": cluster_result.cluster_type,
+                }
+            })
+    finally:
+        db.close()
+    
+    # ── C001-C005 庄家检测 ──
     # 获取用户状态（传入 sig 用于 unknown 时自动入队检测）
     state = await get_trader_state(redis, mint, address, sig)
     

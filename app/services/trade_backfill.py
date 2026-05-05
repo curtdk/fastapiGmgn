@@ -13,7 +13,7 @@ from sqlalchemy.dialects.sqlite import insert
 from app.services.settings_service import get_int_setting, get_float_setting
 from app.services import tx_redis
 from app.websocket.manager import ws_manager
-
+from datetime import datetime  # 必须添加此行
 logger = logging.getLogger(__name__)
 
 HELIUS_RPC_URL = "https://mainnet.helius-rpc.com"
@@ -652,7 +652,8 @@ class TradeBackfill:
 
             # JSON 序列化列表字段
             import json
-            return {
+            
+            result_data = {
                 "sig": sig,
                 "slot": slot,
                 "block_time": block_time,
@@ -687,6 +688,21 @@ class TradeBackfill:
                 "raw_data": str(tx)[:20000],
                 "source": "rpc_fill",
             }
+
+
+
+            # 定义一个转换函数
+            def json_serial(obj):
+                if isinstance(obj, (datetime)):
+                    return obj.isoformat()  # 将日期转为 ISO 字符串
+                raise TypeError(f"Type {type(obj)} not serializable")
+
+            # 在日志记录时使用
+            logger.info(f"[簇组测试] tx_detail: {json.dumps(result_data, default=json_serial, ensure_ascii=False)}")
+            
+            # # 输出 tx_detail 日志（用于簇组匹配测试）
+            # logger.info(f"[簇组测试] tx_detail: {json.dumps(result_data, ensure_ascii=False)}")
+            return result_data
         except Exception as e:
             logger.warning(f"[回填] 解析交易失败: {e}")
             return None
