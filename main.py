@@ -12,6 +12,7 @@ from sqladmin import Admin, ModelView, BaseView, expose
 from sqladmin.authentication import AuthenticationBackend
 from app.routes import users, auth
 from app.routes.trades import router as trades_router, settings_router, active_monitors
+from app.routes.cluster_api import router as cluster_api_router
 from app.utils.database import engine, Base, SessionLocal
 from app.models.models import User, Token
 from app.models.trade import Setting
@@ -81,6 +82,7 @@ app.include_router(trades_router)
 app.include_router(settings_router)
 from app.routes.trades import live_router
 app.include_router(live_router)
+app.include_router(cluster_api_router)  # 簇组 API 路由
 
 # ========== Admin Model Views ==========
 class UserAdmin(ModelView, model=User):
@@ -338,54 +340,6 @@ class ClusterSettingsMenu(BaseView):
             {"request": request}
         )
 
-    # ===== 簇组 API =====
-    
-    @expose("/api/clusters", methods=["GET"])
-    async def api_get_clusters(self, request: Request):
-        """获取所有簇组"""
-        from app.services.cluster.manager import create_manager
-        from app.utils.database import SessionLocal
-        db = SessionLocal()
-        try:
-            manager = create_manager(db)
-            clusters = await manager.get_all_clusters()
-            return JSONResponse([c.to_dict() for c in clusters])
-        finally:
-            db.close()
-    
-    @expose("/api/clusters/<name>", methods=["DELETE"])
-    async def api_delete_cluster(self, request: Request, name: str):
-        """删除簇组"""
-        from app.services.cluster.manager import create_manager
-        from app.utils.database import SessionLocal
-        from urllib.parse import unquote
-        name = unquote(name)
-        db = SessionLocal()
-        try:
-            manager = create_manager(db)
-            await manager.delete_cluster(name)
-            return JSONResponse({"message": "已删除"})
-        finally:
-            db.close()
-    
-    @expose("/api/clusters/<name>/type", methods=["PUT"])
-    async def api_update_cluster_type(self, request: Request, name: str):
-        """修改簇组类型（手动锁定）"""
-        from app.services.cluster.manager import create_manager
-        from app.utils.database import SessionLocal
-        from urllib.parse import unquote
-        name = unquote(name)
-        db = SessionLocal()
-        try:
-            body = await request.json()
-            cluster_type = body.get("cluster_type", "undefined")
-            judgment_type = body.get("judgment_type", "manual")
-            manager = create_manager(db)
-            await manager.set_cluster_type(name, cluster_type, judgment_type)
-            return JSONResponse({"message": "已更新"})
-        finally:
-            db.close()
-
 
 # Redis 相关类已移至 app/admin/redis_admin.py
 from app.admin.redis_admin import RedisViewerMenu, RedisKeysMenu, RedisApiView
@@ -435,7 +389,7 @@ admin.add_view(SettingAdmin)
 admin.add_base_view(TradeMonitorView)
 admin.add_base_view(DealerSettingsMenu)
 admin.add_base_view(TradeLiveMenu)
-admin.add_base_view(ClusterSettingsMenu)  # 簇组管理
+admin.add_base_view(ClusterSettingsMenu)  # 簇组管理页面
 admin.add_base_view(RedisViewerMenu)
 admin.add_base_view(RedisKeysMenu)
 admin.add_base_view(RedisApiView)
