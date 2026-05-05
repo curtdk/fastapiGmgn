@@ -46,26 +46,41 @@ class TradeBackfill:
         self.total_fetched = 0
 
         try:
-            # 1. 等待 TradeStream 的 sync_point 就绪
-            await ws_manager.broadcast(self.mint, {
-                "type": "status",
-                "data": {
-                    "mint": self.mint,
-                    "status": "WAITING_SYNC",
-                    "message": "等待实时流 sync_point...",
-                }
-            })
+            # 1. 检查是否跳过 WS 等待模式（测试用）
+            skip_ws_wait = get_int_setting(self.db, "backfill_skip_ws_wait", 0)
+            
+            if skip_ws_wait:
+                # 测试模式：直接获取全部历史数据，不等待 sync_point
+                logger.info("[回填] 测试模式：跳过 sync_point 等待")
+                await ws_manager.broadcast(self.mint, {
+                    "type": "status",
+                    "data": {
+                        "mint": self.mint,
+                        "status": "FILLING",
+                        "message": "测试模式：直接获取全部历史数据...",
+                    }
+                })
+                self.total_fetched = await self._fetch_all_transactions_no_limit()
+            else:
+                # 正常模式：等待 sync_point
+                await ws_manager.broadcast(self.mint, {
+                    "type": "status",
+                    "data": {
+                        "mint": self.mint,
+                        "status": "WAITING_SYNC",
+                        "message": "等待实时流 sync_point...",
+                    }
+                })
 
-            sync_point = await self._wait_for_sync_point()
-            if not sync_point:
-                logger.info("[回填] 等待 sync_point 被中断（停止信号）")
-                return
+                sync_point = await self._wait_for_sync_point()
+                if not sync_point:
+                    logger.info("[回填] 等待 sync_point 被中断（停止信号）")
+                    return
 
-            logger.info(f"[回填] sync_point 已就绪: {sync_point}")
+                logger.info(f"[回填] sync_point 已就绪: {sync_point}")
 
-            # 2. 边获取边存入 Redis（保证从旧到新排序）
-            self.total_fetched = await self._fetch_all_transactions_before(sync_point)
-            logger.info(f"[回填] 共获取 {self.total_fetched} 条有效交易")
+                # 2. 边获取边存入 Redis（保证从旧到新排序）
+                self.total_fetched = await self._fetch_all_transactions_before(sync_point)
 
             if not self.total_fetched:
                 await ws_manager.broadcast(self.mint, {
@@ -204,6 +219,102 @@ class TradeBackfill:
                         "mint": self.mint,
                         "status": "FILLING",
                         "message": f"已保存 {total_saved} 条交易...",
+                        "total_trades": total_saved,
+                    }
+                })
+
+                # 分页
+                pagination_token = result.get("paginationToken")
+                if not pagination_token:
+                    break
+
+                # 批次间间隔
+                await asyncio.sleep(_BACKFILL_INTERVAL)
+
+        return total_saved
+
+    async def _fetch_all_transactions_no_limit(self) -> int:
+        """
+        测试模式：获取所有历史交易（不限制 sync_point）
+        边获取边存入 Redis，返回保存数量
+        """
+        pagination_token = None
+        batch_size = 100
+        max_total = 50000  # 测试模式下限制获取数量
+        total_saved = 0
+        _BACKFILL_INTERVAL = 0.2
+
+        api_key = self._get_api_key()
+
+        async with httpx.AsyncClient(timeout=60) as client:
+            while self.running and total_saved < max_total:
+                params = {
+                    "limit": batch_size,
+                    "commitment": "confirmed",
+                    "transactionDetails": "full",
+                    "encoding": "jsonParsed",
+                    "maxSupportedTransactionVersion": 0,
+                }
+                if pagination_token:
+                    params["paginationToken"] = pagination_token
+
+                body = {
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "getTransactionsForAddress",
+                    "params": [self.mint, params],
+                }
+
+                resp = await client.post(
+                    f"{HELIUS_RPC_URL}/?api-key={api_key}",
+                    json=body
+                )
+                resp.raise_for_status()
+                data = resp.json()
+
+                result = data.get("result", {})
+                txs = result.get("data", [])
+                if not txs:
+                    break
+
+                # 解析并直接存入 Redis
+                for tx in txs:
+                    sig = tx.get("transaction", {}).get("signatures", [""])[0]
+                    if not sig:
+                        continue
+
+                    meta = tx.get("meta", {})
+                    if meta.get("err"):
+                        continue
+
+                    tx_data = {
+                        "_signature": sig,
+                        "slot": tx.get("slot", 0),
+                        "blockTime": tx.get("blockTime"),
+                        "transaction": tx.get("transaction", {}),
+                        "meta": meta,
+                    }
+
+                    detail = self._extract_trade_info(tx_data)
+                    if detail:
+                        # 检查是否已存在
+                        existing = await tx_redis.get_tx(sig)
+                        if existing:
+                            continue
+                        
+                        # 直接存入 Redis
+                        await tx_redis.save_tx(detail)
+                        # 添加到有序集合（seq 作为 score，保证从旧到新）
+                        await tx_redis.add_tx_to_list(self.mint, sig, "rpc_fill", score=total_saved)
+                        total_saved += 1
+
+                # 进度通知
+                await ws_manager.broadcast(self.mint, {
+                    "type": "status",
+                    "data": {
+                        "mint": self.mint,
+                        "status": "FILLING",
+                        "message": f"测试模式：已保存 {total_saved} 条交易...",
                         "total_trades": total_saved,
                     }
                 })

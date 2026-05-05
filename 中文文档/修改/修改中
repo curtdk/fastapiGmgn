@@ -262,3 +262,57 @@ run_full_calculation 方法中
                         "wallet_tag": "unknown",
                     }
                 })
+
+
+1. trade_backfill  不等待 ws 直接开始 操作。
+2. 根据特征 合计  自动记录标识。  标识 主程序 外部程序 数量 sol。账户 数量 cu 值。 一样的 数量。 大于 100 个 就记录 为庄家。
+3. 人为 设置 庄家  人为 设置 cu组 为庄家。
+
+我要把交易的  _extract_trade_info 中的信息  指令统计  一致的 作为 一个标准cu组 记录下来， 
+比如 主指令列表  内部指令  个数一样  ， 命令名 一样，  列表对应地址一样。 程序ID 一样， 地址一样。 作为一个 cu组保存起来。
+首先上面条件 建立 一个 设置文件 可以设置 我可以勾选，  然后根据我勾选 的 条件。 全部满足 就是一个cu组 进行记录 到redis  。 包含信息 当前mint 满足 个数 ,  全部mint 统计合计满足个数.
+
+签名: 5waZaQmRy5gg7GA6okzCTmXWseetFKQKNdXDPFF8jDWpf2914swNtNJLrFxyA8HpLqx4CtGC8rokUGzpkA2vodJw
+
+Slot: 417451736
+
+时间: 2026-05-04 03:39:57
+
+类型: SELL
+
+数量: 1193583.4982
+
+SOL: -0.037210
+
+🚨 风险评估
+20
+风险分 (0-100)
+✅ 低风险
+
+触发指标:
+
+中等账户数: 17
+复杂交易 (非简单转账)
+⚡ 计算单元 (CU)
+54,743
+已消耗 / 200,000
+Fee: 0.000015000 SOL
+
+Priority Fee: 0.000010000 SOL
+
+Jito Tip: 0.000000000 SOL
+
+📋 指令统计
+主指令: 4
+内部指令: 3
+总计: 7
+主指令列表:
+
+[0] SetComputeUnitPrice @ ComputeBudge...
+[1] SetComputeUnitLimit @ ComputeBudge...
+[2] pump_type_51 @ 6EF8rrecthR5...
+[3] closeAccount @ TokenzQdBNbL...
+内部指令 (TOP 8):
+
+unknown: 1次transferChecked: 1次pump_type_228: 1次
+🔧 程序 ID (4)

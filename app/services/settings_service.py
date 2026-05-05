@@ -15,6 +15,7 @@ DEFAULT_SETTINGS = {
     "ws_max_connections": "10",    # WS最大连接数
     "trade_page_size": "50",       # 前端显示交易行数
     "helius_api_key": "",          # Helius API 密钥
+    "backfill_skip_ws_wait": "false", # 测试模式：跳过 sync_point 等待
     # 庄家检测条件设置
     "dealer_c001_enabled": "false", # C001 首笔交易 closeAccount 条件启用
     "dealer_alt_enabled": "false", # ALT 条件启用

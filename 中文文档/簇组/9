@@ -1,0 +1,27 @@
+
+计算单元 (CU)
+159,932
+已消耗 / 231,292
+Fee: 0.000080001 SOL
+
+Priority Fee: 0.000075001 SOL
+
+Jito Tip: 0.000000000 SOL
+
+📋 指令统计
+主指令: 5
+内部指令: 15
+总计: 20
+主指令列表:
+
+[0] SetComputeUnitLimit @ ComputeBudge...
+[1] SetComputeUnitPrice @ ComputeBudge...
+[2] unknown @ DF1ow4tspfHX...
+[3] unknown @ DF1ow4tspfHX...
+[4] transfer @ 111111111111...
+内部指令 (TOP 8):
+
+unknown: 3次transfer: 2次create: 1次getAccountDataSize: 1次createAccount: 1次initializeImmutableOwner: 1次initializeAccount3: 1次pump_type_51: 1次
+🔧 程序 ID (8)
+ComputeB...DF1ow4ts...11111111...ATokenGP...Tokenkeg...6EF8rrec...pfeeUxB6...TokenzQd...
+📊 其他信息

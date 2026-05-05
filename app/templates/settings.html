@@ -48,7 +48,7 @@ function renderSettings() {
   const generalContainer = document.getElementById('generalSettings');
   const dealerContainer = document.getElementById('dealerSettings');
   
-  const generalKeys = ['batch_size', 'concurrent_requests', 'request_interval', 'ws_max_connections', 'trade_page_size', 'helius_api_key'];
+  const generalKeys = ['batch_size', 'concurrent_requests', 'request_interval', 'ws_max_connections', 'trade_page_size', 'helius_api_key', 'backfill_skip_ws_wait'];
   const dealerKeys = ['dealer_alt_enabled', 'dealer_gas_max', 'dealer_cu_min', 'dealer_cu_max', 'dealer_risk_min'];
   
   const descriptions = {
@@ -58,6 +58,7 @@ function renderSettings() {
     ws_max_connections: 'WebSocket 最大连接数',
     trade_page_size: '前端显示最大交易行数',
     helius_api_key: 'Helius API 密钥（用于回填历史交易和实时流订阅）',
+    backfill_skip_ws_wait: '勾选后跳过 sync_point 等待，直接获取全部历史数据（测试用）',
     dealer_alt_enabled: '勾选启用：使用了地址查找表 (ALT) 的交易视为庄家',
     dealer_gas_max: 'Gas 费小于此值视为庄家（SOL）',
     dealer_cu_min: 'CU 消耗最小值',
@@ -66,7 +67,7 @@ function renderSettings() {
   };
   
   const sensitiveKeys = ['helius_api_key'];
-  const checkboxKeys = ['dealer_alt_enabled'];
+  const checkboxKeys = ['dealer_alt_enabled', 'backfill_skip_ws_wait'];
   
   // 渲染常规设置
   let generalHtml = '';
