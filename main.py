@@ -327,16 +327,31 @@ class TradeLiveMenu(BaseView):
         return await self.templates.TemplateResponse(request, "trade_live.html")
 
 
-class ClusterSettingsMenu(BaseView):
-    """簇组管理菜单项"""
-    name = "簇组管理"
+class ClusterListMenu(BaseView):
+    """簇组列表菜单项"""
+    name = "簇组列表"
     icon = "fa-solid fa-layer-group"
 
-    @expose("/cluster-settings", methods=["GET"])
-    async def cluster_settings_page(self, request: Request):
+    @expose("/cluster-list", methods=["GET"])
+    async def cluster_list_page(self, request: Request):
         return await self.templates.TemplateResponse(
             request, 
             "cluster/cluster.html",
+            {"request": request}
+        )
+
+
+class ClusterSettingsMenu(BaseView):
+    """簇组设置菜单项"""
+    name = "簇组设置"
+    icon = "fa-solid fa-gear"
+
+    @expose("/cluster-settings", methods=["GET"])
+    async def cluster_settings_page(self, request: Request):
+        """簇组设置页面"""
+        return await self.templates.TemplateResponse(
+            request,
+            "cluster/cluster_settings.html",
             {"request": request}
         )
 
@@ -389,7 +404,8 @@ admin.add_view(SettingAdmin)
 admin.add_base_view(TradeMonitorView)
 admin.add_base_view(DealerSettingsMenu)
 admin.add_base_view(TradeLiveMenu)
-admin.add_base_view(ClusterSettingsMenu)  # 簇组管理页面
+admin.add_base_view(ClusterListMenu)      # 簇组列表
+admin.add_base_view(ClusterSettingsMenu)  # 簇组设置
 admin.add_base_view(RedisViewerMenu)
 admin.add_base_view(RedisKeysMenu)
 admin.add_base_view(RedisApiView)

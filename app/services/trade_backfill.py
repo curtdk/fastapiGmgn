@@ -298,9 +298,9 @@ class TradeBackfill:
                     detail = self._extract_trade_info(tx_data)
                     if detail:
                         # 检查是否已存在
-                        existing = await tx_redis.get_tx(sig)
-                        if existing:
-                            continue
+                        # existing = await tx_redis.get_tx(sig)
+                        # if existing:
+                        #     continue
                         
                         # 直接存入 Redis
                         await tx_redis.save_tx(detail)

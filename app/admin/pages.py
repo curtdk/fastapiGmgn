@@ -45,3 +45,12 @@ class ClusterSettingsView(BaseView):
             "cluster/cluster.html",
             {"request": request}
         )
+
+    @expose("/cluster-settings/config", methods=["GET"])
+    async def cluster_config_page(self, request: Request):
+        """簇组设置页面"""
+        return await self.templates.TemplateResponse(
+            request,
+            "cluster/cluster_settings.html",
+            {"request": request}
+        )
