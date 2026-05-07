@@ -189,6 +189,18 @@ function shortCluster(clusterName) {
   return clusterName.slice(0, 4);  // 只显示前4个字符
 }
 
+function getClusterTypeLabel(clusterType) {
+  switch(clusterType) {
+    case 'dealer': return '庄';
+    case 'retail': return '散';
+    case 'undefined': 
+    case '': 
+    case null: 
+    case undefined: return '?';
+    default: return '?';
+  }
+}
+
 function fmtNum(n, decimals = 4) {
   if (n === null || n === undefined || isNaN(n)) return '0.00';
   return Number(n).toFixed(decimals);
@@ -228,7 +240,7 @@ function addTradeRow(data, isNew) {
 
   const clusterName = data.cluster_name || '';
   const clusterType = data.cluster_type || 'undefined';
-  const clusterTag = clusterName ? '<span class="cluster-tag ' + clusterType + '" onclick="openClusterTypeModal(\'' + clusterName + '\', \'' + clusterType + '\')" title="' + clusterName + '">' + shortCluster(clusterName) + '</span>' : '-';
+  const clusterTag = clusterName ? '<span class="cluster-tag ' + clusterType + '" onclick="openClusterTypeModal(\'' + clusterName + '\', \'' + clusterType + '\')" title="' + clusterName + '">' + shortCluster(clusterName) + ' ' + getClusterTypeLabel(clusterType) + '</span>' : '-';
 
   tr.innerHTML = '<td><span class="badge ' + (data.transaction_type === 'SWAP' ? 'bg-primary' : 'bg-secondary') + '">' + (data.transaction_type || '-') + '</span></td>' +
     '<td title="' + (data.from_address || '') + '">' + shortAddr(data.from_address) + '</td>' +
@@ -429,7 +441,7 @@ function handleClusterMatched(data) {
     // 更新簇组列
     const clusterCell = row.cells[7];
     if (clusterCell && clusterName) {
-      clusterCell.innerHTML = '<span class="cluster-tag ' + clusterType + '" onclick="openClusterTypeModal(\'' + clusterName + '\', \'' + clusterType + '\')" title="' + clusterName + '">' + shortCluster(clusterName) + '</span>';
+      clusterCell.innerHTML = '<span class="cluster-tag ' + clusterType + '" onclick="openClusterTypeModal(\'' + clusterName + '\', \'' + clusterType + '\')" title="' + clusterName + '">' + shortCluster(clusterName) + ' ' + getClusterTypeLabel(clusterType) + '</span>';
     }
   });
 }
