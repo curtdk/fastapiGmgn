@@ -184,6 +184,11 @@ function shortAddr(addr) {
   return addr.slice(0, 6) + '...' + addr.slice(-4);
 }
 
+function shortCluster(clusterName) {
+  if (!clusterName) return '-';
+  return clusterName.slice(0, 4);  // 只显示前4个字符
+}
+
 function fmtNum(n, decimals = 4) {
   if (n === null || n === undefined || isNaN(n)) return '0.00';
   return Number(n).toFixed(decimals);
@@ -223,7 +228,7 @@ function addTradeRow(data, isNew) {
 
   const clusterName = data.cluster_name || '';
   const clusterType = data.cluster_type || 'undefined';
-  const clusterTag = clusterName ? '<span class="cluster-tag ' + clusterType + '" onclick="openClusterTypeModal(\'' + clusterName + '\', \'' + clusterType + '\')" title="' + clusterName + '">' + shortAddr(clusterName) + '</span>' : '-';
+  const clusterTag = clusterName ? '<span class="cluster-tag ' + clusterType + '" onclick="openClusterTypeModal(\'' + clusterName + '\', \'' + clusterType + '\')" title="' + clusterName + '">' + shortCluster(clusterName) + '</span>' : '-';
 
   tr.innerHTML = '<td><span class="badge ' + (data.transaction_type === 'SWAP' ? 'bg-primary' : 'bg-secondary') + '">' + (data.transaction_type || '-') + '</span></td>' +
     '<td title="' + (data.from_address || '') + '">' + shortAddr(data.from_address) + '</td>' +
@@ -274,6 +279,7 @@ function connectWS() {
       else if (msg.type === 'trade') { addTradeRow(msg.data, true); fetchMetrics(); }
       else if (msg.type === 'error') alert('错误: ' + (msg.data.message || '未知'));
       else if (msg.type === 'user_status') handleUserStatus(msg.data);
+      else if (msg.type === 'cluster_matched') handleClusterMatched(msg.data);
     } catch (e) { console.error('WS 消息解析失败:', e); }
   };
   ws.onclose = () => { console.log('WS 已断开'); if (currentMint) setTimeout(() => { if (currentMint) connectWS(); }, 3000); };
@@ -401,6 +407,31 @@ function handleUserStatus(data) {
     }
   });
   fetchMetrics();
+}
+
+function handleClusterMatched(data) {
+  const address = data.address;
+  const sig = data.sig;
+  const clusterName = data.cluster_name || '';
+  const clusterType = data.cluster_type || 'undefined';
+  
+  console.log('[簇组匹配] address=' + (address ? address.slice(0, 8) : 'N/A') + '... sig=' + (sig ? sig.slice(0, 8) : 'N/A') + '... cluster=' + clusterName);
+  
+  const tbody = document.getElementById('tradeBody');
+  const rows = tbody.querySelectorAll('tr');
+  
+  rows.forEach(row => {
+    const addrCell = row.cells[1];
+    if (!addrCell) return;
+    const rowAddr = addrCell.getAttribute('title') || '';
+    if (rowAddr !== address) return;
+    
+    // 更新簇组列
+    const clusterCell = row.cells[7];
+    if (clusterCell && clusterName) {
+      clusterCell.innerHTML = '<span class="cluster-tag ' + clusterType + '" onclick="openClusterTypeModal(\'' + clusterName + '\', \'' + clusterType + '\')" title="' + clusterName + '">' + shortCluster(clusterName) + '</span>';
+    }
+  });
 }
 
 function openClusterTypeModal(name, currentType) {
