@@ -26,6 +26,16 @@
   .filter-bar { display: flex; gap: 16px; margin-bottom: 16px; align-items: center; }
   .filter-bar select, .filter-bar input { padding: 6px; border: 1px solid #ced4da; border-radius: 4px; }
   .cluster-name { font-family: monospace; font-size: 11px; }
+  .toggle-switch { position: relative; width: 40px; height: 22px; }
+  .toggle-switch input { opacity: 0; width: 0; height: 0; }
+  .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; transition: .3s; border-radius: 22px; }
+  .slider:before { position: absolute; content: ""; height: 16px; width: 16px; left: 3px; bottom: 3px; background-color: white; transition: .3s; border-radius: 50%; }
+  input:checked + .slider { background-color: #28a745; }
+  input:checked + .slider:before { transform: translateX(18px); }
+  .folder-input { padding: 4px; border: 1px solid #ced4da; border-radius: 4px; width: 100px; font-size: 11px; }
+  .tx-list { max-height: 300px; overflow-y: auto; }
+  .tx-item { padding: 6px 8px; border-bottom: 1px solid #e9ecef; font-size: 11px; font-family: monospace; cursor: pointer; }
+  .tx-item:hover { background: #f8f9fa; }
 </style>
 
 <div class="container">
@@ -75,6 +85,7 @@
     <table>
       <thead>
         <tr>
+          <th>启用</th>
           <th>簇组名称</th>
           <th>类型</th>
           <th>判定来源</th>
@@ -90,7 +101,7 @@
         </tr>
       </thead>
       <tbody id="clusterTable">
-        <tr><td colspan="12" style="text-align: center;">加载中...</td></tr>
+        <tr><td colspan="13" style="text-align: center;">加载中...</td></tr>
       </tbody>
     </table>
   </div>
@@ -153,7 +164,7 @@ function renderTable() {
   });
   
   if (filtered.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="12" style="text-align: center;">暂无数据</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="13" style="text-align: center;">暂无数据</td></tr>';
     return;
   }
   
@@ -163,12 +174,21 @@ function renderTable() {
     const typeText = c.cluster_type === 'undefined' ? '未定义' : c.cluster_type === 'retail' ? '散户' : '庄家';
     const judgmentText = c.judgment_type === 'system' ? '系统' : '手动';
     const createdAt = new Date(c.created_at * 1000).toLocaleString();
+    const isEnabled = c.enabled === true || c.enabled === 'true';
     
-    html += `<tr>
-      <td><span class="cluster-name">${c.name.substring(0, 16)}...</span></td>
+    html += `<tr data-name="${c.name}">
+      <td>
+        <label class="toggle-switch">
+          <input type="checkbox" ${isEnabled ? 'checked' : ''} onchange="toggleEnabled('${c.name}', this.checked)">
+          <span class="slider"></span>
+        </label>
+      </td>
+      <td><span class="cluster-name" title="${c.name}">${c.name.substring(0, 16)}...</span></td>
       <td><span class="cluster-type ${typeClass}">${typeText}</span></td>
       <td><span class="judgment-type">${judgmentText}</span></td>
-      <td>${c.folder || '-'}</td>
+      <td>
+        <input type="text" class="folder-input" value="${c.folder || ''}" placeholder="文件夹" onblur="saveFolder('${c.name}', this.value)">
+      </td>
       <td>${c.base_cu || 0}</td>
       <td>${c.base_program_count || 0}</td>
       <td>${c.base_main_instruction_count || 0}</td>
@@ -194,9 +214,23 @@ function updateStats() {
   document.getElementById('totalTxs').textContent = clusters.reduce((sum, c) => sum + (c.tx_count || 0), 0);
 }
 
-function showDetail(name) {
+async function showDetail(name) {
   const c = clusters.find(x => x.name === name);
   if (!c) return;
+  
+  // 获取 Tx 列表
+  let txsHtml = '<p class="text-muted">加载中...</p>';
+  try {
+    const resp = await fetch(`/admin/api/clusters/${encodeURIComponent(name)}/txs`);
+    const data = await resp.json();
+    if (data.txs && data.txs.length > 0) {
+      txsHtml = `<div class="tx-list">${data.txs.map(sig => `<div class="tx-item" onclick="viewTx('${sig}')">${sig.substring(0, 32)}...</div>`).join('')}</div>`;
+    } else {
+      txsHtml = '<p class="text-muted">暂无交易</p>';
+    }
+  } catch (e) {
+    txsHtml = '<p class="text-muted">加载失败</p>';
+  }
   
   const html = `
     <table style="width: 100%;">
@@ -212,6 +246,11 @@ function showDetail(name) {
       <tr><td><strong>用户数</strong></td><td>${c.user_count}</td></tr>
       <tr><td><strong>程序ID列表</strong></td><td><pre style="font-size: 10px; overflow: auto;">${JSON.stringify(c.base_programs || [], null, 2)}</pre></td></tr>
     </table>
+    <h5 class="mt-3">交易列表</h5>
+    ${txsHtml}
+    <div class="mt-3">
+      <button class="btn btn-success btn-sm" onclick="openTypeModal('${c.name}', '${c.cluster_type}')">修改类型</button>
+    </div>
   `;
   
   document.getElementById('clusterDetail').innerHTML = html;
@@ -261,6 +300,35 @@ async function deleteCluster(name) {
   } catch (e) {
     alert('删除失败: ' + e);
   }
+}
+
+async function toggleEnabled(name, enabled) {
+  try {
+    await fetch(`/admin/api/clusters/${encodeURIComponent(name)}/enabled`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled }),
+    });
+    loadClusters();
+  } catch (e) {
+    alert('更新失败: ' + e);
+  }
+}
+
+async function saveFolder(name, folder) {
+  try {
+    await fetch(`/admin/api/clusters/${encodeURIComponent(name)}/folder`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ folder }),
+    });
+  } catch (e) {
+    console.error('保存文件夹失败:', e);
+  }
+}
+
+function viewTx(sig) {
+  window.open(`/admin/tx/${sig}`, '_blank');
 }
 
 window.addEventListener('DOMContentLoaded', loadClusters);

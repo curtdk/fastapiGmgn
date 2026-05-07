@@ -30,25 +30,15 @@
     .status-STOPPED { background: #e9ecef; color: #868e96; }
     .wallet-tag { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 11px; background: #e9ecef; }
     .wallet-tag.failed { background: #fff3bf; color: #f59f00; }
+    .cluster-tag { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 10px; cursor: pointer; background: #e9ecef; }
+    .cluster-tag.retail { background: #d4edda; color: #155724; }
+    .cluster-tag.dealer { background: #f8d7da; color: #721c24; }
+    .cluster-tag.undefined { background: #e9ecef; color: #495057; }
+    .cluster-tag:hover { opacity: 0.8; }
   </style>
-  <!-- 交易详情弹窗 -->
-  <div id="txDetailModal" class="modal fade" tabindex="-1" style="display:none;">
-    <div class="modal-dialog modal-lg">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h5 class="modal-title">📋 交易详情</h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-        </div>
-        <div class="modal-body" id="txDetailContent">
-          <!-- 动态内容 -->
-        </div>
-      </div>
-    </div>
-  </div>
 </head>
 <body>
   <div class="container-fluid p-4">
-    <!-- 顶部控制栏 -->
     <div class="monitor-header">
       <label class="form-label" style="margin:0; white-space:nowrap;">Mint 地址:</label>
       <input type="text" id="mintInput" class="form-control" placeholder="输入 Token Mint 地址" />
@@ -59,7 +49,6 @@
       <button id="currencyToggle" class="btn btn-outline-secondary btn-sm" onclick="toggleCurrency()">SOL → USDT</button>
     </div>
 
-    <!-- 四个指标 -->
     <div class="metrics-row">
       <div class="metric-card">
         <div class="label">本轮下注 (SOL)</div>
@@ -79,25 +68,65 @@
       </div>
     </div>
 
-    <!-- 实时交易表格 -->
     <div class="trade-table-wrap">
       <div class="table-scroll">
         <table class="table table-sm table-hover">
-            <thead>
-              <tr>
-                <th>类型</th>
-                <th>钱包</th>
-                <th>数量</th>
-                <th>SOL</th>
-                <th>风险</th>
-                <th>原因</th>
-                <th>CU</th>
-                <th>标记</th>
-              </tr>
-            </thead>
-          <tbody id="tradeBody">
-          </tbody>
+          <thead>
+            <tr>
+              <th>类型</th>
+              <th>钱包</th>
+              <th>数量</th>
+              <th>SOL</th>
+              <th>风险</th>
+              <th>原因</th>
+              <th>CU</th>
+              <th>簇组</th>
+              <th>标记</th>
+            </tr>
+          </thead>
+          <tbody id="tradeBody"></tbody>
         </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- 交易详情弹窗 -->
+  <div id="txDetailModal" class="modal fade" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">📋 交易详情</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body" id="txDetailContent"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 修改簇组类型弹窗 -->
+  <div id="clusterTypeModal" class="modal fade" tabindex="-1">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">修改簇组类型</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <p>簇组名称：<span id="clusterTypeName" style="font-family: monospace;"></span></p>
+          <p>
+            类型：
+            <select id="clusterTypeSelect" class="form-select">
+              <option value="undefined">未定义</option>
+              <option value="retail">散户</option>
+              <option value="dealer">庄家</option>
+            </select>
+          </p>
+          <p style="font-size: 12px; color: #dc3545;">注意：手动修改类型后将永久锁定，系统不再自动覆盖</p>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-success" onclick="saveClusterType()">保存</button>
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+        </div>
       </div>
     </div>
   </div>
@@ -108,85 +137,58 @@ let ws = null;
 let currentMint = '';
 let tradeCount = 0;
 const MAX_ROWS = 200;
+let currencyMode = 'SOL';
+let solPrice = 0;
+let currentClusterName = '';
 
-// 货币切换相关
-let currencyMode = 'SOL'; // 'SOL' 或 'USDT'
-let solPrice = 0;          // SOL/USD 价格
-
-// 获取 SOL 价格（通过后端 API，使用 Helius）
 async function fetchSolPrice() {
   try {
     const resp = await fetch('/admin/api/sol-price');
     const data = await resp.json();
-    if (data.price) {
-      return data.price;
-    }
-    console.error('获取 SOL 价格失败:', data.error);
+    if (data.price) return data.price;
     return 0;
-  } catch (e) {
-    console.error('获取 SOL 价格失败:', e);
-    return 0;
-  }
+  } catch (e) { return 0; }
 }
 
-// 切换货币显示模式
 async function toggleCurrency() {
   if (currencyMode === 'SOL') {
-    // 切换到 USDT
     solPrice = await fetchSolPrice();
     if (solPrice > 0) {
       currencyMode = 'USDT';
-      document.getElementById('currencyToggle').textContent = `USDT → SOL ($${solPrice.toFixed(2)})`;
+      document.getElementById('currencyToggle').textContent = 'USDT → SOL ($' + solPrice.toFixed(2) + ')';
       updateAllDisplays();
-    } else {
-      alert('获取 SOL 价格失败，请重试');
-    }
+    } else { alert('获取 SOL 价格失败'); }
   } else {
-    // 切换回 SOL
     currencyMode = 'SOL';
     document.getElementById('currencyToggle').textContent = 'SOL → USDT';
     updateAllDisplays();
   }
 }
 
-// 更新所有显示（指标卡片 + 表格）
 function updateAllDisplays() {
-  // 更新指标卡片标签
   const isUsdt = currencyMode === 'USDT';
   document.querySelector('#metricBet').closest('.metric-card').querySelector('.label').textContent = isUsdt ? '本轮下注 (USDT)' : '本轮下注 (SOL)';
   document.querySelector('#metricCost').closest('.metric-card').querySelector('.label').textContent = isUsdt ? '本轮成本 (USDT)' : '本轮成本 (SOL)';
   document.querySelector('#metricProfit').closest('.metric-card').querySelector('.label').textContent = isUsdt ? '已落袋 (USDT)' : '已落袋 (SOL)';
-  
-  // 更新表格 SOL 列标题
-  const ths = document.querySelectorAll('thead th');
-  if (ths[3]) ths[3].textContent = isUsdt ? 'USDT' : 'SOL';
-  
-  // 重新获取指标和交易数据以刷新显示
   fetchMetrics();
   fetchHistory();
 }
 
-// 格式化 SOL 值为 USDT（如果是 USDT 模式）
 function fmtSolValue(solValue, decimals) {
-  if (currencyMode === 'USDT' && solPrice > 0) {
-    return (solValue * solPrice).toFixed(2);
-  }
+  if (currencyMode === 'USDT' && solPrice > 0) return (solValue * solPrice).toFixed(2);
   return fmtNum(solValue, decimals);
 }
 
-// 截断地址
 function shortAddr(addr) {
   if (!addr) return '-';
   return addr.slice(0, 6) + '...' + addr.slice(-4);
 }
 
-// 格式化数字
 function fmtNum(n, decimals = 4) {
   if (n === null || n === undefined || isNaN(n)) return '0.00';
   return Number(n).toFixed(decimals);
 }
 
-// 添加交易行
 function addTradeRow(data, isNew) {
   const tbody = document.getElementById('tradeBody');
   const tr = document.createElement('tr');
@@ -194,65 +196,53 @@ function addTradeRow(data, isNew) {
 
   const netFlow = data.sol_spent || 0;
   const netClass = netFlow > 0 ? 'text-success' : (netFlow < 0 ? 'text-danger' : '');
-
-  // 风险评分
   const riskScore = data.risk_score || 0;
   const riskClass = riskScore >= 60 ? 'text-danger fw-bold' : (riskScore >= 30 ? 'text-warning fw-bold' : 'text-success');
 
-  // 触发原因
-  let reasons = '';
+  let reasons = '-';
   if (data.risk_indicators) {
     try {
       const indicators = typeof data.risk_indicators === 'string' ? JSON.parse(data.risk_indicators) : data.risk_indicators;
-      reasons = indicators.slice(0, 2).map((i, idx) => {
-        // 简化原因文本
-        let short = i;
-        if (i.includes('高账户数')) short = '高账户';
-        else if (i.includes('ALT')) short = 'ALT';
-        else if (i.includes('机器人')) short = '机器人';
-        else if (i.includes('Priority')) short = '优先费';
-        else if (i.includes('复杂')) short = '复杂';
-        else if (i.includes('DEX')) short = 'DEX';
-        return short;
+      reasons = indicators.slice(0, 2).map(i => {
+        if (i.includes('高账户数')) return '高账户';
+        if (i.includes('ALT')) return 'ALT';
+        if (i.includes('机器人')) return '机器人';
+        if (i.includes('Priority')) return '优先费';
+        if (i.includes('复杂')) return '复杂';
+        if (i.includes('DEX')) return 'DEX';
+        return i;
       }).join('+');
-    } catch (e) {
-      reasons = '-';
-    }
+    } catch (e) {}
   }
 
-  // CU 值
   const cuConsumed = data.cu_consumed || 0;
   const cuLimit = data.cu_limit || 200000;
-  const cuDisplay = cuConsumed > 0 ? `${fmtNum(cuConsumed, 0)}/${fmtNum(cuLimit, 0)}` : '-';
-
-  // 根据货币模式显示 SOL 值
+  const cuDisplay = cuConsumed > 0 ? fmtNum(cuConsumed, 0) + '/' + fmtNum(cuLimit, 0) : '-';
   const isUsdt = currencyMode === 'USDT';
   const solDisplay = isUsdt ? fmtSolValue(netFlow, 2) : fmtNum(netFlow, 4);
 
-  tr.innerHTML = `
-    <td><span class="badge ${data.transaction_type === 'SWAP' ? 'bg-primary' : 'bg-secondary'}">${data.transaction_type || '-'}</span></td>
-    <td title="${data.from_address || ''}">${shortAddr(data.from_address)}</td>
-    <td>${fmtNum(data.amount, 2)}</td>
-    <td class="${netClass}" style="font-weight:600">${solDisplay}</td>
-    <td class="${riskClass}">${riskScore > 0 ? riskScore : '-'}</td>
-    <td style="font-size:11px; max-width:80px; overflow:hidden; text-overflow:ellipsis;" title="${reasons}">${reasons || '-'}</td>
-    <td style="font-size:11px; white-space:nowrap;">${cuDisplay}</td>
-    <td>${data.wallet_tag ? '<span class="wallet-tag">' + data.wallet_tag + '</span>' : '-'}</td>
-  `;
+  const clusterName = data.cluster_name || '';
+  const clusterType = data.cluster_type || 'undefined';
+  const clusterTag = clusterName ? '<span class="cluster-tag ' + clusterType + '" onclick="openClusterTypeModal(\'' + clusterName + '\', \'' + clusterType + '\')" title="' + clusterName + '">' + shortAddr(clusterName) + '</span>' : '-';
 
-  // 点击行显示详情弹窗
+  tr.innerHTML = '<td><span class="badge ' + (data.transaction_type === 'SWAP' ? 'bg-primary' : 'bg-secondary') + '">' + (data.transaction_type || '-') + '</span></td>' +
+    '<td title="' + (data.from_address || '') + '">' + shortAddr(data.from_address) + '</td>' +
+    '<td>' + fmtNum(data.amount, 2) + '</td>' +
+    '<td class="' + netClass + '" style="font-weight:600">' + solDisplay + '</td>' +
+    '<td class="' + riskClass + '">' + (riskScore > 0 ? riskScore : '-') + '</td>' +
+    '<td style="font-size:11px; max-width:80px; overflow:hidden; text-overflow:ellipsis;" title="' + reasons + '">' + (reasons || '-') + '</td>' +
+    '<td style="font-size:11px; white-space:nowrap;">' + cuDisplay + '</td>' +
+    '<td>' + clusterTag + '</td>' +
+    '<td>' + (data.wallet_tag ? '<span class="wallet-tag">' + data.wallet_tag + '</span>' : '-') + '</td>';
+
   tr.style.cursor = 'pointer';
   tr.addEventListener('click', () => showTxDetail(data));
 
-  // 新数据插入到最前面
-  if (tbody.children.length >= MAX_ROWS) {
-    tbody.removeChild(tbody.lastChild);
-  }
+  if (tbody.children.length >= MAX_ROWS) tbody.removeChild(tbody.lastChild);
   tbody.insertBefore(tr, tbody.firstChild);
   tradeCount++;
 }
 
-// 更新指标
 function updateMetrics(data) {
   const isUsdt = currencyMode === 'USDT';
   document.getElementById('metricBet').textContent = fmtSolValue(data.current_bet, isUsdt ? 2 : 4);
@@ -261,7 +251,6 @@ function updateMetrics(data) {
   document.getElementById('metricCount').textContent = data.trade_count || 0;
 }
 
-// 更新状态
 function updateStatus(data) {
   const badge = document.getElementById('statusBadge');
   const msg = document.getElementById('statusMsg');
@@ -269,416 +258,173 @@ function updateStatus(data) {
   badge.className = 'status-badge status-' + status;
   badge.textContent = '状态: ' + status;
   msg.textContent = data.message || '';
-
-  if (data.progress !== undefined && data.progress < 100) {
-    msg.textContent += ` (${data.progress.toFixed(1)}%)`;
-  }
+  if (data.progress !== undefined && data.progress < 100) msg.textContent += ' (' + data.progress.toFixed(1) + '%)';
 }
 
-// 连接 WebSocket
 function connectWS() {
   if (ws) { ws.close(); ws = null; }
-
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const wsUrl = `${protocol}//${location.host}/ws/trades/${currentMint}`;
-  ws = new WebSocket(wsUrl);
+  ws = new WebSocket(protocol + '//' + location.host + '/ws/trades/' + currentMint);
 
-  ws.onopen = () => {
-    console.log('WS 已连接');
-    fetchHistory();
-  };
-
+  ws.onopen = () => { console.log('WS 已连接'); fetchHistory(); };
   ws.onmessage = (evt) => {
     try {
       const msg = JSON.parse(evt.data);
-      console.log('WS 收到:', msg.type, msg.data?.sig?.slice(0, 8) || '');
-      if (msg.type === 'status') {
-        updateStatus(msg.data);
-      } else if (msg.type === 'trade') {
-        addTradeRow(msg.data, true);
-        fetchMetrics();
-      } else if (msg.type === 'error') {
-        alert('错误: ' + (msg.data.message || '未知'));
-      } else if (msg.type === 'user_status') {
-        handleUserStatus(msg.data);
-      } else if (msg.type === 'dealer_detected') {
-        const cd = msg.data.conditions || {};
-        console.warn('🚨 庄家交易检测:', msg.data);
-        console.log('满足条件详情:');
-        if (cd.conditions && cd.conditions.length > 0) {
-          cd.conditions.forEach(c => {
-            const d = cd.details && cd.details[c];
-            if (d) {
-              console.log(`  ${c}: ${d.name}`);
-              if (d.threshold) {
-                console.log(`     阈值: ${d.threshold}, 实际: ${d.value}`);
-              }
-            }
-          });
-        }
-        console.table({
-          '地址': msg.data.address,
-          '签名': msg.data.sig,
-          '类型': msg.data.tx_type,
-          '数量': msg.data.amount,
-          'SOL': msg.data.sol_spent,
-          '条件': cd.conditions?.join(', ') || '-'
-        });
-      }
-    } catch (e) {
-      console.error('WS 消息解析失败:', e);
-    }
+      if (msg.type === 'status') updateStatus(msg.data);
+      else if (msg.type === 'trade') { addTradeRow(msg.data, true); fetchMetrics(); }
+      else if (msg.type === 'error') alert('错误: ' + (msg.data.message || '未知'));
+      else if (msg.type === 'user_status') handleUserStatus(msg.data);
+    } catch (e) { console.error('WS 消息解析失败:', e); }
   };
-
-  ws.onclose = () => {
-    console.log('WS 已断开');
-    if (currentMint) {
-      setTimeout(() => {
-        if (currentMint) connectWS();
-      }, 3000);
-    }
-  };
+  ws.onclose = () => { console.log('WS 已断开'); if (currentMint) setTimeout(() => { if (currentMint) connectWS(); }, 3000); };
 }
 
-// 获取指标
 async function fetchMetrics() {
   if (!currentMint) return;
   try {
-    const resp = await fetch(`/admin/api/metrics?mint=${currentMint}`);
+    const resp = await fetch('/admin/api/metrics?mint=' + currentMint);
     const data = await resp.json();
     updateMetrics(data);
-  } catch (e) {
-    console.error('获取指标失败:', e);
-  }
+  } catch (e) { console.error('获取指标失败:', e); }
 }
 
-// 获取历史数据
 async function fetchHistory() {
   if (!currentMint) return;
   try {
-    const resp = await fetch(`/admin/api/trades?mint=${currentMint}&page=1&page_size=${MAX_ROWS}`);
+    const resp = await fetch('/admin/api/trades?mint=' + currentMint + '&page=1&page_size=' + MAX_ROWS);
     const data = await resp.json();
-    console.log('历史数据:', data);
     document.getElementById('tradeBody').innerHTML = '';
     tradeCount = 0;
     data.trades.reverse().forEach(trade => addTradeRow(trade, false));
-    console.log('已渲染', data.trades.length, '条历史交易');
     updateMetrics({ trade_count: data.total });
-  } catch (e) {
-    console.error('获取历史失败:', e);
-  }
+  } catch (e) { console.error('获取历史失败:', e); }
 }
 
-// 开始监听
 async function startMonitor() {
   const mint = document.getElementById('mintInput').value.trim();
   if (!mint) { alert('请输入 Mint 地址'); return; }
-
   currentMint = mint;
   document.getElementById('startBtn').disabled = true;
   document.getElementById('tradeBody').innerHTML = '';
   tradeCount = 0;
-
   try {
-    const resp = await fetch(`/admin/api/start`, {
-      method: 'POST',
-      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-      body: `mint=${encodeURIComponent(mint)}`
-    });
+    const resp = await fetch('/admin/api/start', { method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded'}, body: 'mint=' + encodeURIComponent(mint) });
     const data = await resp.json();
     console.log('启动响应:', data);
     connectWS();
-  } catch (e) {
-    alert('启动失败: ' + e.message);
-    document.getElementById('startBtn').disabled = false;
-  }
+  } catch (e) { alert('启动失败: ' + e.message); document.getElementById('startBtn').disabled = false; }
 }
 
-// 停止监听
 async function stopMonitor() {
   if (!currentMint) return;
-
   try {
-    await fetch(`/admin/api/stop`, {
-      method: 'POST',
-      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-      body: `mint=${encodeURIComponent(currentMint)}`
-    });
+    await fetch('/admin/api/stop', { method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded'}, body: 'mint=' + encodeURIComponent(currentMint) });
     if (ws) { ws.close(); ws = null; }
     currentMint = '';
     document.getElementById('startBtn').disabled = false;
     updateStatus({ status: 'STOPPED', message: '已停止' });
-  } catch (e) {
-    console.error('停止失败:', e);
-  }
+  } catch (e) { console.error('停止失败:', e); }
 }
 
-// 页面加载时获取设置
-window.addEventListener('DOMContentLoaded', () => {
-  fetchMetrics();
-});
+window.addEventListener('DOMContentLoaded', () => { fetchMetrics(); });
 
-// 显示交易详情弹窗
 function showTxDetail(data) {
   const content = document.getElementById('txDetailContent');
-  
   const riskScore = data.risk_score || 0;
   const riskLabel = riskScore >= 60 ? '⚠️ 高风险' : (riskScore >= 30 ? '⚡ 中等风险' : '✅ 低风险');
   const riskColor = riskScore >= 60 ? 'text-danger' : (riskScore >= 30 ? 'text-warning' : 'text-success');
   
-  // 风险原因
   let indicatorsHtml = '<p class="text-muted">无</p>';
   if (data.risk_indicators) {
     try {
       const indicators = typeof data.risk_indicators === 'string' ? JSON.parse(data.risk_indicators) : data.risk_indicators;
-      if (indicators.length > 0) {
-        indicatorsHtml = '<ul class="mb-0">' + indicators.map(i => `<li>${i}</li>`).join('') + '</ul>';
-      }
+      if (indicators.length > 0) indicatorsHtml = '<ul class="mb-0">' + indicators.map(i => '<li>' + i + '</li>').join('') + '</ul>';
     } catch (e) {}
   }
-  
-  // 指令统计
-  const mainIxCount = data.instructions_count || 0;
-  const innerIxCount = data.inner_instructions_count || 0;
-  const totalIxCount = data.total_instruction_count || (mainIxCount + innerIxCount);
-  
-  // 主指令列表
-  let mainIxHtml = '<p class="text-muted">无数据</p>';
-  if (data.main_instructions) {
-    try {
-      const instructions = typeof data.main_instructions === 'string' ? JSON.parse(data.main_instructions) : data.main_instructions;
-      if (instructions.length > 0) {
-        mainIxHtml = '<ul class="mb-0 small">';
-        instructions.forEach(ix => {
-          mainIxHtml += `<li>[${ix.index}] <strong>${ix.type || 'unknown'}</strong> @ ${ix.program_id?.slice(0, 12)}...</li>`;
-        });
-        mainIxHtml += '</ul>';
-      }
-    } catch (e) {
-      mainIxHtml = '<p class="text-muted">解析失败</p>';
-    }
-  }
-  
-  // 内部指令列表
-  let innerIxHtml = '<p class="text-muted">无数据</p>';
-  if (data.inner_instructions) {
-    try {
-      const instructions = typeof data.inner_instructions === 'string' ? JSON.parse(data.inner_instructions) : data.inner_instructions;
-      if (instructions.length > 0) {
-        // 统计各类型数量
-        const typeCount = {};
-        instructions.forEach(ix => {
-          const type = ix.type || 'unknown';
-          typeCount[type] = (typeCount[type] || 0) + 1;
-        });
-        
-        innerIxHtml = '<div class="small">';
-        Object.entries(typeCount).sort((a, b) => b[1] - a[1]).slice(0, 8).forEach(([type, count]) => {
-          innerIxHtml += `<span class="badge bg-secondary me-1 mb-1">${type}: ${count}次</span>`;
-        });
-        innerIxHtml += '</div>';
-      }
-    } catch (e) {
-      innerIxHtml = '<p class="text-muted">解析失败</p>';
-    }
-  }
-  
-  // 程序列表
-  let programHtml = '<p class="text-muted">无数据</p>';
-  if (data.program_ids) {
-    try {
-      const programs = typeof data.program_ids === 'string' ? JSON.parse(data.program_ids) : data.program_ids;
-      if (programs.length > 0) {
-        programHtml = '<div class="small">';
-        programs.forEach(pid => {
-          programHtml += `<span class="badge bg-info me-1 mb-1" title="${pid}">${pid.slice(0, 8)}...</span>`;
-        });
-        programHtml += '</div>';
-      }
-    } catch (e) {}
-  }
-  
-  content.innerHTML = `
-    <div class="container-fluid">
-      <!-- 基本信息 -->
-      <div class="row mb-3">
-        <div class="col-12">
-          <h6 class="border-bottom pb-2 mb-2">📌 基本信息</h6>
-          <div class="row">
-            <div class="col-md-6">
-              <p class="mb-1"><strong>签名:</strong> <code class="small">${data.sig || '-'}</code></p>
-              <p class="mb-1"><strong>Slot:</strong> ${data.slot || '-'}</p>
-              <p class="mb-1"><strong>时间:</strong> ${data.block_time || '-'}</p>
-            </div>
-            <div class="col-md-6">
-              <p class="mb-1"><strong>类型:</strong> <span class="badge ${data.transaction_type === 'BUY' ? 'bg-success' : (data.transaction_type === 'SELL' ? 'bg-danger' : 'bg-secondary')}">${data.transaction_type || '-'}</span></p>
-              <p class="mb-1"><strong>数量:</strong> ${fmtNum(data.amount, 4)}</p>
-              <p class="mb-1"><strong>SOL:</strong> <span class="${data.sol_spent >= 0 ? 'text-danger' : 'text-success'}">${fmtNum(data.sol_spent, 6)}</span></p>
-            </div>
-          </div>
-        </div>
-      </div>
-      
-      <!-- 风险评估 -->
-      <div class="row mb-3">
-        <div class="col-12">
-          <h6 class="border-bottom pb-2 mb-2">🚨 风险评估</h6>
-          <div class="row">
-            <div class="col-md-4">
-              <div class="p-3 bg-light rounded text-center">
-                <div class="h4 ${riskColor} fw-bold mb-1">${riskScore}</div>
-                <div class="small text-muted">风险分 (0-100)</div>
-              </div>
-            </div>
-            <div class="col-md-8">
-              <p class="mb-1"><strong class="${riskColor}">${riskLabel}</strong></p>
-              <p class="mb-2 small text-muted">触发指标:</p>
-              ${indicatorsHtml}
-            </div>
-          </div>
-        </div>
-      </div>
-      
-      <!-- 计算单元 -->
-      <div class="row mb-3">
-        <div class="col-12">
-          <h6 class="border-bottom pb-2 mb-2">⚡ 计算单元 (CU)</h6>
-          <div class="row">
-            <div class="col-md-4">
-              <div class="p-3 bg-light rounded text-center">
-                <div class="h4 text-primary fw-bold mb-1">${(data.cu_consumed || 0).toLocaleString()}</div>
-                <div class="small text-muted">已消耗 / ${(data.cu_limit || 200000).toLocaleString()}</div>
-              </div>
-            </div>
-            <div class="col-md-8">
-              <p class="mb-1"><strong>Fee:</strong> ${fmtNum(data.fee, 9)} SOL</p>
-              <p class="mb-1"><strong>Priority Fee:</strong> ${fmtNum(data.priority_fee || 0, 9)} SOL</p>
-              <p class="mb-1"><strong>Jito Tip:</strong> ${fmtNum(data.jito_tip || 0, 9)} SOL</p>
-            </div>
-          </div>
-        </div>
-      </div>
-      
-      <!-- 指令统计 -->
-      <div class="row mb-3">
-        <div class="col-12">
-          <h6 class="border-bottom pb-2 mb-2">📋 指令统计</h6>
-          <div class="row mb-2">
-            <div class="col-4"><span class="badge bg-primary">主指令: ${mainIxCount}</span></div>
-            <div class="col-4"><span class="badge bg-secondary">内部指令: ${innerIxCount}</span></div>
-            <div class="col-4"><span class="badge bg-dark">总计: ${totalIxCount}</span></div>
-          </div>
-          <div class="row">
-            <div class="col-md-6">
-              <p class="mb-1 small fw-bold">主指令列表:</p>
-              ${mainIxHtml}
-            </div>
-            <div class="col-md-6">
-              <p class="mb-1 small fw-bold">内部指令 (TOP 8):</p>
-              ${innerIxHtml}
-            </div>
-          </div>
-        </div>
-      </div>
-      
-      <!-- 程序 ID -->
-      <div class="row">
-        <div class="col-12">
-          <h6 class="border-bottom pb-2 mb-2">🔧 程序 ID (${(data.program_ids ? (typeof data.program_ids === 'string' ? JSON.parse(data.program_ids) : data.program_ids).length : 0) || 0})</h6>
-          ${programHtml}
-        </div>
-      </div>
-      
-      <!-- 附加信息 -->
-      <div class="row mt-3">
-        <div class="col-12">
-          <h6 class="border-bottom pb-2 mb-2">📊 其他信息</h6>
-          <div class="row small">
-            <div class="col-md-4">
-              <p class="mb-1"><strong>账户数:</strong> ${data.account_keys_count || '-'}</p>
-              <p class="mb-1"><strong>使用ALT:</strong> ${data.uses_lookup_table ? '✅ 是' : '❌ 否'}</p>
-            </div>
-            <div class="col-md-4">
-              <p class="mb-1"><strong>签名者数:</strong> ${data.signers_count || '-'}</p>
-              <p class="mb-1"><strong>DEX:</strong> ${data.dex || '-'}</p>
-            </div>
-            <div class="col-md-4">
-              <p class="mb-1"><strong>来源:</strong> ${data.source || '-'}</p>
-              <p class="mb-1"><strong>标签:</strong> ${data.wallet_tag || '-'}</p>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  `;
-  
-  // 显示弹窗
+
+  content.innerHTML = '<div class="container-fluid">' +
+    '<div class="row mb-3"><div class="col-12">' +
+    '<h6 class="border-bottom pb-2 mb-2">📌 基本信息</h6>' +
+    '<div class="row"><div class="col-md-6">' +
+    '<p class="mb-1"><strong>签名:</strong> <code class="small">' + (data.sig || '-') + '</code></p>' +
+    '<p class="mb-1"><strong>Slot:</strong> ' + (data.slot || '-') + '</p>' +
+    '<p class="mb-1"><strong>时间:</strong> ' + (data.block_time || '-') + '</p></div>' +
+    '<div class="col-md-6">' +
+    '<p class="mb-1"><strong>类型:</strong> <span class="badge ' + (data.transaction_type === 'BUY' ? 'bg-success' : (data.transaction_type === 'SELL' ? 'bg-danger' : 'bg-secondary')) + '">' + (data.transaction_type || '-') + '</span></p>' +
+    '<p class="mb-1"><strong>数量:</strong> ' + fmtNum(data.amount, 4) + '</p>' +
+    '<p class="mb-1"><strong>SOL:</strong> <span class="' + (data.sol_spent >= 0 ? 'text-danger' : 'text-success') + '">' + fmtNum(data.sol_spent, 6) + '</span></p></div></div></div></div>' +
+    '<div class="row mb-3"><div class="col-12"><h6 class="border-bottom pb-2 mb-2">🚨 风险评估</h6>' +
+    '<div class="row"><div class="col-md-4"><div class="p-3 bg-light rounded text-center">' +
+    '<div class="h4 ' + riskColor + ' fw-bold mb-1">' + riskScore + '</div>' +
+    '<div class="small text-muted">风险分 (0-100)</div></div>' +
+    '<div class="col-md-8"><p class="mb-1"><strong class="' + riskColor + '">' + riskLabel + '</strong></p>' +
+    '<p class="mb-2 small text-muted">触发指标:</p>' + indicatorsHtml + '</div></div></div></div>' +
+    '<div class="row mb-3"><div class="col-12"><h6 class="border-bottom pb-2 mb-2">⚡ 计算单元 (CU)</h6>' +
+    '<div class="row"><div class="col-md-4"><div class="p-3 bg-light rounded text-center">' +
+    '<div class="h4 text-primary fw-bold mb-1">' + (data.cu_consumed || 0).toLocaleString() + '</div>' +
+    '<div class="small text-muted">已消耗 / ' + (data.cu_limit || 200000).toLocaleString() + '</div></div>' +
+    '<div class="col-md-8"><p class="mb-1"><strong>Fee:</strong> ' + fmtNum(data.fee, 9) + ' SOL</p>' +
+    '<p class="mb-1"><strong>Priority Fee:</strong> ' + fmtNum(data.priority_fee || 0, 9) + ' SOL</p>' +
+    '<p class="mb-1"><strong>Jito Tip:</strong> ' + fmtNum(data.jito_tip || 0, 9) + ' SOL</p></div></div></div></div>' +
+    '<div class="row"><div class="col-12"><h6 class="border-bottom pb-2 mb-2">📊 其他信息</h6>' +
+    '<div class="row small"><div class="col-md-4">' +
+    '<p class="mb-1"><strong>簇组:</strong> ' + (data.cluster_name || '-') + '</p>' +
+    '<p class="mb-1"><strong>簇组类型:</strong> ' + (data.cluster_type || '-') + '</p></div>' +
+    '<div class="col-md-4"><p class="mb-1"><strong>来源:</strong> ' + (data.source || '-') + '</p>' +
+    '<p class="mb-1"><strong>标签:</strong> ' + (data.wallet_tag || '-') + '</p></div></div></div></div></div>';
+
   const modalEl = document.getElementById('txDetailModal');
   const modal = new bootstrap.Modal(modalEl);
   modal.show();
 }
 
-// 处理用户状态更新
 function handleUserStatus(data) {
   const address = data.address;
   const status = data.status;
   const sig = data.sig;
-  const reason = data.reason;
-  
-  console.log('[用户状态] address=' + address.slice(0, 8) + '... status=' + status);
-  
   const tbody = document.getElementById('tradeBody');
   const rows = tbody.querySelectorAll('tr');
   
   rows.forEach(row => {
     const addrCell = row.cells[1];
     if (!addrCell) return;
-    
     const rowAddr = addrCell.getAttribute('title') || '';
     if (rowAddr !== address) return;
-    
     const tagCell = row.querySelector('.wallet-tag');
     
     if (status === 'dealer') {
       row.style.display = 'none';
-      console.log('[用户状态] 已隐藏庄家交易: ' + sig.slice(0, 8));
-    } else if (status === 'retail') {
-      if (tagCell) {
-        tagCell.textContent = '散户';
-        tagCell.style.background = '#d3f9d8';
-        tagCell.style.color = '#2f9e44';
-      } else {
-        const newTag = document.createElement('span');
-        newTag.className = 'wallet-tag';
-        newTag.textContent = '散户';
-        newTag.style.background = '#d3f9d8';
-        newTag.style.color = '#2f9e44';
-        const cells = row.cells;
-        if (cells[7]) {
-          cells[7].innerHTML = '';
-          cells[7].appendChild(newTag);
-        }
-      }
-      console.log('[用户状态] 已标记散户: ' + sig.slice(0, 8));
-    } else if (status === 'unknown' && reason === 'detection_failed') {
-      if (tagCell) {
-        tagCell.textContent = 'unknown(检测失败)';
-        tagCell.className = 'wallet-tag failed';
-      } else {
-        const newTag = document.createElement('span');
-        newTag.className = 'wallet-tag failed';
-        newTag.textContent = 'unknown(检测失败)';
-        const cells = row.cells;
-        if (cells[7]) {
-          cells[7].innerHTML = '';
-          cells[7].appendChild(newTag);
-        }
-      }
-      console.log('[用户状态] 已标记检测失败: ' + sig.slice(0, 8));
+    } else if (status === 'retail' && tagCell) {
+      tagCell.textContent = '散户';
+      tagCell.style.background = '#d3f9d8';
+      tagCell.style.color = '#2f9e44';
     }
   });
-  
   fetchMetrics();
+}
+
+function openClusterTypeModal(name, currentType) {
+  currentClusterName = name;
+  document.getElementById('clusterTypeName').textContent = name;
+  document.getElementById('clusterTypeSelect').value = currentType || 'undefined';
+  const modalEl = document.getElementById('clusterTypeModal');
+  const modal = new bootstrap.Modal(modalEl);
+  modal.show();
+}
+
+async function saveClusterType() {
+  const type = document.getElementById('clusterTypeSelect').value;
+  try {
+    await fetch('/admin/api/clusters/' + encodeURIComponent(currentClusterName) + '/type', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cluster_type: type, judgment_type: 'manual' }),
+    });
+    const modalEl = document.getElementById('clusterTypeModal');
+    const modal = bootstrap.Modal.getInstance(modalEl);
+    modal.hide();
+    alert('簇组类型已更新为: ' + (type === 'dealer' ? '庄家' : type === 'retail' ? '散户' : '未定义'));
+  } catch (e) { alert('更新失败: ' + e); }
 }
   </script>
 </body>

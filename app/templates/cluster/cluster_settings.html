@@ -1,0 +1,223 @@
+{% extends "sqladmin/layout.html" %}
+{% block title %}簇组设置{% endblock %}
+{% block content %}
+<style>
+  .settings-container { max-width: 900px; margin: 20px auto; }
+  .settings-card { background: #fff; border-radius: 8px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 20px; }
+  .card-title { font-size: 18px; font-weight: 600; margin-bottom: 16px; color: #333; display: flex; align-items: center; gap: 8px; }
+  .card-title .icon { font-size: 20px; }
+  .setting-section { margin-bottom: 24px; }
+  .setting-section:last-child { margin-bottom: 0; }
+  .section-title { font-size: 14px; font-weight: 600; color: #666; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid #e9ecef; }
+  .setting-item { display: flex; align-items: center; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid #f0f0f0; }
+  .setting-item:last-child { border-bottom: none; }
+  .setting-item label { font-weight: 500; min-width: 200px; }
+  .setting-item .desc { font-size: 12px; color: #868e96; margin-top: 4px; }
+  .setting-item input[type="text"] { width: 120px; text-align: right; padding: 6px 12px; border: 1px solid #ced4da; border-radius: 4px; }
+  .setting-item input[type="checkbox"] { width: 20px; height: 20px; cursor: pointer; }
+  .btn-save { padding: 12px 32px; font-size: 14px; }
+  .info-box { background: #e7f5ff; border: 1px solid #74c0fc; border-radius: 6px; padding: 12px 16px; margin-bottom: 20px; font-size: 13px; color: #1864ab; }
+  .info-box strong { color: #1971c2; }
+</style>
+
+<div class="settings-container">
+  <div class="info-box">
+    <strong>💡 提示：</strong>簇组功能通过交易特征（CU、程序ID、指令数量）对钱包进行聚类。已开启的条件必须全部满足才算匹配成功。
+  </div>
+
+  <!-- 总开关 -->
+  <div class="settings-card">
+    <div class="card-title">
+      <span class="icon">⚙️</span> 簇组总开关
+    </div>
+    <div class="setting-section">
+      <div class="setting-item">
+        <div>
+          <label>启用簇组功能</label>
+          <div class="desc">开启后，新的交易将自动进行簇组匹配</div>
+        </div>
+        <input type="checkbox" id="cluster_enabled" />
+      </div>
+    </div>
+  </div>
+
+  <!-- 匹配条件开关 -->
+  <div class="settings-card">
+    <div class="card-title">
+      <span class="icon">🔍</span> 匹配条件开关
+    </div>
+    <div class="setting-section">
+      <div class="section-title">已开启的条件必须全部满足才算匹配成功</div>
+      <div class="setting-item">
+        <div>
+          <label>CU 消耗匹配</label>
+          <div class="desc">根据交易 CU 消耗进行匹配</div>
+        </div>
+        <input type="checkbox" id="cluster_match_cu_enabled" />
+      </div>
+      <div class="setting-item">
+        <div>
+          <label>程序ID数量匹配</label>
+          <div class="desc">根据交易涉及的程序数量进行匹配</div>
+        </div>
+        <input type="checkbox" id="cluster_match_program_enabled" />
+      </div>
+      <div class="setting-item">
+        <div>
+          <label>主指令数量匹配</label>
+          <div class="desc">根据主指令数量进行匹配</div>
+        </div>
+        <input type="checkbox" id="cluster_match_main_instruction_enabled" />
+      </div>
+      <div class="setting-item">
+        <div>
+          <label>内部指令数量匹配</label>
+          <div class="desc">根据内部指令数量进行匹配</div>
+        </div>
+        <input type="checkbox" id="cluster_match_inner_instruction_enabled" />
+      </div>
+    </div>
+  </div>
+
+  <!-- 偏移量设置 -->
+  <div class="settings-card">
+    <div class="card-title">
+      <span class="icon">📊</span> 匹配偏移量
+    </div>
+    <div class="setting-section">
+      <div class="section-title">基准值 ± 偏移量 = 有效范围</div>
+      <div class="setting-item">
+        <div>
+          <label>CU 偏移量</label>
+          <div class="desc">允许的 CU 消耗偏差范围</div>
+        </div>
+        <input type="text" id="cluster_cu_offset" placeholder="0" />
+      </div>
+      <div class="setting-item">
+        <div>
+          <label>程序ID数量偏移量</label>
+          <div class="desc">允许的程序数量偏差范围</div>
+        </div>
+        <input type="text" id="cluster_program_offset" placeholder="0" />
+      </div>
+      <div class="setting-item">
+        <div>
+          <label>主指令数量偏移量</label>
+          <div class="desc">允许的主指令数量偏差范围</div>
+        </div>
+        <input type="text" id="cluster_main_instruction_offset" placeholder="0" />
+      </div>
+      <div class="setting-item">
+        <div>
+          <label>内部指令数量偏移量</label>
+          <div class="desc">允许的内部指令数量偏差范围</div>
+        </div>
+        <input type="text" id="cluster_inner_instruction_offset" placeholder="0" />
+      </div>
+    </div>
+  </div>
+
+  <!-- 自动判定阈值 -->
+  <div class="settings-card">
+    <div class="card-title">
+      <span class="icon">🎯</span> 自动判定阈值
+    </div>
+    <div class="setting-section">
+      <div class="section-title">满足双阈值时，系统自动将簇组标记为「庄家」</div>
+      <div class="setting-item">
+        <div>
+          <label>Tx数阈值</label>
+          <div class="desc">簇组内交易数大于此值</div>
+        </div>
+        <input type="text" id="cluster_tx_threshold" placeholder="50" />
+      </div>
+      <div class="setting-item">
+        <div>
+          <label>用户数阈值</label>
+          <div class="desc">簇组内独立用户数大于此值</div>
+        </div>
+        <input type="text" id="cluster_user_threshold" placeholder="50" />
+      </div>
+    </div>
+  </div>
+
+  <!-- 保存按钮 -->
+  <div style="text-align: center; margin-top: 24px;">
+    <button class="btn btn-primary btn-save" onclick="saveAll()">💾 保存设置</button>
+  </div>
+</div>
+
+<script>
+const SETTINGS_KEYS = [
+  'cluster_enabled',
+  'cluster_match_cu_enabled',
+  'cluster_match_program_enabled',
+  'cluster_match_main_instruction_enabled',
+  'cluster_match_inner_instruction_enabled',
+  'cluster_cu_offset',
+  'cluster_program_offset',
+  'cluster_main_instruction_offset',
+  'cluster_inner_instruction_offset',
+  'cluster_tx_threshold',
+  'cluster_user_threshold'
+];
+
+const CHECKBOX_KEYS = [
+  'cluster_enabled',
+  'cluster_match_cu_enabled',
+  'cluster_match_program_enabled',
+  'cluster_match_main_instruction_enabled',
+  'cluster_match_inner_instruction_enabled'
+];
+
+async function loadSettings() {
+  try {
+    const resp = await fetch('/admin/api/settings');
+    const data = await resp.json();
+    
+    for (const key of SETTINGS_KEYS) {
+      const input = document.getElementById(key);
+      const value = data[key] || '';
+      
+      if (CHECKBOX_KEYS.includes(key)) {
+        input.checked = value === 'true';
+      } else {
+        input.value = value;
+      }
+    }
+  } catch (e) {
+    alert('加载设置失败: ' + e.message);
+  }
+}
+
+async function saveAll() {
+  let success = 0;
+  
+  for (const key of SETTINGS_KEYS) {
+    const input = document.getElementById(key);
+    let value;
+    
+    if (CHECKBOX_KEYS.includes(key)) {
+      value = input.checked ? 'true' : 'false';
+    } else {
+      value = input.value;
+    }
+    
+    try {
+      await fetch('/admin/api/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: key, value: value }),
+      });
+      success++;
+    } catch (e) {
+      console.error('保存 ' + key + ' 失败:', e);
+    }
+  }
+  
+  alert('已保存 ' + success + '/' + SETTINGS_KEYS.length + ' 项设置');
+}
+
+window.addEventListener('DOMContentLoaded', loadSettings);
+</script>
+{% endblock %}
