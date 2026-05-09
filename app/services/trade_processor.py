@@ -311,11 +311,7 @@ async def _calculate_index(tx_detail: Dict[str, Any], mint: str) -> Dict[str, An
             state = _default_trader_state()
             state["status"] = cluster_result.cluster_type  # retail 或 dealer
             state["conditions"] = ["C006"]
-            await save_trader_state(redis, mint, address, state)
-            
-            if cluster_result.cluster_type == "dealer":
-                await exclude_dealer(mint, address)
-            
+            await save_trader_state(redis, mint, address, state) 
             # 广播簇组信息
             await ws_manager.broadcast(mint, {
                 "type": "cluster_matched",
@@ -326,8 +322,11 @@ async def _calculate_index(tx_detail: Dict[str, Any], mint: str) -> Dict[str, An
                     "cluster_type": cluster_result.cluster_type,
                 }
             })
+            if cluster_result.cluster_type == "dealer":
+                await exclude_dealer(mint, address)
+                return {"is_dealer": cluster_result.cluster_type == "dealer"}
             
-            return {"is_dealer": cluster_result.cluster_type == "dealer"}
+            # return {"is_dealer": cluster_result.cluster_type == "dealer"}
         
         # 如果匹配到 undefined 簇组，继续 C001-C005，但记录簇组信息
         if cluster_result.matched and cluster_result.cluster_type == "undefined":

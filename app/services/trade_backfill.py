@@ -715,7 +715,7 @@ class TradeBackfill:
         from app.services.dealer_detector import start_dealer_consumer
         try:
             # 1. 启动庄家检测消费者
-            start_dealer_consumer()
+            #start_dealer_consumer()
             
             # 2. 历史 tx 直接处理，同时进行庄家检测
             await run_full_calculation(self.db, self.mint)
