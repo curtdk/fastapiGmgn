@@ -56,7 +56,7 @@ class ClusterManager:
             name=name,
             folder=folder,
             enabled=True,
-            cluster_type="undefined",  # 新簇组默认未定义
+            cluster_type="unknown",  # 新簇组默认未知状态
             judgment_type="system",
             base_cu=features.cu,
             base_cu_offset=self.settings.cu_offset,

@@ -324,13 +324,13 @@ async def _calculate_index(tx_detail: Dict[str, Any], mint: str) -> Dict[str, An
             })
             if cluster_result.cluster_type == "dealer":
                 await exclude_dealer(mint, address)
-                return {"is_dealer": cluster_result.cluster_type == "dealer"}
+                return {"status": "dealer"}
             
-            # return {"is_dealer": cluster_result.cluster_type == "dealer"}
+            # retail/unknown 继续执行后面的 C001-C005 和指数计算
         
-        # 如果匹配到 undefined 簇组，继续 C001-C005，但记录簇组信息
-        if cluster_result.matched and cluster_result.cluster_type == "undefined":
-            logger.info(f"[C006] {address[:8]}... 匹配到 undefined 簇组，继续 C001-C005")
+        # 如果匹配到 unknown 簇组，继续 C001-C005，但记录簇组信息
+        if cluster_result.matched and cluster_result.cluster_type == "unknown":
+            logger.info(f"[C006] {address[:8]}... 匹配到 unknown 簇组，继续 C001-C005")
             
             # 广播簇组信息
             await ws_manager.broadcast(mint, {
@@ -366,7 +366,7 @@ async def _calculate_index(tx_detail: Dict[str, Any], mint: str) -> Dict[str, An
                 "conditions": conditions_detail,
             }
         })
-        return {"is_dealer": True}
+        return {"status": "dealer"}
     
     # 从 Redis 读取当前持仓数据（统一用 {mint}_xxx key）
     holding_qty = float(state.get(f"{mint}_holdingQty", "0"))
@@ -442,7 +442,7 @@ async def _calculate_index(tx_detail: Dict[str, Any], mint: str) -> Dict[str, An
         "net_sol_flow": sol_spent,
         "net_token_flow": amount,
         "price_per_token": avg_price,
-        "wallet_tag": "dealer" if state["status"] == "dealer" else "unknown",
+        "wallet_tag": state["status"],
         "processed_at": datetime.utcnow().isoformat(),
     })
     
@@ -450,7 +450,7 @@ async def _calculate_index(tx_detail: Dict[str, Any], mint: str) -> Dict[str, An
         "holdingQty": holding_qty,
         "holdingCost": holding_cost,
         "avgPrice": avg_price,
-        "is_dealer": state["status"] == "dealer"
+        "status": state["status"]
     }
 
 
@@ -512,12 +512,12 @@ async def _consumer_loop(mint: str):
             metrics = await _calculate_index(tx_detail, mint)
 
             # 非庄家交易 → WebSocket 广播
-            if not metrics.get("is_dealer"):
+            if metrics.get("status") != "dealer":
                 await ws_manager.broadcast(mint, {
                     "type": "trade",
                     "data": {
                         **tx_detail,
-                        "wallet_tag": "dealer" if metrics.get("is_dealer") else "unknown",
+                        "wallet_tag": metrics.get("status", "unknown"),
                     }
                 })
 
@@ -551,12 +551,12 @@ async def run_full_calculation(db: Session, mint: str):
             metrics = await _calculate_index(tx_detail, mint)
 
             # 非庄家交易 → WebSocket 广播
-            if not metrics.get("is_dealer"):
+            if metrics.get("status") != "dealer":
                 await ws_manager.broadcast(mint, {
                     "type": "trade",
                     "data": {
                         **tx_detail,
-                        "wallet_tag": "dealer" if metrics.get("is_dealer") else "unknown",
+                        "wallet_tag": metrics.get("status", "unknown"),
                     }
                 })
 

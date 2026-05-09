@@ -33,6 +33,7 @@
     .cluster-tag { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 10px; cursor: pointer; background: #e9ecef; }
     .cluster-tag.retail { background: #d4edda; color: #155724; }
     .cluster-tag.dealer { background: #f8d7da; color: #721c24; }
+    .cluster-tag.unknown { background: #e9ecef; color: #495057; }
     .cluster-tag.undefined { background: #e9ecef; color: #495057; }
     .cluster-tag:hover { opacity: 0.8; }
   </style>
@@ -193,11 +194,12 @@ function getClusterTypeLabel(clusterType) {
   switch(clusterType) {
     case 'dealer': return '庄';
     case 'retail': return '散';
+    case 'unknown': 
     case 'undefined': 
     case '': 
     case null: 
-    case undefined: return '?';
-    default: return '?';
+    case undefined: return '未';
+    default: return clusterType || '未';
   }
 }
 

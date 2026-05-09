@@ -162,7 +162,7 @@ async def run_cluster_detection(
     return ClusterDetectionResult(
         matched=True,
         cluster=new_cluster,
-        cluster_type="undefined",
+        cluster_type="unknown",
         judgment_type="system",
         should_continue_detection=True,  # 继续 C001-C005
         created_new_cluster=True,
