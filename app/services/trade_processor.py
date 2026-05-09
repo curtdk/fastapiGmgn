@@ -304,6 +304,7 @@ async def _calculate_index(tx_detail: Dict[str, Any], mint: str) -> Dict[str, An
         cluster_result = await run_cluster_detection(db, tx_detail, mint)
         
         # 如果匹配到已定义簇组（retail/dealer），直接确定身份
+        cluster_info = None
         if cluster_result.matched and cluster_result.cluster_type in ("retail", "dealer"):
             logger.info(f"[C006] {address[:8]}... 匹配到 {cluster_result.cluster_type} 簇组，跳过 C001-C005")
             
@@ -312,36 +313,32 @@ async def _calculate_index(tx_detail: Dict[str, Any], mint: str) -> Dict[str, An
             state["status"] = cluster_result.cluster_type  # retail 或 dealer
             state["conditions"] = ["C006"]
             await save_trader_state(redis, mint, address, state) 
-            # 广播簇组信息
-            await ws_manager.broadcast(mint, {
-                "type": "cluster_matched",
-                "data": {
-                    "address": address,
-                    "sig": sig,
-                    "cluster_name": cluster_result.cluster.name if cluster_result.cluster else None,
-                    "cluster_type": cluster_result.cluster_type,
-                }
-            })
+            
+            # 构建 cluster_info（由调用方在 trade 之后广播）
+            cluster_info = {
+                "address": address,
+                "sig": sig,
+                "cluster_name": cluster_result.cluster.name if cluster_result.cluster else None,
+                "cluster_type": cluster_result.cluster_type,
+            }
+            
             if cluster_result.cluster_type == "dealer":
                 await exclude_dealer(mint, address)
-                return {"status": "dealer"}
+                return {"status": "dealer", "cluster_info": cluster_info}
             
-            # retail/unknown 继续执行后面的 C001-C005 和指数计算
+            # retail 继续执行后面的 C001-C005 和指数计算（cluster_info 保留）
         
         # 如果匹配到 unknown 簇组，继续 C001-C005，但记录簇组信息
-        if cluster_result.matched and cluster_result.cluster_type == "unknown":
+        elif cluster_result.matched and cluster_result.cluster_type == "unknown":
             logger.info(f"[C006] {address[:8]}... 匹配到 unknown 簇组，继续 C001-C005")
             
-            # 广播簇组信息
-            await ws_manager.broadcast(mint, {
-                "type": "cluster_matched",
-                "data": {
-                    "address": address,
-                    "sig": sig,
-                    "cluster_name": cluster_result.cluster.name if cluster_result.cluster else None,
-                    "cluster_type": cluster_result.cluster_type,
-                }
-            })
+            # 构建 cluster_info（由调用方在 trade 之后广播）
+            cluster_info = {
+                "address": address,
+                "sig": sig,
+                "cluster_name": cluster_result.cluster.name if cluster_result.cluster else None,
+                "cluster_type": cluster_result.cluster_type,
+            }
     finally:
         db.close()
     
@@ -450,7 +447,8 @@ async def _calculate_index(tx_detail: Dict[str, Any], mint: str) -> Dict[str, An
         "holdingQty": holding_qty,
         "holdingCost": holding_cost,
         "avgPrice": avg_price,
-        "status": state["status"]
+        "status": state["status"],
+        "cluster_info": cluster_info  # 包含则广播
     }
 
 
@@ -520,6 +518,14 @@ async def _consumer_loop(mint: str):
                         "wallet_tag": metrics.get("status", "unknown"),
                     }
                 })
+            
+            # cluster_matched 在 trade 之后广播（保证时序）
+            cluster_info = metrics.get("cluster_info")
+            if cluster_info:
+                await ws_manager.broadcast(mint, {
+                    "type": "cluster_matched",
+                    "data": cluster_info
+                })
 
             logger.debug(f"[消费者] {sig[:8]}... 完成")
 
@@ -558,6 +564,14 @@ async def run_full_calculation(db: Session, mint: str):
                         **tx_detail,
                         "wallet_tag": metrics.get("status", "unknown"),
                     }
+                })
+            
+            # cluster_matched 在 trade 之后广播（保证时序）
+            cluster_info = metrics.get("cluster_info")
+            if cluster_info:
+                await ws_manager.broadcast(mint, {
+                    "type": "cluster_matched",
+                    "data": cluster_info
                 })
 
         except Exception as e:
