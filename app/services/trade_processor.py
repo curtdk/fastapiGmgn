@@ -38,10 +38,49 @@ async def _get_metrics_key(mint: str) -> str:
     return f"metrics:{mint}"
 
 
-async def get_trader_state(redis, mint: str, address: str, sig: str = None) -> dict:
+async def get_trader_state(redis, mint: str, address: str) -> dict:
     """
     获取用户状态（从 user:{address} 读取）
-    如果 status=unknown 且有 sig，自动入队进行庄家检测
+    仅读取 Redis 数据，不触发任何庄家检测
+    
+    Redis 数据结构：
+      user:{address}
+        status: "unknown" | "dealer" | "retail"
+        conditions: '["C001"]'
+        {mint}_holdingQty: "1000"
+        {mint}_holdingCost: "5.5"
+        {mint}_avgPrice: "0.0055"
+        {mint}_totalBuyAmount: "10"
+        {mint}_totalSellAmount: "3"
+        {mint}_totalSellPrincipal: "2.5"
+    """
+    if not redis:
+        return _default_trader_state()
+    
+    key = user_key(address)
+    state = await redis.hgetall(key)
+    
+    if not state:
+        return _default_trader_state()
+    
+    # 读取 status 和 conditions
+    status = state.get("status", "unknown")
+    try:
+        conditions = json.loads(state.get("conditions", "[]"))
+    except:
+        conditions = []
+    
+    return {
+        "status": status,
+        "conditions": conditions,
+        **{k: v for k, v in state.items() if k not in ("status", "conditions")}
+    }
+
+
+async def get_trader_state_with_sig(redis, mint: str, address: str, sig: str) -> dict:
+    """
+    获取用户状态（从 user:{address} 读取）
+    有 sig 时触发庄家检测（新用户本地判断或入队等待 C001）
     
     Redis 数据结构：
       user:{address}
@@ -63,22 +102,21 @@ async def get_trader_state(redis, mint: str, address: str, sig: str = None) -> d
     if not state:
         state = _default_trader_state()
         # 新用户：尝试本地快速判断庄家（C002-C005）
-        if sig:
-            tx_detail = await tx_redis.get_tx(sig)
-            if tx_detail:
-                from app.services.dealer_detector import _check_local_dealer_conditions
-                is_dealer, conditions = _check_local_dealer_conditions(tx_detail, state)
-                state["conditions"] = conditions
-                if is_dealer:
-                    state["status"] = "dealer"
-                    await save_trader_state(redis, mint, address, state)
-                    logger.info(f"[庄家判定] {address[:8]}... 新用户本地判断为庄家 (C002-C005)")
-                    return state
-                # 非庄家也要保存状态，记录所有用户
+        tx_detail = await tx_redis.get_tx(sig)
+        if tx_detail:
+            from app.services.dealer_detector import _check_local_dealer_conditions
+            is_dealer, conditions = _check_local_dealer_conditions(tx_detail, state)
+            state["conditions"] = conditions
+            if is_dealer:
+                state["status"] = "dealer"
                 await save_trader_state(redis, mint, address, state)
-                logger.info(f"[庄家判定] {address[:8]}... 新用户本地判断为非庄家 (C002-C005)，入队等待 C001")
-            # 本地判断不是庄家或无交易详情：入队等待 C001 检测
-            await _enqueue_dealer_check(address, mint, sig)
+                logger.info(f"[庄家判定] {address[:8]}... 新用户本地判断为庄家 (C002-C005)")
+                return state
+            # 非庄家也要保存状态，记录所有用户
+            await save_trader_state(redis, mint, address, state)
+            logger.info(f"[庄家判定] {address[:8]}... 新用户本地判断为非庄家 (C002-C005)，入队等待 C001")
+        # 本地判断不是庄家或无交易详情：入队等待 C001 检测
+        await _enqueue_dealer_check(address, mint, sig)
     else:
         # 读取 status 和 conditions
         status = state.get("status", "unknown")
@@ -90,7 +128,7 @@ async def get_trader_state(redis, mint: str, address: str, sig: str = None) -> d
         state["conditions"] = conditions
         
         # 如果是 unknown 且有 sig，自动入队检测
-        if status == "unknown" and sig:
+        if status == "unknown":
             await _enqueue_dealer_check(address, mint, sig)
     
     return state
@@ -343,8 +381,8 @@ async def _calculate_index(tx_detail: Dict[str, Any], mint: str) -> Dict[str, An
         db.close()
     
     # ── C001-C005 庄家检测 ──
-    # 获取用户状态（传入 sig 用于 unknown 时自动入队检测）
-    state = await get_trader_state(redis, mint, address, sig)
+    # 获取用户状态（有 sig 时触发庄家检测）
+    state = await get_trader_state_with_sig(redis, mint, address, sig)
     
     # 庄家直接跳过计算
     if state.get("status") == "dealer":

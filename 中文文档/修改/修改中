@@ -322,3 +322,7 @@ unknown: 1次transferChecked: 1次pump_type_228: 1次
 我们之前在另一个对话中 ，要增加一个簇组的功能。 现在完成，但是少了 很多功能。
 
 _calculate_index
+
+
+下面方法，通过是否有sig分成两个 方法。给负责 各自的   
+async def get_trader_state(redis, mint: str, address: str, sig: str = None) -> dict:

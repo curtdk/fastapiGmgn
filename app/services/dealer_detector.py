@@ -108,9 +108,9 @@ async def _dealer_queue_consumer():
         address, mint, sig = item
 
         # 再次检查状态，避免短时间内重复检测
-        from app.services.trade_processor import get_trader_state, _get_redis as tp_get_redis
+        from app.services.trade_processor import get_trader_state_with_sig, _get_redis as tp_get_redis
         redis = await tp_get_redis()
-        state = await get_trader_state(redis, mint, address, sig)
+        state = await get_trader_state_with_sig(redis, mint, address, sig)
         if state.get("status") in ("retail", "dealer"):
             continue
 
