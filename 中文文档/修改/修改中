@@ -326,3 +326,76 @@ _calculate_index
 
 下面方法，通过是否有sig分成两个 方法。给负责 各自的   
 async def get_trader_state(redis, mint: str, address: str, sig: str = None) -> dict:
+
+
+
+## 最终方案
+
+### 1. `get_trader_state_with_sig` 修改
+
+__处理顺序：__
+
+```javascript
+C002-C005 本地检测
+    ↓
+C006 簇组检测
+    ↓
+返回 state + broadcasts + cluster_name
+```
+
+__返回值结构：__
+
+```python
+{
+    "state": {...},           # 用户状态
+    "broadcasts": [...],       # 待广播消息列表（内部形成）
+    "cluster_name": "xxx",     # 簇组名字（新增）
+}
+```
+
+__内部广播：__
+
+- `cluster_created` - 新簇组创建时
+- `cluster_matched` - 匹配到簇组时
+
+---
+
+### 2. `_calculate_index` 修改
+
+__结构：__
+
+```python
+async def _calculate_index(tx_detail, mint):
+    # 1. C002-C005 + C006 检测
+    result = await get_trader_state_with_sig(redis, mint, address, sig)
+    state = result["state"]
+    broadcasts = result.get("broadcasts", [])
+    
+    # 2. 指数计算逻辑（略）
+    ...
+    
+    # 3. 庄家检测结果广播（如果有）
+    if state["status"] == "dealer":
+        broadcasts.append({...})  # dealer_detected
+    
+    # 4. 交易结果广播
+    broadcasts.append({...})  # trade
+    
+    # 5. 统一执行广播
+    for msg in broadcasts:
+        await ws_manager.broadcast(mint, msg)
+    
+    return {...}
+```
+
+---
+
+### 3. 调用方修改（_consumer_loop, run_full_calculation）
+
+移除原有的分散广播调用，直接使用 `_calculate_index` 返回值。
+
+---
+
+确认后请 __toggle to__
+
+__Act Mode (⌘⇧A)__ 执行修改。
