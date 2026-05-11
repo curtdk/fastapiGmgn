@@ -110,18 +110,18 @@ async def get_trader_state_with_sig(redis, mint: str, address: str, sig: str) ->
         if tx_detail:
             db = SessionLocal()
             try:
-                is_dealer, conditions, cluster_info = _check_local_dealer_conditions(tx_detail, state, db, mint)
+                detected_status, conditions, cluster_info = _check_local_dealer_conditions(tx_detail, state, db, mint)
                 state["conditions"] = conditions
+                state["status"] = detected_status
                 
-                if is_dealer:
-                    state["status"] = "dealer"
+                if detected_status == "dealer":
                     await save_trader_state(redis, mint, address, state)
                     logger.info(f"[庄家判定] {address[:8]}... 新用户本地判断为庄家 (C002-C006)")
                     return {"state": state, "broadcasts": [], "cluster_info": cluster_info}
                 
-                # 非庄家也要保存状态，记录所有用户
+                # retail 也要保存状态
                 await save_trader_state(redis, mint, address, state)
-                logger.info(f"[庄家判定] {address[:8]}... 新用户本地判断为非庄家 (C002-C006)，入队等待 C001")
+                logger.info(f"[庄家判定] {address[:8]}... 新用户本地判断为 {detected_status} (C006)，入队等待 C001")
             finally:
                 db.close()
         # 本地判断不是庄家或无交易详情：入队等待 C001 检测

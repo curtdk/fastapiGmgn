@@ -195,14 +195,15 @@ def _check_local_dealer_conditions(tx_detail: dict, state: dict, db=None, mint: 
         mint: 代币地址（C006 需要）
     
     Returns:
-        (is_dealer: bool, conditions: list, cluster_info: dict or None)
+        (status: str, conditions: list, cluster_info: dict or None)
+        status: "dealer" | "retail" | "unknown"
     """
     from app.services.settings_service import get_setting, get_float_setting, get_int_setting
     from app.services.cluster import run_cluster_detection
     
     conditions = list(state.get("conditions", []))
-    is_dealer = False
     cluster_info = None
+    status = "unknown"  # 初始为 unknown
     should_close_db = False
     
     if db is None:
@@ -216,7 +217,7 @@ def _check_local_dealer_conditions(tx_detail: dict, state: dict, db=None, mint: 
             alt_enabled = get_setting(db, "dealer_alt_enabled")
             if alt_enabled == "true" and tx_detail.get("uses_lookup_table"):
                 conditions.append("C002")
-                is_dealer = True
+                status = "dealer"
         
         # ── 条件 C003：Gas 费小于阈值 ──
         if "C003" not in conditions and tx_detail:
@@ -226,7 +227,7 @@ def _check_local_dealer_conditions(tx_detail: dict, state: dict, db=None, mint: 
                 fee = tx_detail.get("fee", 0)
                 if fee < gas_max:
                     conditions.append("C003")
-                    is_dealer = True
+                    status = "dealer"
         
         # ── 条件 C004：CU 在范围内 ──
         if "C004" not in conditions and tx_detail:
@@ -237,7 +238,7 @@ def _check_local_dealer_conditions(tx_detail: dict, state: dict, db=None, mint: 
                 cu_consumed = tx_detail.get("cu_consumed", 0)
                 if cu_min <= cu_consumed <= cu_max:
                     conditions.append("C004")
-                    is_dealer = True
+                    status = "dealer"
         
         # ── 条件 C005：风险分大于阈值 ──
         if "C005" not in conditions and tx_detail:
@@ -247,7 +248,7 @@ def _check_local_dealer_conditions(tx_detail: dict, state: dict, db=None, mint: 
                 risk_score = tx_detail.get("risk_score", 0)
                 if risk_score > risk_min:
                     conditions.append("C005")
-                    is_dealer = True
+                    status = "dealer"
         
         # ── 条件 C006：簇组检测 ──
         if tx_detail and mint:
@@ -258,7 +259,8 @@ def _check_local_dealer_conditions(tx_detail: dict, state: dict, db=None, mint: 
                 cluster_result = asyncio.get_event_loop().run_until_complete(cluster_result)
             
             if cluster_result.matched and cluster_result.cluster_type in ("retail", "dealer"):
-                state["status"] = cluster_result.cluster_type
+                # 更新状态（retail 或 dealer）
+                status = cluster_result.cluster_type
                 conditions.append("C006")
                 cluster_info = {
                     "address": tx_detail.get("from_address", ""),
@@ -266,14 +268,11 @@ def _check_local_dealer_conditions(tx_detail: dict, state: dict, db=None, mint: 
                     "cluster_name": cluster_result.cluster.name if cluster_result.cluster else None,
                     "cluster_type": cluster_result.cluster_type,
                 }
-                
-                if cluster_result.cluster_type == "dealer":
-                    return True, conditions, cluster_info
     finally:
         if should_close_db:
             db.close()
     
-    return is_dealer, conditions, cluster_info
+    return status, conditions, cluster_info
 
 
 async def _apply_dealer_result(redis, address: str, mint: str, sig: str, state: dict, 
