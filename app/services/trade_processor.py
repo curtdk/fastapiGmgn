@@ -79,42 +79,51 @@ async def get_trader_state(redis, mint: str, address: str) -> dict:
 
 async def get_trader_state_with_sig(redis, mint: str, address: str, sig: str) -> dict:
     """
-    获取用户状态（从 user:{address} 读取）
-    有 sig 时触发庄家检测（新用户本地判断或入队等待 C001）
+    获取用户状态（C002-C006 统一检测入口）
     
-    Redis 数据结构：
-      user:{address}
-        status: "unknown" | "dealer" | "retail"
-        conditions: '["C001"]'
-        {mint}_holdingQty: "1000"
-        {mint}_holdingCost: "5.5"
-        {mint}_avgPrice: "0.0055"
-        {mint}_totalBuyAmount: "10"
-        {mint}_totalSellAmount: "3"
-        {mint}_totalSellPrincipal: "2.5"
+    返回结构：
+        {
+            "state": {...},           # 用户状态
+            "broadcasts": [...],       # 待广播消息列表
+            "cluster_info": {...}      # 簇组信息
+        }
+    
+    处理流程：
+        1. C002-C005 + C006 统一检测（通过 _check_local_dealer_conditions）
+        2. 返回 { state, broadcasts, cluster_info }
     """
+    from app.utils.database import SessionLocal
+    from app.services.dealer_detector import _check_local_dealer_conditions
+    
     if not redis:
-        return _default_trader_state()
+        return {"state": _default_trader_state(), "broadcasts": [], "cluster_info": None}
     
     key = user_key(address)
     state = await redis.hgetall(key)
+    broadcasts = []
+    cluster_info = None
     
     if not state:
         state = _default_trader_state()
-        # 新用户：尝试本地快速判断庄家（C002-C005）
+        # 新用户：尝试本地快速判断庄家（C002-C006）
         tx_detail = await tx_redis.get_tx(sig)
         if tx_detail:
-            from app.services.dealer_detector import _check_local_dealer_conditions
-            is_dealer, conditions = _check_local_dealer_conditions(tx_detail, state)
-            state["conditions"] = conditions
-            if is_dealer:
-                state["status"] = "dealer"
+            db = SessionLocal()
+            try:
+                is_dealer, conditions, cluster_info = _check_local_dealer_conditions(tx_detail, state, db, mint)
+                state["conditions"] = conditions
+                
+                if is_dealer:
+                    state["status"] = "dealer"
+                    await save_trader_state(redis, mint, address, state)
+                    logger.info(f"[庄家判定] {address[:8]}... 新用户本地判断为庄家 (C002-C006)")
+                    return {"state": state, "broadcasts": [], "cluster_info": cluster_info}
+                
+                # 非庄家也要保存状态，记录所有用户
                 await save_trader_state(redis, mint, address, state)
-                logger.info(f"[庄家判定] {address[:8]}... 新用户本地判断为庄家 (C002-C005)")
-                return state
-            # 非庄家也要保存状态，记录所有用户
-            await save_trader_state(redis, mint, address, state)
-            logger.info(f"[庄家判定] {address[:8]}... 新用户本地判断为非庄家 (C002-C005)，入队等待 C001")
+                logger.info(f"[庄家判定] {address[:8]}... 新用户本地判断为非庄家 (C002-C006)，入队等待 C001")
+            finally:
+                db.close()
         # 本地判断不是庄家或无交易详情：入队等待 C001 检测
         await _enqueue_dealer_check(address, mint, sig)
     else:
@@ -131,7 +140,7 @@ async def get_trader_state_with_sig(redis, mint: str, address: str, sig: str) ->
         if status == "unknown":
             await _enqueue_dealer_check(address, mint, sig)
     
-    return state
+    return {"state": state, "broadcasts": broadcasts, "cluster_info": cluster_info}
 
 
 async def _enqueue_dealer_check(address: str, mint: str, sig: str):
@@ -333,64 +342,20 @@ async def _calculate_index(tx_detail: Dict[str, Any], mint: str) -> Dict[str, An
     if not address:
         return {}
     
-    # ── C006 簇组检测（优先执行） ──
-    from app.utils.database import SessionLocal
-    from app.services.cluster import run_cluster_detection
-    
-    db = SessionLocal()
-    try:
-        cluster_result = await run_cluster_detection(db, tx_detail, mint)
-        
-        # 如果匹配到已定义簇组（retail/dealer），直接确定身份
-        cluster_info = None
-        if cluster_result.matched and cluster_result.cluster_type in ("retail", "dealer"):
-            logger.info(f"[C006] {address[:8]}... 匹配到 {cluster_result.cluster_type} 簇组，跳过 C001-C005")
-            
-            # 保存用户状态
-            state = _default_trader_state()
-            state["status"] = cluster_result.cluster_type  # retail 或 dealer
-            state["conditions"] = ["C006"]
-            await save_trader_state(redis, mint, address, state) 
-            
-            # 构建 cluster_info（由调用方在 trade 之后广播）
-            cluster_info = {
-                "address": address,
-                "sig": sig,
-                "cluster_name": cluster_result.cluster.name if cluster_result.cluster else None,
-                "cluster_type": cluster_result.cluster_type,
-            }
-            
-            if cluster_result.cluster_type == "dealer":
-                await exclude_dealer(mint, address)
-                return {"status": "dealer", "cluster_info": cluster_info}
-            
-            # retail 继续执行后面的 C001-C005 和指数计算（cluster_info 保留）
-        
-        # 如果匹配到 unknown 簇组，继续 C001-C005，但记录簇组信息
-        elif cluster_result.matched and cluster_result.cluster_type == "unknown":
-            logger.info(f"[C006] {address[:8]}... 匹配到 unknown 簇组，继续 C001-C005")
-            
-            # 构建 cluster_info（由调用方在 trade 之后广播）
-            cluster_info = {
-                "address": address,
-                "sig": sig,
-                "cluster_name": cluster_result.cluster.name if cluster_result.cluster else None,
-                "cluster_type": cluster_result.cluster_type,
-            }
-    finally:
-        db.close()
-    
-    # ── C001-C005 庄家检测 ──
-    # 获取用户状态（有 sig 时触发庄家检测）
-    state = await get_trader_state_with_sig(redis, mint, address, sig)
+    # ── C002-C005 + C006 庄家检测（统一入口） ──
+    # 获取用户状态（内部包含 C002-C005 本地检测 + C006 簇组检测）
+    result = await get_trader_state_with_sig(redis, mint, address, sig)
+    state = result["state"]
+    broadcasts = result.get("broadcasts", [])
+    cluster_info = result.get("cluster_info")
     
     # 庄家直接跳过计算
     if state.get("status") == "dealer":
         # 获取条件详情（阈值信息）
         conditions_detail = await _get_dealer_conditions_detail(redis, address, tx_detail)
         
-        # 广播庄家信息到浏览器控制台
-        await ws_manager.broadcast(mint, {
+        # 广播庄家信息
+        broadcasts.append({
             "type": "dealer_detected",
             "data": {
                 "address": address,
@@ -401,7 +366,12 @@ async def _calculate_index(tx_detail: Dict[str, Any], mint: str) -> Dict[str, An
                 "conditions": conditions_detail,
             }
         })
-        return {"status": "dealer"}
+        
+        # 统一执行广播
+        for msg in broadcasts:
+            await ws_manager.broadcast(mint, msg)
+        
+        return {"status": "dealer", "cluster_info": cluster_info}
     
     # 从 Redis 读取当前持仓数据（统一用 {mint}_xxx key）
     holding_qty = float(state.get(f"{mint}_holdingQty", "0"))
@@ -481,12 +451,33 @@ async def _calculate_index(tx_detail: Dict[str, Any], mint: str) -> Dict[str, An
         "processed_at": datetime.utcnow().isoformat(),
     })
     
+    # ── 统一广播（非庄家交易） ──
+    # trade 广播
+    broadcasts.append({
+        "type": "trade",
+        "data": {
+            **tx_detail,
+            "wallet_tag": state["status"],
+        }
+    })
+    
+    # cluster_matched 广播（在 trade 之后）
+    if cluster_info:
+        broadcasts.append({
+            "type": "cluster_matched",
+            "data": cluster_info
+        })
+    
+    # 执行所有广播
+    for msg in broadcasts:
+        await ws_manager.broadcast(mint, msg)
+    
     return {
         "holdingQty": holding_qty,
         "holdingCost": holding_cost,
         "avgPrice": avg_price,
         "status": state["status"],
-        "cluster_info": cluster_info  # 包含则广播
+        "cluster_info": cluster_info
     }
 
 
@@ -544,26 +535,8 @@ async def _consumer_loop(mint: str):
             continue
 
         try:
-            # 庄家判定 + 指数计算 + 更新 wallet_tag
-            metrics = await _calculate_index(tx_detail, mint)
-
-            # 非庄家交易 → WebSocket 广播
-            if metrics.get("status") != "dealer":
-                await ws_manager.broadcast(mint, {
-                    "type": "trade",
-                    "data": {
-                        **tx_detail,
-                        "wallet_tag": metrics.get("status", "unknown"),
-                    }
-                })
-            
-            # cluster_matched 在 trade 之后广播（保证时序）
-            cluster_info = metrics.get("cluster_info")
-            if cluster_info:
-                await ws_manager.broadcast(mint, {
-                    "type": "cluster_matched",
-                    "data": cluster_info
-                })
+            # 庄家判定 + 指数计算 + 统一广播（内部完成）
+            await _calculate_index(tx_detail, mint)
 
             logger.debug(f"[消费者] {sig[:8]}... 完成")
 
@@ -591,26 +564,8 @@ async def run_full_calculation(db: Session, mint: str):
             if not tx_detail:
                 continue
 
-            # 指数计算（_calculate_index 内部更新 wallet_tag）
-            metrics = await _calculate_index(tx_detail, mint)
-
-            # 非庄家交易 → WebSocket 广播
-            if metrics.get("status") != "dealer":
-                await ws_manager.broadcast(mint, {
-                    "type": "trade",
-                    "data": {
-                        **tx_detail,
-                        "wallet_tag": metrics.get("status", "unknown"),
-                    }
-                })
-            
-            # cluster_matched 在 trade 之后广播（保证时序）
-            cluster_info = metrics.get("cluster_info")
-            if cluster_info:
-                await ws_manager.broadcast(mint, {
-                    "type": "cluster_matched",
-                    "data": cluster_info
-                })
+            # 指数计算 + 统一广播（内部完成）
+            await _calculate_index(tx_detail, mint)
 
         except Exception as e:
             logger.error(f"[全量计算] 处理 {sig[:8]}... 失败: {e}")

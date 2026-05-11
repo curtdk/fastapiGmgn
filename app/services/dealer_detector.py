@@ -184,20 +184,32 @@ def start_retry_consumer():
 # 本地庄家判定（不调用远程 API）
 # ──────────────────────────────────────────────────────────
 
-def _check_local_dealer_conditions(tx_detail: dict, state: dict) -> tuple:
+def _check_local_dealer_conditions(tx_detail: dict, state: dict, db=None, mint: str = None) -> tuple:
     """
-    检查 C002/C003/C004/C005 条件（本地快速判断，无需远程 API）
+    检查 C002/C003/C004/C005/C006 条件
+    
+    Args:
+        tx_detail: 交易详情
+        state: 用户状态字典
+        db: 数据库 session（C006 需要）
+        mint: 代币地址（C006 需要）
     
     Returns:
-        (is_dealer: bool, conditions: list)
+        (is_dealer: bool, conditions: list, cluster_info: dict or None)
     """
-    from app.utils.database import SessionLocal
     from app.services.settings_service import get_setting, get_float_setting, get_int_setting
+    from app.services.cluster import run_cluster_detection
     
     conditions = list(state.get("conditions", []))
     is_dealer = False
+    cluster_info = None
+    should_close_db = False
     
-    db = SessionLocal()
+    if db is None:
+        from app.utils.database import SessionLocal
+        db = SessionLocal()
+        should_close_db = True
+    
     try:
         # ── 条件 C002：使用 ALT（地址查找表） ──
         if "C002" not in conditions and tx_detail:
@@ -236,10 +248,32 @@ def _check_local_dealer_conditions(tx_detail: dict, state: dict) -> tuple:
                 if risk_score > risk_min:
                     conditions.append("C005")
                     is_dealer = True
+        
+        # ── 条件 C006：簇组检测 ──
+        if tx_detail and mint:
+            cluster_result = run_cluster_detection(db, tx_detail, mint)
+            # 簇组检测是异步的，需要 await
+            import asyncio
+            if asyncio.iscoroutine(cluster_result):
+                cluster_result = asyncio.get_event_loop().run_until_complete(cluster_result)
+            
+            if cluster_result.matched and cluster_result.cluster_type in ("retail", "dealer"):
+                state["status"] = cluster_result.cluster_type
+                conditions.append("C006")
+                cluster_info = {
+                    "address": tx_detail.get("from_address", ""),
+                    "sig": tx_detail.get("sig", ""),
+                    "cluster_name": cluster_result.cluster.name if cluster_result.cluster else None,
+                    "cluster_type": cluster_result.cluster_type,
+                }
+                
+                if cluster_result.cluster_type == "dealer":
+                    return True, conditions, cluster_info
     finally:
-        db.close()
+        if should_close_db:
+            db.close()
     
-    return is_dealer, conditions
+    return is_dealer, conditions, cluster_info
 
 
 async def _apply_dealer_result(redis, address: str, mint: str, sig: str, state: dict, 
