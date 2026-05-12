@@ -96,12 +96,13 @@ async def get_trader_state_with_sig(redis, mint: str, address: str, sig: str) ->
     from app.services.dealer_detector import _check_local_dealer_conditions
     
     if not redis:
-        return {"state": _default_trader_state(), "broadcasts": [], "cluster_info": None}
+        return {"state": _default_trader_state(), "broadcasts": [], "cluster_info": None, "new_cluster_broadcast": None}
     
     key = user_key(address)
     state = await redis.hgetall(key)
     broadcasts = []
     cluster_info = None
+    new_cluster_broadcast = None
     
     if not state:
         state = _default_trader_state()
@@ -110,14 +111,14 @@ async def get_trader_state_with_sig(redis, mint: str, address: str, sig: str) ->
         if tx_detail:
             db = SessionLocal()
             try:
-                detected_status, conditions, cluster_info = _check_local_dealer_conditions(tx_detail, state, db, mint)
+                detected_status, conditions, cluster_info, new_cluster_broadcast = _check_local_dealer_conditions(tx_detail, state, db, mint)
                 state["conditions"] = conditions
                 state["status"] = detected_status
                 
                 if detected_status == "dealer":
                     await save_trader_state(redis, mint, address, state)
                     logger.info(f"[庄家判定] {address[:8]}... 新用户本地判断为庄家 (C002-C006)")
-                    return {"state": state, "broadcasts": [], "cluster_info": cluster_info}
+                    return {"state": state, "broadcasts": [], "cluster_info": cluster_info, "new_cluster_broadcast": new_cluster_broadcast}
                 
                 # retail 也要保存状态
                 await save_trader_state(redis, mint, address, state)
@@ -140,7 +141,7 @@ async def get_trader_state_with_sig(redis, mint: str, address: str, sig: str) ->
         if status == "unknown":
             await _enqueue_dealer_check(address, mint, sig)
     
-    return {"state": state, "broadcasts": broadcasts, "cluster_info": cluster_info}
+    return {"state": state, "broadcasts": broadcasts, "cluster_info": cluster_info, "new_cluster_broadcast": new_cluster_broadcast}
 
 
 async def _enqueue_dealer_check(address: str, mint: str, sig: str):
@@ -348,6 +349,7 @@ async def _calculate_index(tx_detail: Dict[str, Any], mint: str) -> Dict[str, An
     state = result["state"]
     broadcasts = result.get("broadcasts", [])
     cluster_info = result.get("cluster_info")
+    new_cluster_broadcast = result.get("new_cluster_broadcast")
     
     # 庄家直接跳过计算
     if state.get("status") == "dealer":
@@ -467,6 +469,10 @@ async def _calculate_index(tx_detail: Dict[str, Any], mint: str) -> Dict[str, An
             "type": "cluster_matched",
             "data": cluster_info
         })
+    
+    # 新簇组创建广播（在 cluster_matched 之后）
+    if new_cluster_broadcast:
+        broadcasts.append(new_cluster_broadcast)
     
     # 执行所有广播
     for msg in broadcasts:

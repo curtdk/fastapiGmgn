@@ -39,6 +39,7 @@ class ClusterDetectionResult:
         should_continue_detection: bool = True,  # 是否继续 C001-C005
         created_new_cluster: bool = False,
         reason: str = "",
+        new_cluster_broadcast: Optional[Dict] = None,  # 新簇组创建时的广播数据
     ):
         self.matched = matched
         self.cluster = cluster
@@ -47,6 +48,7 @@ class ClusterDetectionResult:
         self.should_continue_detection = should_continue_detection
         self.created_new_cluster = created_new_cluster
         self.reason = reason
+        self.new_cluster_broadcast = new_cluster_broadcast  # 用于统一广播
     
     @property
     def user_status(self) -> Optional[str]:
@@ -69,13 +71,13 @@ class ClusterDetectionResult:
         }
 
 
-async def run_cluster_detection(
+def run_cluster_detection(
     db: Session,
     tx_detail: Dict[str, Any],
     mint: str,
 ) -> ClusterDetectionResult:
     """
-    执行 C006 簇组检测
+    同步版本：执行 C006 簇组检测
     
     Args:
         db: 数据库 session
@@ -102,8 +104,8 @@ async def run_cluster_detection(
     # 创建管理器
     manager = create_manager(db)
     
-    # 尝试匹配已有簇组
-    match_result = await manager.match_cluster_async(tx_detail)
+    # 尝试匹配已有簇组（同步版本）
+    match_result = manager.match_cluster(tx_detail)
     
     if match_result:
         cluster, reason = match_result
@@ -123,8 +125,9 @@ async def run_cluster_detection(
             )
         else:
             # 未定义簇组 → 确定所属，继续执行 C001-C005
-            # 但先添加 Tx 到簇组
-            await manager.add_tx(cluster.name, sig, user_address)
+            # 但先添加 Tx 到簇组（同步版本）
+            from app.services.cluster.redis_keys import add_tx_to_cluster_sync
+            add_tx_to_cluster_sync(cluster.name, sig, user_address)
             
             return ClusterDetectionResult(
                 matched=True,
@@ -140,15 +143,15 @@ async def run_cluster_detection(
     # 新簇组名称：使用钱包地址
     new_cluster_name = user_address
     
-    new_cluster = await manager.create_cluster(
+    new_cluster = manager.create_cluster_sync(
         name=new_cluster_name,
         features=features,
     )
     
     logger.info(f"[C006] Tx {sig[:8]}... 无匹配，创建新簇组 {new_cluster_name[:8]}...")
     
-    # 广播新簇组创建
-    await ws_manager.broadcast(mint, {
+    # 返回广播数据，由上层统一广播
+    broadcast_data = {
         "type": "cluster_created",
         "data": {
             "cluster_name": new_cluster_name,
@@ -156,7 +159,7 @@ async def run_cluster_detection(
             "user_address": user_address,
             "features": features.to_dict(),
         }
-    })
+    }
     
     # 第一笔 Tx 保持 unknown，继续走 C001-C005
     return ClusterDetectionResult(
@@ -167,6 +170,7 @@ async def run_cluster_detection(
         should_continue_detection=True,  # 继续 C001-C005
         created_new_cluster=True,
         reason="新簇组创建，第一笔 Tx 继续检测",
+        new_cluster_broadcast=broadcast_data,
     )
 
 

@@ -57,6 +57,17 @@ async def close_cluster_redis():
     logger.info("[cluster:redis] Redis 已关闭")
 
 
+def _get_redis_sync() -> aioredis.Redis:
+    """同步获取 Redis 连接（在已有事件循环中）"""
+    global _redis
+    if _redis is None:
+        # 在已有事件循环中初始化
+        import asyncio
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(init_cluster_redis())
+    return _redis
+
+
 async def _get_redis() -> aioredis.Redis:
     """获取 Redis 连接"""
     global _redis
@@ -295,5 +306,105 @@ async def set_cluster_type(cluster_name: str, cluster_type: str, judgment_type: 
     
     await redis.hset(key, "cluster_type", cluster_type)
     await redis.hset(key, "judgment_type", judgment_type)
+    
+    return True
+
+
+# ──────────────────────────────────────────────────────────
+# 同步版本 Redis 操作（用于同步上下文中调用异步 Redis）
+# ──────────────────────────────────────────────────────────
+
+def save_cluster_sync(cluster: ClusterData) -> bool:
+    """同步版本：保存簇组到 Redis（直接使用 _redis，假设已初始化）"""
+    global _redis
+    if _redis is None:
+        logger.warning("[cluster:redis:sync] Redis 未初始化，跳过保存")
+        return False
+    
+    key = cluster_data_key(cluster.name)
+    data = cluster.to_dict()
+    
+    import asyncio
+    asyncio.get_event_loop().run_until_complete(_redis.hset(key, mapping=data))
+    asyncio.get_event_loop().run_until_complete(_redis.zadd(CLUSTER_INDEX_KEY, {cluster.name: cluster.tx_count}))
+    
+    logger.debug(f"[cluster:redis:sync] 保存簇组 {cluster.name[:8]}... tx_count={cluster.tx_count}")
+    return True
+
+
+def get_cluster_sync(name: str) -> Optional[ClusterData]:
+    """同步版本：获取簇组数据（直接使用 _redis）"""
+    global _redis
+    if _redis is None:
+        return None
+    
+    key = cluster_data_key(name)
+    
+    import asyncio
+    data = asyncio.get_event_loop().run_until_complete(_redis.hgetall(key))
+    if not data:
+        return None
+    
+    return ClusterData.from_dict(data)
+
+
+def get_all_clusters_sync() -> List[ClusterData]:
+    """同步版本：获取所有簇组（直接使用 _redis）"""
+    global _redis
+    if _redis is None:
+        return []
+    
+    import asyncio
+    loop = asyncio.get_event_loop()
+    
+    # 从索引获取所有簇组名（按 tx_count 降序）
+    names = loop.run_until_complete(_redis.zrevrange(CLUSTER_INDEX_KEY, 0, -1))
+    
+    clusters = []
+    for name in names:
+        cluster = get_cluster_sync(name)
+        if cluster:
+            clusters.append(cluster)
+    
+    return clusters
+
+
+def get_enabled_clusters_sync() -> List[ClusterData]:
+    """同步版本：获取所有已启用的簇组"""
+    all_clusters = get_all_clusters_sync()
+    return [c for c in all_clusters if c.enabled]
+
+
+def add_tx_to_cluster_sync(cluster_name: str, sig: str, user_address: str) -> bool:
+    """同步版本：为簇组添加 Tx 和用户（直接使用 _redis）"""
+    global _redis
+    if _redis is None:
+        logger.warning("[cluster:redis:sync] Redis 未初始化，跳过添加交易")
+        return False
+    
+    key = cluster_data_key(cluster_name)
+    
+    import asyncio
+    loop = asyncio.get_event_loop()
+    
+    # 获取现有数据
+    txs_json = loop.run_until_complete(_redis.hget(key, "txs"))
+    users_json = loop.run_until_complete(_redis.hget(key, "users"))
+    
+    txs = json.loads(txs_json) if txs_json else []
+    users = json.loads(users_json) if users_json else []
+    
+    # 去重添加
+    if sig not in txs:
+        txs.append(sig)
+    if user_address not in users:
+        users.append(user_address)
+    
+    # 更新
+    loop.run_until_complete(_redis.hset(key, "txs", json.dumps(txs)))
+    loop.run_until_complete(_redis.hset(key, "users", json.dumps(users)))
+    loop.run_until_complete(_redis.hset(key, "tx_count", str(len(txs))))
+    loop.run_until_complete(_redis.hset(key, "user_count", str(len(users))))
+    loop.run_until_complete(_redis.zadd(CLUSTER_INDEX_KEY, {cluster_name: len(txs)}))
     
     return True

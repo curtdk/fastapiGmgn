@@ -195,7 +195,7 @@ def _check_local_dealer_conditions(tx_detail: dict, state: dict, db=None, mint: 
         mint: 代币地址（C006 需要）
     
     Returns:
-        (status: str, conditions: list, cluster_info: dict or None)
+        (status: str, conditions: list, cluster_info: dict or None, new_cluster_broadcast: dict or None)
         status: "dealer" | "retail" | "unknown"
     """
     from app.services.settings_service import get_setting, get_float_setting, get_int_setting
@@ -250,13 +250,14 @@ def _check_local_dealer_conditions(tx_detail: dict, state: dict, db=None, mint: 
                     conditions.append("C005")
                     status = "dealer"
         
-        # ── 条件 C006：簇组检测 ──
+        # ── 条件 C006：簇组检测（同步函数，直接调用）──
+        new_cluster_broadcast = None
         if tx_detail and mint:
             cluster_result = run_cluster_detection(db, tx_detail, mint)
-            # 簇组检测是异步的，需要 await
-            import asyncio
-            if asyncio.iscoroutine(cluster_result):
-                cluster_result = asyncio.get_event_loop().run_until_complete(cluster_result)
+            
+            # 收集新簇组创建的广播数据
+            if cluster_result.new_cluster_broadcast:
+                new_cluster_broadcast = cluster_result.new_cluster_broadcast
             
             if cluster_result.matched and cluster_result.cluster_type in ("retail", "dealer"):
                 # 更新状态（retail 或 dealer）
@@ -272,7 +273,7 @@ def _check_local_dealer_conditions(tx_detail: dict, state: dict, db=None, mint: 
         if should_close_db:
             db.close()
     
-    return status, conditions, cluster_info
+    return status, conditions, cluster_info, new_cluster_broadcast
 
 
 async def _apply_dealer_result(redis, address: str, mint: str, sig: str, state: dict, 
