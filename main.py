@@ -49,18 +49,24 @@ app = FastAPI(title="GMGN API", version="1.0.0")
 
 @app.on_event("startup")
 async def on_startup():
-    """应用启动：初始化庄家判定服务"""
+    """应用启动：初始化服务"""
     from app.services.dealer_detector import init_dealer_detector
+    from app.services.cluster.redis_keys import init_cluster_redis
+    
     await init_dealer_detector()
-    logger.info("庄家判定服务已启动")
+    await init_cluster_redis()  # 初始化簇组 Redis 连接
+    logger.info("服务已启动")
 
 
 @app.on_event("shutdown")
 async def on_shutdown():
-    """应用关闭：释放庄家判定服务资源"""
+    """应用关闭：释放服务资源"""
     from app.services.dealer_detector import close_dealer_detector
+    from app.services.cluster.redis_keys import close_cluster_redis
+    
     await close_dealer_detector()
-    logger.info("庄家判定服务已关闭")
+    await close_cluster_redis()  # 关闭簇组 Redis 连接
+    logger.info("服务已关闭")
 
 
 # Session 中间件 (SQLAdmin 需要)
