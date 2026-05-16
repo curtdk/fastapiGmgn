@@ -160,7 +160,7 @@ function renderTable() {
   let html = '';
   for (const c of filtered) {
     const typeClass = `type-${c.cluster_type}`;
-    const typeText = c.cluster_type === 'undefined' ? '未定义' : c.cluster_type === 'retail' ? '散户' : '庄家';
+    const typeText = c.cluster_type === 'undefined' || c.cluster_type === 'unknown' ? '未定义' : c.cluster_type === 'retail' ? '散户' : '庄家';
     const judgmentText = c.judgment_type === 'system' ? '系统' : '手动';
     const createdAt = new Date(c.created_at * 1000).toLocaleString();
     

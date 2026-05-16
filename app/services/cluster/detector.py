@@ -111,6 +111,10 @@ def run_cluster_detection(
         cluster, reason = match_result
         logger.info(f"[C006] Tx {sig[:8]}... 匹配到簇组 {cluster.name[:8]}... ({reason})")
         
+        # 先添加 Tx 和用户（无论什么类型都要更新）
+        from app.services.cluster.redis_keys import add_tx_to_cluster_sync
+        add_tx_to_cluster_sync(cluster.name, sig, user_address)
+        
         # 簇组类型决定后续流程
         if cluster.cluster_type in ("retail", "dealer"):
             # 已定义簇组 → 确定身份，不再执行 C001-C005
@@ -125,10 +129,6 @@ def run_cluster_detection(
             )
         else:
             # 未定义簇组 → 确定所属，继续执行 C001-C005
-            # 但先添加 Tx 到簇组（同步版本）
-            from app.services.cluster.redis_keys import add_tx_to_cluster_sync
-            add_tx_to_cluster_sync(cluster.name, sig, user_address)
-            
             return ClusterDetectionResult(
                 matched=True,
                 cluster=cluster,

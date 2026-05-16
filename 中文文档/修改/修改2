@@ -1,0 +1,34 @@
+下面执行广播 太早， 数据还没 出现。 另外里面使用 ws  ，ws 也没有连接 初始化的mint 所有 也没有执行。
+
+ # 庄家直接跳过计算
+    if state.get("status") == "dealer":
+        # 获取条件详情（阈值信息）
+        conditions_detail = await _get_dealer_conditions_detail(redis, address, tx_detail)
+        
+        # 广播庄家信息
+        broadcasts.append({
+            "type": "dealer_detected",
+            "data": {
+                "address": address,
+                "sig": sig,
+                "tx_type": tx_type,
+                "amount": amount,
+                "sol_spent": sol_spent,
+                "conditions": conditions_detail,
+            }
+        })
+        
+        # 统一执行广播
+        for msg in broadcasts:
+            await ws_manager.broadcast(mint, msg)
+        
+        return {"status": "dealer", "cluster_info": cluster_info}
+
+
+
+http://127.0.0.1:8000/admin/cluster-list
+       页面类型为 unknown。要显示 未定义 ，当前显示为庄家
+
+
+       发信问题。下面比对成功 ， 原来的 组簇信息 应该 增加 这个新的 user  和 添加 用户数， 之前是有这个功能的 现在 没有了， 查找一下问题
+    match_result = manager.match_cluster(tx_detail)
