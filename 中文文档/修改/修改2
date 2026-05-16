@@ -1,4 +1,4 @@
-下面执行广播 太早， 数据还没 出现。 另外里面使用 ws  ，ws 也没有连接 初始化的mint 所有 也没有执行。
+下面执行广播 太早， 数据还没 出现。 另外里面使用 ws  ，ws 也没有连接 初始化的mint 所有 也没有执行。 
 
  # 庄家直接跳过计算
     if state.get("status") == "dealer":
@@ -32,3 +32,6 @@ http://127.0.0.1:8000/admin/cluster-list
 
        发信问题。下面比对成功 ， 原来的 组簇信息 应该 增加 这个新的 user  和 添加 用户数， 之前是有这个功能的 现在 没有了， 查找一下问题
     match_result = manager.match_cluster(tx_detail)
+
+
+    "type": "cluster_created",

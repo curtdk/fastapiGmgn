@@ -453,9 +453,9 @@ async def _calculate_index(tx_detail: Dict[str, Any], mint: str) -> Dict[str, An
         "processed_at": datetime.utcnow().isoformat(),
     })
     
-    # ── 统一广播（非庄家交易） ──
-    # trade 广播
-    broadcasts.append({
+    # ── 广播（非庄家交易） ──
+    # 1. 先广播 trade（让前端先显示行）
+    await ws_manager.broadcast(mint, {
         "type": "trade",
         "data": {
             **tx_detail,
@@ -463,20 +463,16 @@ async def _calculate_index(tx_detail: Dict[str, Any], mint: str) -> Dict[str, An
         }
     })
     
-    # cluster_matched 广播（在 trade 之后）
+    # 2. 再广播 cluster_matched（更新前端同一行的簇组标签）
     if cluster_info:
-        broadcasts.append({
+        await ws_manager.broadcast(mint, {
             "type": "cluster_matched",
             "data": cluster_info
         })
     
-    # 新簇组创建广播（在 cluster_matched 之后）
+    # 3. 最后广播新簇组创建
     if new_cluster_broadcast:
-        broadcasts.append(new_cluster_broadcast)
-    
-    # 执行所有广播
-    for msg in broadcasts:
-        await ws_manager.broadcast(mint, msg)
+        await ws_manager.broadcast(mint, new_cluster_broadcast)
     
     return {
         "holdingQty": holding_qty,
