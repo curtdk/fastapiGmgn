@@ -35,3 +35,21 @@ http://127.0.0.1:8000/admin/cluster-list
 
 
     "type": "cluster_created",
+
+
+    问题1. 通过用户tx 形成 簇组， tx 身上一定有簇组信息 ， 不管是独立簇组还是 匹配成功到别的簇组。 除非簇组没有启动。 可我看到 只有 确定 庄家或散户的时候 才有写入tx 簇组信息 
+      detected_status, conditions, cluster_info, new_cluster_broadcast = _check_local_dealer_conditions(tx_detail, state, db, mint)
+                state["conditions"] = conditions
+                state["status"] = detected_status
+                
+                if detected_status == "dealer":
+                    await save_trader_state(redis, mint, address, state)
+                    logger.info(f"[庄家判定] {address[:8]}... 新用户本地判断为庄家 (C002-C006)")
+                    return {"state": state, "broadcasts": [], "cluster_info": cluster_info, "new_cluster_broadcast": new_cluster_broadcast}
+                
+                # retail 也要保存状态
+                await save_trader_state(redis, mint, address, state)
+
+
+
+undefined 依然定义了簇组。

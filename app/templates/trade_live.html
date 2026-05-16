@@ -386,12 +386,24 @@ function showTxDetail(data) {
     '<div class="col-md-8"><p class="mb-1"><strong>Fee:</strong> ' + fmtNum(data.fee, 9) + ' SOL</p>' +
     '<p class="mb-1"><strong>Priority Fee:</strong> ' + fmtNum(data.priority_fee || 0, 9) + ' SOL</p>' +
     '<p class="mb-1"><strong>Jito Tip:</strong> ' + fmtNum(data.jito_tip || 0, 9) + ' SOL</p></div></div></div></div>' +
-    '<div class="row"><div class="col-12"><h6 class="border-bottom pb-2 mb-2">📊 其他信息</h6>' +
-    '<div class="row small"><div class="col-md-4">' +
+    '<div class="row mb-3"><div class="col-12"><h6 class="border-bottom pb-2 mb-2">👤 用户信息</h6>' +
+    '<div class="row"><div class="col-md-6">' +
+    '<p class="mb-1"><strong>钱包地址:</strong> <code class="small">' + (data.from_address || '-') + '</code></p>' +
+    '<p class="mb-1"><strong>用户标签:</strong> <span class="badge ' + (data.wallet_tag === 'dealer' ? 'bg-danger' : (data.wallet_tag === 'retail' ? 'bg-success' : 'bg-secondary')) + '">' + (data.wallet_tag || 'unknown') + '</span></p>' +
+    '<p class="mb-1"><strong>检测条件:</strong> ' + (data.conditions && data.conditions.length > 0 ? data.conditions.map(c => '<span class="badge bg-info me-1">' + c + '</span>').join('') : '<span class="text-muted">无</span>') + '</p></div>' +
+    '<div class="col-md-6">' +
     '<p class="mb-1"><strong>簇组:</strong> ' + (data.cluster_name || '-') + '</p>' +
-    '<p class="mb-1"><strong>簇组类型:</strong> ' + (data.cluster_type || '-') + '</p></div>' +
-    '<div class="col-md-4"><p class="mb-1"><strong>来源:</strong> ' + (data.source || '-') + '</p>' +
-    '<p class="mb-1"><strong>标签:</strong> ' + (data.wallet_tag || '-') + '</p></div></div></div></div></div>';
+    '<p class="mb-1"><strong>簇组类型:</strong> <span class="badge ' + (data.cluster_type === 'dealer' ? 'bg-danger' : (data.cluster_type === 'retail' ? 'bg-success' : 'bg-secondary')) + '">' + getClusterTypeLabel(data.cluster_type) + '</span></p>' +
+    '<p class="mb-1"><strong>来源:</strong> ' + (data.source || '-') + '</p></div></div></div>' +
+    '<div class="row"><div class="col-12"><h6 class="border-bottom pb-2 mb-2">💰 持仓信息</h6>' +
+    '<div class="row small"><div class="col-md-3">' +
+    '<p class="mb-1"><strong>持仓数量:</strong> ' + fmtNum(data.holdingQty || 0, 4) + '</p></div>' +
+    '<div class="col-md-3">' +
+    '<p class="mb-1"><strong>持仓成本:</strong> ' + fmtNum(data.holdingCost || 0, 6) + ' SOL</p></div>' +
+    '<div class="col-md-3">' +
+    '<p class="mb-1"><strong>均价:</strong> ' + fmtNum(data.avgPrice || 0, 8) + ' SOL</p></div>' +
+    '<div class="col-md-3">' +
+    '<p class="mb-1"><strong>总买入:</strong> ' + fmtNum(data.totalBuyAmount || 0, 6) + ' SOL</p></div></div></div></div></div>';
 
   const modalEl = document.getElementById('txDetailModal');
   const modal = new bootstrap.Modal(modalEl);
