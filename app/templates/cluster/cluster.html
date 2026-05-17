@@ -130,6 +130,7 @@
         <option value="dealer">庄家</option>
       </select>
     </p>
+    <p>Mint 地址：<input type="text" id="editClusterMint" placeholder="输入 Mint 地址" style="width: 300px; padding: 4px; border: 1px solid #ced4da; border-radius: 4px;"></p>
     <p style="font-size: 12px; color: #dc3545;">注意：手动修改类型后将永久锁定，系统不再自动覆盖</p>
     <div style="margin-top: 16px;">
       <button class="btn btn-success" onclick="saveClusterType()">保存</button>
@@ -275,12 +276,15 @@ function closeTypeModal() {
 async function saveClusterType() {
   const name = document.getElementById('editClusterName').value;
   const type = document.getElementById('editClusterType').value;
+  const mint = document.getElementById('editClusterMint').value.trim();
   
   try {
+    const body = { cluster_type: type, judgment_type: 'manual' };
+    if (mint) body.mint = mint;
     await fetch(`/admin/api/clusters/${encodeURIComponent(name)}/type`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ cluster_type: type, judgment_type: 'manual' }),
+      body: JSON.stringify(body),
     });
     closeTypeModal();
     loadClusters();

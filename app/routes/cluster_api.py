@@ -1,7 +1,8 @@
 """簇组管理 API 路由"""
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
-
+import logging
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/admin", tags=["簇组管理"])
 
 
@@ -90,16 +91,33 @@ async def api_get_cluster_txs(name: str):
 async def api_update_cluster_type(name: str, request: Request):
     """修改簇组类型（手动锁定）"""
     from app.services.cluster.manager import create_manager
+    from app.services.cluster.redis_keys import get_cluster
     from app.utils.database import SessionLocal
     from urllib.parse import unquote
     name = unquote(name)
     db = SessionLocal()
     try:
         body = await request.json()
-        cluster_type = body.get("cluster_type", "unknown")
+        new_cluster_type = body.get("cluster_type", "unknown")
         judgment_type = body.get("judgment_type", "manual")
+        mint = body.get("mint", "")  # 需要传入 mint 才能调用 include_retail
+        
+        # 获取旧簇组信息
+        old_cluster = await get_cluster(name)
+        old_type = old_cluster.cluster_type if old_cluster else None
+        
         manager = create_manager(db)
-        await manager.set_cluster_type(name, cluster_type, judgment_type)
+        await manager.set_cluster_type(name, new_cluster_type, judgment_type)
+        
+        # 如果从 dealer 改成其他类型，需要恢复数据
+        if old_type == "dealer" and new_cluster_type != "dealer" and mint:
+            # 从簇组中获取第一个用户的 address
+            if old_cluster and old_cluster.users:
+                address = old_cluster.users[0]
+                from app.services.trade_processor import include_retail
+                await include_retail(mint, address)
+                logger.info(f"[簇组类型修改] {address[:8]}... 从庄家改回 {new_cluster_type}，已恢复数据")
+        
         return JSONResponse({"message": "已更新"})
     finally:
         db.close()

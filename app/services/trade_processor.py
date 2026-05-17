@@ -351,30 +351,6 @@ async def _calculate_index(tx_detail: Dict[str, Any], mint: str) -> Dict[str, An
     cluster_info = result.get("cluster_info")
     new_cluster_broadcast = result.get("new_cluster_broadcast")
     
-    # 庄家直接跳过计算
-    if state.get("status") == "dealer":
-        # 获取条件详情（阈值信息）
-        conditions_detail = await _get_dealer_conditions_detail(redis, address, tx_detail)
-        
-        # 广播庄家信息
-        broadcasts.append({
-            "type": "dealer_detected",
-            "data": {
-                "address": address,
-                "sig": sig,
-                "tx_type": tx_type,
-                "amount": amount,
-                "sol_spent": sol_spent,
-                "conditions": conditions_detail,
-            }
-        })
-        
-        # 统一执行广播
-        for msg in broadcasts:
-            await ws_manager.broadcast(mint, msg)
-        
-        return {"status": "dealer", "cluster_info": cluster_info}
-    
     # 从 Redis 读取当前持仓数据（统一用 {mint}_xxx key）
     holding_qty = float(state.get(f"{mint}_holdingQty", "0"))
     holding_cost = float(state.get(f"{mint}_holdingCost", "0"))
@@ -444,6 +420,13 @@ async def _calculate_index(tx_detail: Dict[str, Any], mint: str) -> Dict[str, An
     
     await update_metrics_delta(redis, mint, delta_bet, delta_profit)
     
+    # ── 排除庄家数据 ──
+    if state.get("status") == "dealer":
+        await exclude_dealer(mint, address)
+        logger.info(f"[庄家排除] {address[:8]}... delta_bet={delta_bet}, delta_profit={delta_profit}")
+        # 庄家不广播任何信息，直接返回
+        return {"status": "dealer", "cluster_info": cluster_info}
+    
     # 更新 Redis 中的分析结果
     await tx_redis.update_tx_analysis(sig, {
         "net_sol_flow": sol_spent,
@@ -500,6 +483,27 @@ async def exclude_dealer(mint: str, address: str):
     await redis.hincrbyfloat(metrics_key, "dealer_count", 1)
     
     logger.info(f"[庄家排除] {address[:8]}... 已从汇总中排除")
+
+
+async def include_retail(mint: str, address: str):
+    """恢复散户：将庄家数据重新加入汇总（手动改回散户时调用）"""
+    redis = await _get_redis()
+    
+    if not redis:
+        return
+    
+    state = await get_trader_state(redis, mint, address)
+    
+    # 将持仓成本加回汇总
+    await update_metrics_delta(redis, mint, state.get("holdingCost", 0), 0)
+    
+    # 减少庄家计数
+    metrics_key = await _get_metrics_key(mint)
+    dealer_count = await redis.hget(metrics_key, "dealer_count")
+    if dealer_count and int(dealer_count) > 0:
+        await redis.hincrbyfloat(metrics_key, "dealer_count", -1)
+    
+    logger.info(f"[散户恢复] {address[:8]}... 已重新加入汇总")
 
 
 # ──────────────────────────────────────────────────────────

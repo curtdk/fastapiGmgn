@@ -23,7 +23,7 @@ Redis 数据结构（统一使用 user:{address}）：
 """
 import asyncio
 import json
-import logging
+
 from typing import Optional
 
 import httpx
@@ -31,7 +31,7 @@ import redis.asyncio as aioredis
 
 from app.services import tx_redis
 from app.websocket.manager import ws_manager
-
+import logging
 logger = logging.getLogger(__name__)
 
 REDIS_URL = "redis://localhost:6379"
@@ -250,18 +250,24 @@ def _check_local_dealer_conditions(tx_detail: dict, state: dict, db=None, mint: 
                     conditions.append("C005")
                     status = "dealer"
         
-        # ── 条件 C006：簇组检测（同步函数，直接调用）──
+        # ── 条件 C006：簇组检测（检查开关）──
         new_cluster_broadcast = None
-        if tx_detail and mint:
+        cluster_info = None
+        
+        # 检查 C006 开关
+        from app.services.cluster.settings import get_cluster_settings
+        c006_enabled = get_cluster_settings(db).enabled
+        
+        if c006_enabled and tx_detail and mint:
             cluster_result = run_cluster_detection(db, tx_detail, mint)
             
             # 收集新簇组创建的广播数据
             if cluster_result.new_cluster_broadcast:
                 new_cluster_broadcast = cluster_result.new_cluster_broadcast
             
-            if cluster_result.matched and cluster_result.cluster_type in ("retail", "dealer"):
-                # 更新状态（retail 或 dealer）
-                status = cluster_result.cluster_type
+            # 无论什么类型都进行 cluster_info 返回
+            if cluster_result.matched:
+                status = cluster_result.cluster_type  # retail/dealer/unknown
                 conditions.append("C006")
                 cluster_info = {
                     "address": tx_detail.get("from_address", ""),
