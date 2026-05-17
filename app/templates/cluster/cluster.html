@@ -14,7 +14,7 @@
   th { background: #f8f9fa; font-weight: 600; }
   tr:hover { background: #f8f9fa; }
   .cluster-type { padding: 4px 8px; border-radius: 4px; font-size: 12px; }
-  .type-undefined { background: #e9ecef; color: #495057; }
+  .type-unknown { background: #e9ecef; color: #495057; }
   .type-retail { background: #d4edda; color: #155724; }
   .type-dealer { background: #f8d7da; color: #721c24; }
   .judgment-type { font-size: 11px; color: #868e96; }
@@ -69,7 +69,7 @@
     <label>类型筛选：</label>
     <select id="typeFilter" onchange="loadClusters()">
       <option value="">全部</option>
-      <option value="undefined">未定义</option>
+      <option value="unknown">未定义</option>
       <option value="retail">散户</option>
       <option value="dealer">庄家</option>
     </select>
@@ -125,7 +125,7 @@
     <p>
       类型：
       <select id="editClusterType">
-        <option value="undefined">未定义</option>
+        <option value="unknown">未定义</option>
         <option value="retail">散户</option>
         <option value="dealer">庄家</option>
       </select>
@@ -171,7 +171,7 @@ function renderTable() {
   let html = '';
   for (const c of filtered) {
     const typeClass = `type-${c.cluster_type}`;
-    const typeText = c.cluster_type === 'undefined' ? '未定义' : c.cluster_type === 'retail' ? '散户' : '庄家';
+    const typeText = c.cluster_type === 'unknown' ? '未定义' : c.cluster_type === 'retail' ? '散户' : '庄家';
     const judgmentText = c.judgment_type === 'system' ? '系统' : '手动';
     const createdAt = new Date(c.created_at * 1000).toLocaleString();
     const isEnabled = c.enabled === true || c.enabled === 'true';

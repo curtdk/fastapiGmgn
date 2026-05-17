@@ -100,7 +100,7 @@ class ClusterData:
         name: str,
         folder: str = "",
         enabled: bool = True,
-        cluster_type: str = "undefined",  # undefined/retail/dealer
+        cluster_type: str = "unknown",  # unknown/retail/dealer
         judgment_type: str = "system",    # system/manual
         base_cu: int = 0,
         base_cu_offset: int = 0,

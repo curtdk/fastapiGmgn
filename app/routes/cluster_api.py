@@ -96,7 +96,7 @@ async def api_update_cluster_type(name: str, request: Request):
     db = SessionLocal()
     try:
         body = await request.json()
-        cluster_type = body.get("cluster_type", "undefined")
+        cluster_type = body.get("cluster_type", "unknown")
         judgment_type = body.get("judgment_type", "manual")
         manager = create_manager(db)
         await manager.set_cluster_type(name, cluster_type, judgment_type)

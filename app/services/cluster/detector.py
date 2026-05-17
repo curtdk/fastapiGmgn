@@ -34,7 +34,7 @@ class ClusterDetectionResult:
         self,
         matched: bool = False,
         cluster: Optional[ClusterData] = None,
-        cluster_type: Optional[str] = None,  # undefined/retail/dealer
+        cluster_type: Optional[str] = None,  # unknown/retail/dealer
         judgment_type: str = "system",        # system/manual
         should_continue_detection: bool = True,  # 是否继续 C001-C005
         created_new_cluster: bool = False,
@@ -182,7 +182,7 @@ async def get_cluster_stats(db: Session) -> Dict[str, Any]:
     stats = {
         "total_clusters": len(clusters),
         "by_type": {
-            "undefined": 0,
+            "unknown": 0,
             "retail": 0,
             "dealer": 0,
         },

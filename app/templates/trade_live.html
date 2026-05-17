@@ -117,7 +117,7 @@
           <p>
             类型：
             <select id="clusterTypeSelect" class="form-select">
-              <option value="undefined">未定义</option>
+              <option value="unknown">未定义</option>
               <option value="retail">散户</option>
               <option value="dealer">庄家</option>
             </select>
@@ -241,7 +241,7 @@ function addTradeRow(data, isNew) {
   const solDisplay = isUsdt ? fmtSolValue(netFlow, 2) : fmtNum(netFlow, 4);
 
   const clusterName = data.cluster_name || '';
-  const clusterType = data.cluster_type || 'undefined';
+    const clusterType = data.cluster_type || 'unknown';
   const clusterTag = clusterName ? '<span class="cluster-tag ' + clusterType + '" onclick="openClusterTypeModal(\'' + clusterName + '\', \'' + clusterType + '\')" title="' + clusterName + '">' + shortCluster(clusterName) + ' ' + getClusterTypeLabel(clusterType) + '</span>' : '-';
 
   tr.innerHTML = '<td><span class="badge ' + (data.transaction_type === 'SWAP' ? 'bg-primary' : 'bg-secondary') + '">' + (data.transaction_type || '-') + '</span></td>' +
@@ -439,7 +439,7 @@ function handleClusterMatched(data) {
   const address = data.address;
   const sig = data.sig;
   const clusterName = data.cluster_name || '';
-  const clusterType = data.cluster_type || 'undefined';
+  const clusterType = data.cluster_type || 'unknown';
   
   console.log('[簇组匹配] address=' + (address ? address.slice(0, 8) : 'N/A') + '... sig=' + (sig ? sig.slice(0, 8) : 'N/A') + '... cluster=' + clusterName);
   
@@ -463,7 +463,7 @@ function handleClusterMatched(data) {
 function openClusterTypeModal(name, currentType) {
   currentClusterName = name;
   document.getElementById('clusterTypeName').textContent = name;
-  document.getElementById('clusterTypeSelect').value = currentType || 'undefined';
+  document.getElementById('clusterTypeSelect').value = currentType || 'unknown';
   const modalEl = document.getElementById('clusterTypeModal');
   const modal = new bootstrap.Modal(modalEl);
   modal.show();
