@@ -564,10 +564,20 @@ async def start_consumer(mint: str):
 
 async def _consumer_loop(mint: str):
     """单一消费者，持续从队列取 tx 串行处理"""
+    global _trade_queue
     logger.info(f"[消费者] 开始消化队列 mint={mint}")
 
     while True:
         try:
+            # # 确保队列已初始化
+            # if _trade_queue is None:
+            #     _trade_queue = asyncio.Queue()
+            
+            queue = _trade_queue
+            if queue is None:
+                logger.error(f"[消费者] 队列未初始化，退出")
+                return
+            
             tx_detail = await _trade_queue.get()
             if tx_detail is None:  # 毒丸信号，结束
                 logger.info(f"[消费者] 收到停止信号 mint={mint}")

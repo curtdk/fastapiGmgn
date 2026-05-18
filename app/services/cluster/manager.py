@@ -13,6 +13,7 @@ from typing import Optional, List, Dict, Any
 
 from sqlalchemy.orm import Session
 
+import asyncio
 from app.services.cluster.redis_keys import (
     ClusterData,
     save_cluster_sync,
@@ -20,6 +21,10 @@ from app.services.cluster.redis_keys import (
     get_all_clusters_sync,
     get_enabled_clusters_sync,
     add_tx_to_cluster_sync,
+    get_all_clusters,
+    delete_cluster,
+    set_cluster_type as redis_set_cluster_type,
+    get_cluster,
 )
 from app.services.cluster.matcher import TxFeatures, extract_features_from_tx_detail
 from app.services.cluster.rules import create_rules
@@ -108,6 +113,48 @@ class ClusterManager:
             logger.debug(f"[cluster:manager] Tx {features.sig[:8]}... 匹配簇组 {result[0].name[:8]}... ({result[1]})")
         
         return result
+    
+    async def get_all_clusters(self) -> List[ClusterData]:
+        """获取所有簇组"""
+        return await get_all_clusters()
+    
+    async def delete_cluster(self, name: str) -> bool:
+        """删除簇组"""
+        return await delete_cluster(name)
+    
+    async def set_cluster_enabled(self, name: str, enabled: bool) -> bool:
+        """启用/禁用簇组"""
+        redis = await _get_redis()
+        key = cluster_data_key(name)
+        await redis.hset(key, "enabled", "true" if enabled else "false")
+        logger.info(f"[cluster:manager] 簇组 {name[:8]}... {'启用' if enabled else '禁用'}")
+        return True
+    
+    async def set_cluster_folder(self, name: str, folder: str) -> bool:
+        """修改簇组文件夹"""
+        cluster = await get_cluster(name)
+        if not cluster:
+            return False
+        redis = await _get_redis()
+        key = cluster_data_key(name)
+        await redis.hset(key, "folder", folder)
+        logger.info(f"[cluster:manager] 簇组 {name[:8]}... 文件夹修改为: {folder}")
+        return True
+    
+    async def set_cluster_type(self, name: str, cluster_type: str, judgment_type: str = "manual") -> bool:
+        """修改簇组类型（手动锁定）"""
+        return await redis_set_cluster_type(name, cluster_type, judgment_type)
+
+
+def _get_redis():
+    """获取异步 Redis 连接"""
+    from app.services.cluster.redis_keys import _get_redis
+    return _get_redis()
+
+
+def cluster_data_key(name: str) -> str:
+    """获取簇组数据 Hash 的 key"""
+    return f"cluster:data:{name}"
 
 
 def create_manager(db: Session) -> ClusterManager:
