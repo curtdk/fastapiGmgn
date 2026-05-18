@@ -6,14 +6,8 @@
 - 自动判定 + 手动锁定
 - 与现有 C001-C005 庄家判断并行执行
 """
-from app.services.cluster.detector import (
-    run_cluster_detection,
-)
-from app.services.cluster.manager import ClusterManager
-from app.services.cluster.matcher import ClusterMatcher
+from app.services.cluster.detector import run_cluster_detection
 
 __all__ = [
     "run_cluster_detection",
-    "ClusterManager",
-    "ClusterMatcher",
 ]

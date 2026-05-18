@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 
 from app.services.cluster.settings import get_cluster_settings, ClusterSettings
 from app.services.cluster.matcher import extract_features_from_tx_detail
-from app.services.cluster.manager import create_manager, ClusterManager
+from app.services.cluster.manager import create_manager
 from app.services.cluster.redis_keys import ClusterData
 from app.websocket.manager import ws_manager
 
@@ -143,7 +143,7 @@ def run_cluster_detection(
     # 新簇组名称：使用钱包地址
     new_cluster_name = user_address
     
-    new_cluster = manager.create_cluster_sync(
+    new_cluster = manager.create_cluster(
         name=new_cluster_name,
         features=features,
     )
@@ -173,29 +173,3 @@ def run_cluster_detection(
         new_cluster_broadcast=broadcast_data,
     )
 
-
-async def get_cluster_stats(db: Session) -> Dict[str, Any]:
-    """获取簇组统计信息"""
-    manager = create_manager(db)
-    clusters = await manager.get_all_clusters()
-    
-    stats = {
-        "total_clusters": len(clusters),
-        "by_type": {
-            "unknown": 0,
-            "retail": 0,
-            "dealer": 0,
-        },
-        "by_judgment": {
-            "system": 0,
-            "manual": 0,
-        },
-        "total_txs": sum(c.tx_count for c in clusters),
-        "total_users": sum(c.user_count for c in clusters),
-    }
-    
-    for cluster in clusters:
-        stats["by_type"][cluster.cluster_type] = stats["by_type"].get(cluster.cluster_type, 0) + 1
-        stats["by_judgment"][cluster.judgment_type] = stats["by_judgment"].get(cluster.judgment_type, 0) + 1
-    
-    return stats
