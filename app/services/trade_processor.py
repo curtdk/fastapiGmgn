@@ -451,8 +451,8 @@ async def _calculate_index(tx_detail: Dict[str, Any], mint: str) -> Dict[str, An
         if state.get("status") == "dealer":
             await exclude_dealer(mint, address)
             logger.info(f"[庄家排除] {address[:8]}... delta_bet={delta_bet}, delta_profit={delta_profit}")
-            # 庄家不广播任何信息，直接返回
-            return {"status": "dealer", "cluster_info": cluster_info}
+            # 注释：庄家也广播到前端，由前端开关控制是否显示
+            # return {"status": "dealer", "cluster_info": cluster_info}
         
         # 更新 Redis 中的分析结果
         await tx_redis.update_tx_analysis(sig, {

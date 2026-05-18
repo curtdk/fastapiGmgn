@@ -48,6 +48,10 @@
       <span id="statusBadge" class="status-badge status-IDLE">状态: 未启动</span>
       <span id="statusMsg" style="font-size:13px; color:#666;"></span>
       <button id="currencyToggle" class="btn btn-outline-secondary btn-sm" onclick="toggleCurrency()">SOL → USDT</button>
+      <div class="form-check form-switch">
+        <input class="form-check-input" type="checkbox" id="showDealerToggle" onchange="toggleShowDealer()">
+        <label class="form-check-label" for="showDealerToggle">显示庄家</label>
+      </div>
     </div>
 
     <div class="metrics-row">
@@ -141,6 +145,20 @@ const MAX_ROWS = 200;
 let currencyMode = 'SOL';
 let solPrice = 0;
 let currentClusterName = '';
+let showDealer = false;  // 是否显示庄家交易
+
+function toggleShowDealer() {
+  showDealer = document.getElementById('showDealerToggle').checked;
+  // 重新显示/隐藏已有的庄家行
+  const tbody = document.getElementById('tradeBody');
+  const rows = tbody.querySelectorAll('tr');
+  rows.forEach(row => {
+    const tagCell = row.querySelector('.wallet-tag');
+    if (tagCell && tagCell.textContent === 'dealer') {
+      row.style.display = showDealer ? '' : 'none';
+    }
+  });
+}
 
 async function fetchSolPrice() {
   try {
@@ -209,6 +227,9 @@ function fmtNum(n, decimals = 4) {
 }
 
 function addTradeRow(data, isNew) {
+  // 庄家且开关关闭时，不添加行
+  if (data.wallet_tag === 'dealer' && !showDealer) return;
+  
   const tbody = document.getElementById('tradeBody');
   const tr = document.createElement('tr');
   if (isNew) tr.classList.add('new-row');
@@ -425,7 +446,8 @@ function handleUserStatus(data) {
     const tagCell = row.querySelector('.wallet-tag');
     
     if (status === 'dealer') {
-      row.style.display = 'none';
+      // 根据 showDealer 开关决定显示还是隐藏
+      row.style.display = showDealer ? '' : 'none';
     } else if (status === 'retail' && tagCell) {
       tagCell.textContent = '散户';
       tagCell.style.background = '#d3f9d8';
