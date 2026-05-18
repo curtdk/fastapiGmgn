@@ -212,6 +212,31 @@ def _check_local_dealer_conditions(tx_detail: dict, state: dict, db=None, mint: 
         should_close_db = True
     
     try:
+        # ── 条件 C006：簇组检测（优先检查）──
+        new_cluster_broadcast = None
+        cluster_info = None
+        
+        from app.services.cluster.settings import get_cluster_settings
+        c006_enabled = get_cluster_settings(db).enabled
+        
+        if c006_enabled and tx_detail and mint:
+            cluster_result = run_cluster_detection(db, tx_detail, mint)
+            
+            # 收集新簇组创建的广播数据
+            if cluster_result.new_cluster_broadcast:
+                new_cluster_broadcast = cluster_result.new_cluster_broadcast
+            
+            # 无论什么类型都进行 cluster_info 返回
+            if cluster_result.matched:
+                status = cluster_result.cluster_type  # retail/dealer/unknown
+                conditions.append("C006")
+                cluster_info = {
+                    "address": tx_detail.get("from_address", ""),
+                    "sig": tx_detail.get("sig", ""),
+                    "cluster_name": cluster_result.cluster.name if cluster_result.cluster else None,
+                    "cluster_type": cluster_result.cluster_type,
+                }
+        
         # ── 条件 C002：使用 ALT（地址查找表） ──
         if "C002" not in conditions and tx_detail:
             alt_enabled = get_setting(db, "dealer_alt_enabled")
@@ -249,32 +274,6 @@ def _check_local_dealer_conditions(tx_detail: dict, state: dict, db=None, mint: 
                 if risk_score > risk_min:
                     conditions.append("C005")
                     status = "dealer"
-        
-        # ── 条件 C006：簇组检测（检查开关）──
-        new_cluster_broadcast = None
-        cluster_info = None
-        
-        # 检查 C006 开关
-        from app.services.cluster.settings import get_cluster_settings
-        c006_enabled = get_cluster_settings(db).enabled
-        
-        if c006_enabled and tx_detail and mint:
-            cluster_result = run_cluster_detection(db, tx_detail, mint)
-            
-            # 收集新簇组创建的广播数据
-            if cluster_result.new_cluster_broadcast:
-                new_cluster_broadcast = cluster_result.new_cluster_broadcast
-            
-            # 无论什么类型都进行 cluster_info 返回
-            if cluster_result.matched:
-                status = cluster_result.cluster_type  # retail/dealer/unknown
-                conditions.append("C006")
-                cluster_info = {
-                    "address": tx_detail.get("from_address", ""),
-                    "sig": tx_detail.get("sig", ""),
-                    "cluster_name": cluster_result.cluster.name if cluster_result.cluster else None,
-                    "cluster_type": cluster_result.cluster_type,
-                }
     finally:
         if should_close_db:
             db.close()
