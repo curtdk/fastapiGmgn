@@ -26,17 +26,24 @@ _redis: Optional[aioredis.Redis] = None
 async def init_tx_redis():
     """初始化 Redis 连接"""
     global _redis
-    _redis = aioredis.from_url(REDIS_URL, decode_responses=True)
-    await _redis.ping()
-    logger.info("[tx_redis] Redis 连接成功")
+    try:
+        _redis = aioredis.from_url(REDIS_URL, decode_responses=True)
+        await _redis.ping()
+        logger.info("[tx_redis] Redis 连接成功")
+    except Exception as e:
+        logger.error(f"[tx_redis] 初始化失败: {e}", exc_info=True)
+        raise
 
 
 async def close_tx_redis():
     """关闭 Redis 连接"""
     global _redis
-    if _redis:
-        await _redis.aclose()
-    logger.info("[tx_redis] Redis 已关闭")
+    try:
+        if _redis:
+            await _redis.aclose()
+        logger.info("[tx_redis] Redis 已关闭")
+    except Exception as e:
+        logger.error(f"[tx_redis] 关闭异常: {e}", exc_info=True)
 
 
 async def _get_redis() -> aioredis.Redis:
@@ -69,19 +76,23 @@ async def add_tx_to_list(mint: str, sig: str, source: str, score: int = None) ->
     Returns:
         使用的 score 值
     """
-    redis = await _get_redis()
-    key = _txlist_key(mint, source)
-    
-    if score is None:
-        # 自动生成序号
-        counter_key = f"txlist:{source}:{mint}:counter"
-        score = await redis.incr(counter_key)
-    
-    # 添加到有序集合
-    await redis.zadd(key, {sig: score})
-    
-    logger.debug(f"[tx_redis] 添加 sig 到 {key}, score={score}")
-    return score
+    try:
+        redis = await _get_redis()
+        key = _txlist_key(mint, source)
+        
+        if score is None:
+            # 自动生成序号
+            counter_key = f"txlist:{source}:{mint}:counter"
+            score = await redis.incr(counter_key)
+        
+        # 添加到有序集合
+        await redis.zadd(key, {sig: score})
+        
+        logger.debug(f"[tx_redis] 添加 sig 到 {key}, score={score}")
+        return score
+    except Exception as e:
+        logger.error(f"[tx_redis] 添加到列表失败 sig={sig[:8]}...: {e}", exc_info=True)
+        return score or 0
 
 
 async def get_tx_list(mint: str, source: str, start: int = 0, end: int = -1) -> List[str]:
@@ -97,28 +108,39 @@ async def get_tx_list(mint: str, source: str, start: int = 0, end: int = -1) -> 
     Returns:
         sig 列表（按 score 从小到大排序）
     """
-    redis = await _get_redis()
-    key = _txlist_key(mint, source)
-    
-    sigs = await redis.zrange(key, start, end)
-    return sigs
+    try:
+        redis = await _get_redis()
+        key = _txlist_key(mint, source)
+        
+        sigs = await redis.zrange(key, start, end)
+        return sigs
+    except Exception as e:
+        logger.error(f"[tx_redis] 获取列表失败 mint={mint[:8]}...: {e}", exc_info=True)
+        return []
 
 
 async def get_tx_count(mint: str, source: str) -> int:
     """获取有序集合中的 sig 数量"""
-    redis = await _get_redis()
-    key = _txlist_key(mint, source)
-    return await redis.zcard(key)
+    try:
+        redis = await _get_redis()
+        key = _txlist_key(mint, source)
+        return await redis.zcard(key)
+    except Exception as e:
+        logger.error(f"[tx_redis] 获取数量失败 mint={mint[:8]}...: {e}", exc_info=True)
+        return 0
 
 
 async def clear_tx_list(mint: str, source: str):
     """清空指定 mint 的有序集合"""
-    redis = await _get_redis()
-    key = _txlist_key(mint, source)
-    counter_key = f"txlist:{source}:{mint}:counter"
-    await redis.delete(key)
-    await redis.delete(counter_key)
-    logger.info(f"[tx_redis] 清空 {key}")
+    try:
+        redis = await _get_redis()
+        key = _txlist_key(mint, source)
+        counter_key = f"txlist:{source}:{mint}:counter"
+        await redis.delete(key)
+        await redis.delete(counter_key)
+        logger.info(f"[tx_redis] 清空 {key}")
+    except Exception as e:
+        logger.error(f"[tx_redis] 清空列表失败 mint={mint[:8]}...: {e}", exc_info=True)
 
 
 # ──────────────────────────────────────────────────────────
@@ -137,18 +159,22 @@ async def save_tx(tx_detail: Dict[str, Any]):
     Args:
         tx_detail: 交易详情字典
     """
-    redis = await _get_redis()
-    key = _tx_key(tx_detail.get("sig", ""))
-    
-    if not key or key == "tx:":
-        logger.warning("[tx_redis] save_tx: sig 为空，跳过")
-        return
-    
-    # 序列化并存储
-    data = json.dumps(tx_detail, ensure_ascii=False, default=str)
-    await redis.set(key, data)
-    
-    logger.debug(f"[tx_redis] 保存交易 {key[:20]}...")
+    try:
+        redis = await _get_redis()
+        key = _tx_key(tx_detail.get("sig", ""))
+        
+        if not key or key == "tx:":
+            logger.warning("[tx_redis] save_tx: sig 为空，跳过")
+            return
+        
+        # 序列化并存储
+        data = json.dumps(tx_detail, ensure_ascii=False, default=str)
+        await redis.set(key, data)
+        
+        logger.debug(f"[tx_redis] 保存交易 {key[:20]}...")
+    except Exception as e:
+        sig = tx_detail.get("sig", "")
+        logger.error(f"[tx_redis] 保存交易失败 sig={sig[:8]}...: {e}", exc_info=True)
 
 
 async def get_tx(sig: str) -> Optional[Dict[str, Any]]:
@@ -161,17 +187,20 @@ async def get_tx(sig: str) -> Optional[Dict[str, Any]]:
     Returns:
         交易详情字典，如果不存在返回 None
     """
-    redis = await _get_redis()
-    key = _tx_key(sig)
-    
-    data = await redis.get(key)
-    if not data:
-        return None
-    
     try:
+        redis = await _get_redis()
+        key = _tx_key(sig)
+        
+        data = await redis.get(key)
+        if not data:
+            return None
+        
         return json.loads(data)
     except json.JSONDecodeError:
         logger.warning(f"[tx_redis] 解析交易 {sig[:8]}... 失败")
+        return None
+    except Exception as e:
+        logger.error(f"[tx_redis] 获取交易失败 sig={sig[:8]}...: {e}", exc_info=True)
         return None
 
 
@@ -183,23 +212,26 @@ async def update_tx_analysis(sig: str, analysis: Dict[str, Any]):
         sig: 交易签名
         analysis: 分析结果（net_sol_flow, net_token_flow, price_per_token, wallet_tag, processed_at）
     """
-    redis = await _get_redis()
-    key = _tx_key(sig)
-    
-    # 获取现有数据
-    tx = await get_tx(sig)
-    if not tx:
-        logger.warning(f"[tx_redis] update_tx_analysis: 交易 {sig[:8]}... 不存在")
-        return
-    
-    # 更新分析结果
-    tx.update(analysis)
-    
-    # 重新保存
-    data = json.dumps(tx, ensure_ascii=False, default=str)
-    await redis.set(key, data)
-    
-    logger.debug(f"[tx_redis] 更新分析结果 {sig[:8]}...")
+    try:
+        redis = await _get_redis()
+        key = _tx_key(sig)
+        
+        # 获取现有数据
+        tx = await get_tx(sig)
+        if not tx:
+            logger.warning(f"[tx_redis] update_tx_analysis: 交易 {sig[:8]}... 不存在")
+            return
+        
+        # 更新分析结果
+        tx.update(analysis)
+        
+        # 重新保存
+        data = json.dumps(tx, ensure_ascii=False, default=str)
+        await redis.set(key, data)
+        
+        logger.debug(f"[tx_redis] 更新分析结果 {sig[:8]}...")
+    except Exception as e:
+        logger.error(f"[tx_redis] 更新分析失败 sig={sig[:8]}...: {e}", exc_info=True)
 
 
 # ──────────────────────────────────────────────────────────
@@ -215,30 +247,33 @@ async def save_tx_batch(tx_details: List[Dict[str, Any]], mint: str, source: str
         mint: 代币地址
         source: 数据来源
     """
-    redis = await _get_redis()
-    counter_key = f"txlist:{source}:{mint}:counter"
-    key = _txlist_key(mint, source)
-    
-    # 获取当前计数
-    current_count = await redis.get(counter_key)
-    current_count = int(current_count) if current_count else 0
-    
-    # 批量写入
-    pipe = redis.pipeline()
-    for i, tx_detail in enumerate(tx_details):
-        sig = tx_detail.get("sig", "")
-        if not sig:
-            continue
+    try:
+        redis = await _get_redis()
+        counter_key = f"txlist:{source}:{mint}:counter"
+        key = _txlist_key(mint, source)
         
-        current_count += 1
-        data = json.dumps(tx_detail, ensure_ascii=False, default=str)
-        pipe.set(_tx_key(sig), data)
-        pipe.zadd(key, {sig: current_count})
-    
-    pipe.set(counter_key, current_count)
-    await pipe.execute()
-    
-    logger.info(f"[tx_redis] 批量保存 {len(tx_details)} 条交易")
+        # 获取当前计数
+        current_count = await redis.get(counter_key)
+        current_count = int(current_count) if current_count else 0
+        
+        # 批量写入
+        pipe = redis.pipeline()
+        for i, tx_detail in enumerate(tx_details):
+            sig = tx_detail.get("sig", "")
+            if not sig:
+                continue
+            
+            current_count += 1
+            data = json.dumps(tx_detail, ensure_ascii=False, default=str)
+            pipe.set(_tx_key(sig), data)
+            pipe.zadd(key, {sig: current_count})
+        
+        pipe.set(counter_key, current_count)
+        await pipe.execute()
+        
+        logger.info(f"[tx_redis] 批量保存 {len(tx_details)} 条交易")
+    except Exception as e:
+        logger.error(f"[tx_redis] 批量保存失败 mint={mint[:8]}...: {e}", exc_info=True)
 
 
 async def get_tx_batch(sigs: List[str]) -> Dict[str, Dict[str, Any]]:
@@ -254,21 +289,25 @@ async def get_tx_batch(sigs: List[str]) -> Dict[str, Dict[str, Any]]:
     if not sigs:
         return {}
     
-    redis = await _get_redis()
-    
-    # 使用 pipeline 批量获取
-    pipe = redis.pipeline()
-    for sig in sigs:
-        pipe.get(_tx_key(sig))
-    
-    results = await pipe.execute()
-    
-    tx_map = {}
-    for sig, data in zip(sigs, results):
-        if data:
-            try:
-                tx_map[sig] = json.loads(data)
-            except json.JSONDecodeError:
-                pass
-    
-    return tx_map
+    try:
+        redis = await _get_redis()
+        
+        # 使用 pipeline 批量获取
+        pipe = redis.pipeline()
+        for sig in sigs:
+            pipe.get(_tx_key(sig))
+        
+        results = await pipe.execute()
+        
+        tx_map = {}
+        for sig, data in zip(sigs, results):
+            if data:
+                try:
+                    tx_map[sig] = json.loads(data)
+                except json.JSONDecodeError:
+                    pass
+        
+        return tx_map
+    except Exception as e:
+        logger.error(f"[tx_redis] 批量获取失败: {e}", exc_info=True)
+        return {}

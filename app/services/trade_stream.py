@@ -33,25 +33,32 @@ class TradeStream:
 
     async def start(self):
         """启动实时流"""
-        self.running = True
-        self._task = asyncio.create_task(self._stream_loop())
-        logger.info(f"[实时流] 启动: {self.mint}")
+        try:
+            self.running = True
+            self._task = asyncio.create_task(self._stream_loop())
+            logger.info(f"[实时流] 启动: {self.mint}")
+        except Exception as e:
+            logger.error(f"[实时流] 启动失败: {e}", exc_info=True)
+            self.running = False
 
     async def stop(self):
         """停止实时流"""
-        self.running = False
-        if self.ws:
-            try:
-                await self.ws.close()
-            except Exception:
-                pass
-        if self._task:
-            self._task.cancel()
-            try:
-                await self._task
-            except asyncio.CancelledError:
-                pass
-        logger.info(f"[实时流] 停止: {self.mint}")
+        try:
+            self.running = False
+            if self.ws:
+                try:
+                    await self.ws.close()
+                except Exception:
+                    pass
+            if self._task:
+                self._task.cancel()
+                try:
+                    await self._task
+                except asyncio.CancelledError:
+                    pass
+            logger.info(f"[实时流] 停止: {self.mint}")
+        except Exception as e:
+            logger.error(f"[实时流] 停止异常: {e}", exc_info=True)
 
     async def _stream_loop(self):
         """WebSocket 订阅循环"""
@@ -106,13 +113,21 @@ class TradeStream:
                         except websockets.ConnectionClosed:
                             logger.warning("[实时流] 连接断开，尝试重连...")
                             break
+                        except Exception as e:
+                            logger.error(f"[实时流] 接收消息异常: {e}", exc_info=True)
 
+            except asyncio.CancelledError:
+                logger.info(f"[实时流] 循环被取消: {self.mint}")
+                break
             except Exception as e:
                 logger.error(f"[实时流] 异常: {e}", exc_info=True)
-                await ws_manager.broadcast(self.mint, {
-                    "type": "error",
-                    "data": {"mint": self.mint, "message": f"实时流异常: {str(e)}"}
-                })
+                try:
+                    await ws_manager.broadcast(self.mint, {
+                        "type": "error",
+                        "data": {"mint": self.mint, "message": f"实时流异常: {str(e)}"}
+                    })
+                except Exception:
+                    pass
 
             # 重连等待
             if self.running:
@@ -179,8 +194,10 @@ class TradeStream:
                 # 加入处理队列
                 await enqueue_trade(tx_detail)
             except Exception as e:
-                logger.warning(f"[实时流] Redis 写入失败: {e}")
+                logger.error(f"[实时流] Redis 写入失败 sig={sig[:8]}...: {e}", exc_info=True)
 
+        except json.JSONDecodeError as e:
+            logger.error(f"[实时流] JSON 解析失败: {e}")
         except Exception as e:
             logger.error(f"[实时流] 消息处理失败: {e}", exc_info=True)
 
@@ -200,38 +217,24 @@ class TradeStream:
 
     def _resolve_owner_from_index(self, token_balance: Dict[str, Any], account_keys: list, signer: str) -> Optional[str]:
         """当 token balance 缺少 owner 字段时，通过 accountIndex 关联 accountKeys 获取 owner"""
-        account_index = token_balance.get("accountIndex")
-        if account_index is None:
+        try:
+            account_index = token_balance.get("accountIndex")
+            if account_index is None:
+                return None
+            if account_index < 0 or account_index >= len(account_keys):
+                return None
+            key_entry = account_keys[account_index]
+            if isinstance(key_entry, dict):
+                return key_entry.get("pubkey", "")
+            return key_entry if isinstance(key_entry, str) else ""
+        except Exception as e:
+            logger.warning(f"[实时流] 解析 owner 失败: {e}")
             return None
-        if account_index < 0 or account_index >= len(account_keys):
-            return None
-        key_entry = account_keys[account_index]
-        if isinstance(key_entry, dict):
-            return key_entry.get("pubkey", "")
-        return key_entry if isinstance(key_entry, str) else ""
 
     def _detect_jito_tip(self, inner_instructions, signer: str) -> int:
         """检测 Jito 小费金额"""
-        transfers = []
-        for ix_group in inner_instructions:
-            for ix in ix_group.get("instructions", []):
-                is_system = (ix.get("program") == "system" or ix.get("programId") == "11111111111111111111111111111111")
-                if not is_system:
-                    continue
-                parsed = ix.get("parsed", {})
-                if parsed.get("type") != "transfer":
-                    continue
-                info = parsed.get("info", {})
-                if info.get("source") != signer:
-                    continue
-                lamports = info.get("lamports", 0)
-                dest = info.get("destination", "")
-                if lamports > 0 and dest:
-                    transfers.append(lamports)
-
-        if len(transfers) >= 2:
-            return min(transfers)
-        if len(transfers) == 1:
+        try:
+            transfers = []
             for ix_group in inner_instructions:
                 for ix in ix_group.get("instructions", []):
                     is_system = (ix.get("program") == "system" or ix.get("programId") == "11111111111111111111111111111111")
@@ -241,31 +244,57 @@ class TradeStream:
                     if parsed.get("type") != "transfer":
                         continue
                     info = parsed.get("info", {})
-                    if (info.get("source") == signer and info.get("lamports", 0) == transfers[0] and info.get("destination", "") in self.KNOWN_JITO_TIP_ACCOUNTS):
-                        return transfers[0]
-        return 0
+                    if info.get("source") != signer:
+                        continue
+                    lamports = info.get("lamports", 0)
+                    dest = info.get("destination", "")
+                    if lamports > 0 and dest:
+                        transfers.append(lamports)
+
+            if len(transfers) >= 2:
+                return min(transfers)
+            if len(transfers) == 1:
+                for ix_group in inner_instructions:
+                    for ix in ix_group.get("instructions", []):
+                        is_system = (ix.get("program") == "system" or ix.get("programId") == "11111111111111111111111111111111")
+                        if not is_system:
+                            continue
+                        parsed = ix.get("parsed", {})
+                        if parsed.get("type") != "transfer":
+                            continue
+                        info = parsed.get("info", {})
+                        if (info.get("source") == signer and info.get("lamports", 0) == transfers[0] and info.get("destination", "") in self.KNOWN_JITO_TIP_ACCOUNTS):
+                            return transfers[0]
+            return 0
+        except Exception as e:
+            logger.warning(f"[实时流] Jito 小费检测失败: {e}")
+            return 0
 
     def _scan_dex_recursive(self, inner_instructions) -> str:
         """递归扫描 innerInstructions 识别 DEX"""
-        dex = ""
-        for ix_group in inner_instructions:
-            for ix in ix_group.get("instructions", []):
-                program_id = ix.get("programId", "")
-                program_name = ix.get("program", "").lower()
-                pid_lower = program_id.lower()
-                if "pump" in pid_lower or "pump" in program_name or "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P" in program_id:
-                    return "pump.fun"
-                elif "raydium" in pid_lower or "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8" in program_id:
-                    dex = "raydium"
-                elif "orca" in pid_lower:
-                    dex = "orca"
-        return dex
+        try:
+            dex = ""
+            for ix_group in inner_instructions:
+                for ix in ix_group.get("instructions", []):
+                    program_id = ix.get("programId", "")
+                    program_name = ix.get("program", "").lower()
+                    pid_lower = program_id.lower()
+                    if "pump" in pid_lower or "pump" in program_name or "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P" in program_id:
+                        return "pump.fun"
+                    elif "raydium" in pid_lower or "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8" in program_id:
+                        dex = "raydium"
+                    elif "orca" in pid_lower:
+                        dex = "orca"
+            return dex
+        except Exception as e:
+            logger.warning(f"[实时流] DEX 扫描失败: {e}")
+            return ""
 
     def _decode_instruction_type(self, program_id: str, data: str) -> str:
         """尝试解码指令类型"""
-        if not data:
-            return "unknown"
         try:
+            if not data:
+                return "unknown"
             decoded = base58.b58decode(data)
             if not decoded:
                 return "unknown"
@@ -310,8 +339,8 @@ class TradeStream:
                             elif ix_type == 3:  # SetComputeUnitPrice
                                 if len(decoded) >= 9:
                                     result["cu_price"] = int.from_bytes(decoded[1:9], 'little')
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"[实时流] 提取 compute info 失败: {e}")
         return result
 
     def _extract_instruction_details(self, message: Dict[str, Any], meta: Dict[str, Any]) -> Dict[str, Any]:
@@ -328,100 +357,107 @@ class TradeStream:
             "program_ids": [],
         }
         
-        account_keys = message.get("accountKeys", [])
-        result["account_keys_count"] = len(account_keys)
-        
-        for key in account_keys:
-            if isinstance(key, dict):
-                if key.get("signer"):
-                    result["signers_count"] += 1
-                if key.get("source") == "lookupTable":
-                    result["uses_lookup_table"] = True
-        
-        instructions = message.get("instructions", [])
-        result["instructions_count"] = len(instructions)
-        
-        for idx, ix in enumerate(instructions):
-            program_id = ix.get("programId", "")
-            ix_type = ix.get("parsed", {}).get("type", "") or ix.get("instructionType", "")
-            if not ix_type:
-                ix_type = self._decode_instruction_type(program_id, ix.get("data", ""))
+        try:
+            account_keys = message.get("accountKeys", [])
+            result["account_keys_count"] = len(account_keys)
             
-            result["main_instructions"].append({
-                "index": idx,
-                "program_id": program_id,
-                "type": ix_type,
-            })
-            if program_id and program_id not in result["program_ids"]:
-                result["program_ids"].append(program_id)
-        
-        inner_count = 0
-        for ix_group in meta.get("innerInstructions", []):
-            group_index = ix_group.get("index", 0)
-            for idx, ix in enumerate(ix_group.get("instructions", [])):
-                inner_count += 1
+            for key in account_keys:
+                if isinstance(key, dict):
+                    if key.get("signer"):
+                        result["signers_count"] += 1
+                    if key.get("source") == "lookupTable":
+                        result["uses_lookup_table"] = True
+            
+            instructions = message.get("instructions", [])
+            result["instructions_count"] = len(instructions)
+            
+            for idx, ix in enumerate(instructions):
                 program_id = ix.get("programId", "")
                 ix_type = ix.get("parsed", {}).get("type", "") or ix.get("instructionType", "")
                 if not ix_type:
                     ix_type = self._decode_instruction_type(program_id, ix.get("data", ""))
                 
-                result["inner_instructions"].append({
-                    "group_index": group_index,
+                result["main_instructions"].append({
                     "index": idx,
                     "program_id": program_id,
                     "type": ix_type,
                 })
                 if program_id and program_id not in result["program_ids"]:
                     result["program_ids"].append(program_id)
-        
-        result["inner_instructions_count"] = inner_count
-        result["total_instruction_count"] = result["instructions_count"] + inner_count
+            
+            inner_count = 0
+            for ix_group in meta.get("innerInstructions", []):
+                group_index = ix_group.get("index", 0)
+                for idx, ix in enumerate(ix_group.get("instructions", [])):
+                    inner_count += 1
+                    program_id = ix.get("programId", "")
+                    ix_type = ix.get("parsed", {}).get("type", "") or ix.get("instructionType", "")
+                    if not ix_type:
+                        ix_type = self._decode_instruction_type(program_id, ix.get("data", ""))
+                    
+                    result["inner_instructions"].append({
+                        "group_index": group_index,
+                        "index": idx,
+                        "program_id": program_id,
+                        "type": ix_type,
+                    })
+                    if program_id and program_id not in result["program_ids"]:
+                        result["program_ids"].append(program_id)
+            
+            result["inner_instructions_count"] = inner_count
+            result["total_instruction_count"] = result["instructions_count"] + inner_count
+        except Exception as e:
+            logger.warning(f"[实时流] 提取指令详情失败: {e}")
         
         return result
 
     def _analyze_risk(self, hints: Dict[str, Any], priority_fee: float) -> Dict[str, Any]:
         """分析风险指标"""
-        indicators = []
-        score = 0
-        
-        if hints["account_keys_count"] > 20:
-            indicators.append(f"高账户数: {hints['account_keys_count']}")
-            score += 25
-        elif hints["account_keys_count"] > 15:
-            indicators.append(f"中等账户数: {hints['account_keys_count']}")
-            score += 10
-        
-        if hints["uses_lookup_table"]:
-            indicators.append("使用了地址查找表 (ALT)")
-            score += 20
-        
-        if priority_fee > 0.5:
-            indicators.append(f"高 Priority Fee: {priority_fee:.6f} SOL")
-            score += 20
-        elif priority_fee > 0.1:
-            indicators.append(f"中等 Priority Fee: {priority_fee:.6f} SOL")
-            score += 10
-        
-        if hints["instructions_count"] > 1:
-            indicators.append("复杂交易 (非简单转账)")
-            score += 10
-        
-        dex_programs = ["6EF8rrecth", "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8"]
-        is_dex = any(pid in hints["program_ids"] for pid in dex_programs)
-        if is_dex:
-            indicators.append("DEX 交易")
-            score += 5
-        
-        if score >= 60:
-            verdict = "高风险"
-        elif score >= 30:
-            verdict = "中等风险"
-        elif score >= 15:
-            verdict = "低风险"
-        else:
-            verdict = "普通"
-        
-        return {"score": min(score, 100), "verdict": verdict, "indicators": indicators}
+        try:
+            indicators = []
+            score = 0
+            
+            if hints["account_keys_count"] > 20:
+                indicators.append(f"高账户数: {hints['account_keys_count']}")
+                score += 25
+            elif hints["account_keys_count"] > 15:
+                indicators.append(f"中等账户数: {hints['account_keys_count']}")
+                score += 10
+            
+            if hints["uses_lookup_table"]:
+                indicators.append("使用了地址查找表 (ALT)")
+                score += 20
+            
+            if priority_fee > 0.5:
+                indicators.append(f"高 Priority Fee: {priority_fee:.6f} SOL")
+                score += 20
+            elif priority_fee > 0.1:
+                indicators.append(f"中等 Priority Fee: {priority_fee:.6f} SOL")
+                score += 10
+            
+            if hints["instructions_count"] > 1:
+                indicators.append("复杂交易 (非简单转账)")
+                score += 10
+            
+            dex_programs = ["6EF8rrecth", "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8"]
+            is_dex = any(pid in hints["program_ids"] for pid in dex_programs)
+            if is_dex:
+                indicators.append("DEX 交易")
+                score += 5
+            
+            if score >= 60:
+                verdict = "高风险"
+            elif score >= 30:
+                verdict = "中等风险"
+            elif score >= 15:
+                verdict = "低风险"
+            else:
+                verdict = "普通"
+            
+            return {"score": min(score, 100), "verdict": verdict, "indicators": indicators}
+        except Exception as e:
+            logger.warning(f"[实时流] 风险分析失败: {e}")
+            return {"score": 0, "verdict": "普通", "indicators": []}
 
     def _extract_trade_info(self, tx_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """从 Helius WS 交易数据中提取交易信息（增强版）"""
@@ -433,7 +469,7 @@ class TradeStream:
 
             meta = tx_data.get("meta", {})
             if meta.get("err"):
-                return None
+                return None  # 跳过失败的交易
 
             block_time = tx_data.get("blockTime")
             if block_time:
@@ -448,6 +484,7 @@ class TradeStream:
             message = inner_tx.get("message", {})
             account_keys = message.get("accountKeys", [])
 
+            # 获取 signer（交易发起者）
             signer = ""
             signer_index = 0
             for i, key in enumerate(account_keys):
@@ -464,6 +501,7 @@ class TradeStream:
             if not signer:
                 return None
 
+            # ===== SOL 流向计算（净值） =====
             pre_sol_balances = meta.get("preBalances", [])
             post_sol_balances = meta.get("postBalances", [])
             fee_lamports = meta.get("fee", 0)
@@ -472,13 +510,12 @@ class TradeStream:
             if (pre_sol_balances and post_sol_balances
                     and len(pre_sol_balances) > signer_index
                     and len(post_sol_balances) > signer_index):
-                raw_sol_spent = (pre_sol_balances[signer_index]
-                                 - post_sol_balances[signer_index]
-                                 - fee_lamports)
+                raw_sol_spent = pre_sol_balances[signer_index] - post_sol_balances[signer_index] - fee_lamports
                 inner_instructions = meta.get("innerInstructions", [])
                 jito_tip = self._detect_jito_tip(inner_instructions, signer)
                 sol_spent = (raw_sol_spent - jito_tip) / 1e9
 
+            # ===== Token 余额变化（遍历所有 ATA，找 signer 拥有的） =====
             pre_token_list = meta.get("preTokenBalances", [])
             post_token_list = meta.get("postTokenBalances", [])
 
@@ -487,29 +524,20 @@ class TradeStream:
             to_owner = ""
 
             for b in post_token_list:
-                if b.get("mint") != self.mint:
-                    continue
-                owner = b.get("owner")
-                if not owner:
-                    owner = self._resolve_owner_from_index(b, account_keys, signer)
-                if owner == signer:
+                if b.get("mint") == self.mint and b.get("owner") == signer:
                     post_amt = b.get("uiTokenAmount", {}).get("uiAmount", 0) or 0.0
-                    to_owner = owner
+                    to_owner = b.get("owner", "")
                     break
 
             for b in pre_token_list:
-                if b.get("mint") != self.mint:
-                    continue
-                owner = b.get("owner")
-                if not owner:
-                    owner = self._resolve_owner_from_index(b, account_keys, signer)
-                if owner == signer:
+                if b.get("mint") == self.mint and b.get("owner") == signer:
                     pre_amt = b.get("uiTokenAmount", {}).get("uiAmount", 0) or 0.0
                     break
 
             delta = post_amt - pre_amt
             amount = abs(delta)
 
+            # ===== 交易类型判定（资金流向优先） =====
             tx_type = "TRANSFER"
             from_addr = signer
             to_addr = ""
@@ -522,13 +550,24 @@ class TradeStream:
             elif abs(sol_spent) <= 0.001:
                 tx_type = "TRANSFER"
 
-            dex = self._scan_dex_recursive(meta.get("innerInstructions", []))
+            # ===== DEX 检测 =====
+            dex = ""
             pool_address = ""
+            inner_instructions = meta.get("innerInstructions", [])
+            for ix_group in inner_instructions:
+                for ix in ix_group.get("instructions", []):
+                    program_id = ix.get("programId", "")
+                    if "pump" in program_id.lower() or "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P" in program_id:
+                        dex = "pump.fun"
+                    elif "raydium" in program_id.lower() or "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8" in program_id:
+                        dex = "raydium"
+                    elif "orca" in program_id.lower():
+                        dex = "orca"
 
-            # 新增：指令详细信息（需要在 priority_fee 计算前获取 signers_count）
+            # ===== 新增：指令详细信息（需要在 priority_fee 计算前获取 signers_count） =====
             instruction_details = self._extract_instruction_details(message, meta)
 
-            # 新增：Compute Unit 和 Priority Fee
+            # ===== 新增：Compute Unit 和 Priority Fee =====
             compute_info = self._extract_compute_info(message)
             cu_consumed = meta.get("computeUnitsConsumed", 0)
             cu_limit = compute_info["cu_limit"]
@@ -541,7 +580,7 @@ class TradeStream:
             priority_lamports = max(0, fee_lamports - base_fee)
             priority_fee = priority_lamports / 1e9
 
-            # 新增：风险分析
+            # ===== 新增：风险分析 =====
             risk_info = self._analyze_risk(instruction_details, priority_fee)
 
             return {
@@ -580,5 +619,5 @@ class TradeStream:
                 "source": "helius_ws",
             }
         except Exception as e:
-            logger.warning(f"[实时流] 解析失败: {e}")
+            logger.warning(f"[实时流] 解析交易失败: {e}", exc_info=True)
             return None

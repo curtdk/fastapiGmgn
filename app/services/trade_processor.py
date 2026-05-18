@@ -57,24 +57,28 @@ async def get_trader_state(redis, mint: str, address: str) -> dict:
     if not redis:
         return _default_trader_state()
     
-    key = user_key(address)
-    state = await redis.hgetall(key)
-    
-    if not state:
-        return _default_trader_state()
-    
-    # 读取 status 和 conditions
-    status = state.get("status", "unknown")
     try:
-        conditions = json.loads(state.get("conditions", "[]"))
-    except:
-        conditions = []
-    
-    return {
-        "status": status,
-        "conditions": conditions,
-        **{k: v for k, v in state.items() if k not in ("status", "conditions")}
-    }
+        key = user_key(address)
+        state = await redis.hgetall(key)
+        
+        if not state:
+            return _default_trader_state()
+        
+        # 读取 status 和 conditions
+        status = state.get("status", "unknown")
+        try:
+            conditions = json.loads(state.get("conditions", "[]"))
+        except:
+            conditions = []
+        
+        return {
+            "status": status,
+            "conditions": conditions,
+            **{k: v for k, v in state.items() if k not in ("status", "conditions")}
+        }
+    except Exception as e:
+        logger.error(f"[交易员状态] 获取失败 address={address[:8]}...: {e}", exc_info=True)
+        return _default_trader_state()
 
 
 async def get_trader_state_with_sig(redis, mint: str, address: str, sig: str) -> dict:
@@ -98,50 +102,54 @@ async def get_trader_state_with_sig(redis, mint: str, address: str, sig: str) ->
     if not redis:
         return {"state": _default_trader_state(), "broadcasts": [], "cluster_info": None, "new_cluster_broadcast": None}
     
-    key = user_key(address)
-    state = await redis.hgetall(key)
-    broadcasts = []
-    cluster_info = None
-    new_cluster_broadcast = None
-    
-    if not state:
-        state = _default_trader_state()
-        # 新用户：尝试本地快速判断庄家（C002-C006）
-        tx_detail = await tx_redis.get_tx(sig)
-        if tx_detail:
-            db = SessionLocal()
-            try:
-                detected_status, conditions, cluster_info, new_cluster_broadcast = _check_local_dealer_conditions(tx_detail, state, db, mint)
-                state["conditions"] = conditions
-                state["status"] = detected_status
-                
-                if detected_status == "dealer":
-                    await save_trader_state(redis, mint, address, state)
-                    logger.info(f"[庄家判定] {address[:8]}... 新用户本地判断为庄家 (C002-C006)")
-                    return {"state": state, "broadcasts": [], "cluster_info": cluster_info, "new_cluster_broadcast": new_cluster_broadcast}
-                
-                # retail 也要保存状态
-                await save_trader_state(redis, mint, address, state)
-                logger.info(f"[庄家判定] {address[:8]}... 新用户本地判断为 {detected_status} (C006)，入队等待 C001")
-            finally:
-                db.close()
-        # 本地判断不是庄家或无交易详情：入队等待 C001 检测
-        await _enqueue_dealer_check(address, mint, sig)
-    else:
-        # 读取 status 和 conditions
-        status = state.get("status", "unknown")
-        try:
-            conditions = json.loads(state.get("conditions", "[]"))
-        except:
-            conditions = []
-        state["status"] = status
-        state["conditions"] = conditions
+    try:
+        key = user_key(address)
+        state = await redis.hgetall(key)
+        broadcasts = []
+        cluster_info = None
+        new_cluster_broadcast = None
         
-        # 如果是 unknown 且有 sig，自动入队检测
-        if status == "unknown":
+        if not state:
+            state = _default_trader_state()
+            # 新用户：尝试本地快速判断庄家（C002-C006）
+            tx_detail = await tx_redis.get_tx(sig)
+            if tx_detail:
+                db = SessionLocal()
+                try:
+                    detected_status, conditions, cluster_info, new_cluster_broadcast = _check_local_dealer_conditions(tx_detail, state, db, mint)
+                    state["conditions"] = conditions
+                    state["status"] = detected_status
+                    
+                    if detected_status == "dealer":
+                        await save_trader_state(redis, mint, address, state)
+                        logger.info(f"[庄家判定] {address[:8]}... 新用户本地判断为庄家 (C002-C006)")
+                        return {"state": state, "broadcasts": [], "cluster_info": cluster_info, "new_cluster_broadcast": new_cluster_broadcast}
+                    
+                    # retail 也要保存状态
+                    await save_trader_state(redis, mint, address, state)
+                    logger.info(f"[庄家判定] {address[:8]}... 新用户本地判断为 {detected_status} (C006)，入队等待 C001")
+                finally:
+                    db.close()
+            # 本地判断不是庄家或无交易详情：入队等待 C001 检测
             await _enqueue_dealer_check(address, mint, sig)
-    
-    return {"state": state, "broadcasts": broadcasts, "cluster_info": cluster_info, "new_cluster_broadcast": new_cluster_broadcast}
+        else:
+            # 读取 status 和 conditions
+            status = state.get("status", "unknown")
+            try:
+                conditions = json.loads(state.get("conditions", "[]"))
+            except:
+                conditions = []
+            state["status"] = status
+            state["conditions"] = conditions
+            
+            # 如果是 unknown 且有 sig，自动入队检测
+            if status == "unknown":
+                await _enqueue_dealer_check(address, mint, sig)
+        
+        return {"state": state, "broadcasts": broadcasts, "cluster_info": cluster_info, "new_cluster_broadcast": new_cluster_broadcast}
+    except Exception as e:
+        logger.error(f"[交易员状态] 获取失败 sig={sig[:8]}...: {e}", exc_info=True)
+        return {"state": _default_trader_state(), "broadcasts": [], "cluster_info": None, "new_cluster_broadcast": None}
 
 
 async def _enqueue_dealer_check(address: str, mint: str, sig: str):
@@ -170,18 +178,21 @@ async def save_trader_state(redis, mint: str, address: str, state: dict):
     if not redis:
         return
     
-    key = user_key(address)
-    save_data = {
-        "status": state.get("status", "unknown"),
-        "conditions": json.dumps(state.get("conditions", [])),
-        f"{mint}_holdingQty": str(state.get("holdingQty", 0)),
-        f"{mint}_holdingCost": str(state.get("holdingCost", 0)),
-        f"{mint}_avgPrice": str(state.get("avgPrice", 0)),
-        f"{mint}_totalBuyAmount": str(state.get("totalBuyAmount", 0)),
-        f"{mint}_totalSellAmount": str(state.get("totalSellAmount", 0)),
-        f"{mint}_totalSellPrincipal": str(state.get("totalSellPrincipal", 0)),
-    }
-    await redis.hset(key, mapping=save_data)
+    try:
+        key = user_key(address)
+        save_data = {
+            "status": state.get("status", "unknown"),
+            "conditions": json.dumps(state.get("conditions", [])),
+            f"{mint}_holdingQty": str(state.get("holdingQty", 0)),
+            f"{mint}_holdingCost": str(state.get("holdingCost", 0)),
+            f"{mint}_avgPrice": str(state.get("avgPrice", 0)),
+            f"{mint}_totalBuyAmount": str(state.get("totalBuyAmount", 0)),
+            f"{mint}_totalSellAmount": str(state.get("totalSellAmount", 0)),
+            f"{mint}_totalSellPrincipal": str(state.get("totalSellPrincipal", 0)),
+        }
+        await redis.hset(key, mapping=save_data)
+    except Exception as e:
+        logger.error(f"[保存状态] 失败 address={address[:8]}...: {e}", exc_info=True)
 
 
 async def get_metrics(redis, mint: str) -> dict:
@@ -193,20 +204,28 @@ async def get_metrics(redis, mint: str) -> dict:
             "dealer_count": 0
         }
     
-    key = await _get_metrics_key(mint)
-    metrics = await redis.hgetall(key)
-    
-    if not metrics:
-        metrics = {
+    try:
+        key = await _get_metrics_key(mint)
+        metrics = await redis.hgetall(key)
+        
+        if not metrics:
+            metrics = {
+                "total_bet": 0.0,
+                "realized_profit": 0.0,
+                "dealer_count": 0
+            }
+        else:
+            for k in ["total_bet", "realized_profit", "dealer_count"]:
+                metrics[k] = float(metrics.get(k, "0"))
+        
+        return metrics
+    except Exception as e:
+        logger.error(f"[指标] 获取失败 mint={mint[:8]}...: {e}", exc_info=True)
+        return {
             "total_bet": 0.0,
             "realized_profit": 0.0,
             "dealer_count": 0
         }
-    else:
-        for k in ["total_bet", "realized_profit", "dealer_count"]:
-            metrics[k] = float(metrics.get(k, "0"))
-    
-    return metrics
 
 
 async def update_metrics_delta(redis, mint: str, delta_bet: float, delta_profit: float):
@@ -214,11 +233,14 @@ async def update_metrics_delta(redis, mint: str, delta_bet: float, delta_profit:
     if not redis:
         return
     
-    key = await _get_metrics_key(mint)
-    if delta_bet != 0:
-        await redis.hincrbyfloat(key, "total_bet", delta_bet)
-    if delta_profit != 0:
-        await redis.hincrbyfloat(key, "realized_profit", delta_profit)
+    try:
+        key = await _get_metrics_key(mint)
+        if delta_bet != 0:
+            await redis.hincrbyfloat(key, "total_bet", delta_bet)
+        if delta_profit != 0:
+            await redis.hincrbyfloat(key, "realized_profit", delta_profit)
+    except Exception as e:
+        logger.error(f"[指标] 更新失败 mint={mint[:8]}...: {e}", exc_info=True)
 
 
 async def clear_mint_redis(mint: str):
@@ -249,66 +271,70 @@ async def _get_dealer_conditions_detail(redis, address: str, tx_detail: dict) ->
     from app.utils.database import SessionLocal
     from app.services.settings_service import get_setting, get_float_setting, get_int_setting
     
-    key = user_key(address)
-    state = await redis.hgetall(key)
-    
     try:
-        conditions = json.loads(state.get("conditions", "[]"))
-    except:
-        conditions = []
-    
-    result = {"conditions": conditions, "details": {}}
-    db = SessionLocal()
-    try:
-        # C001: closeAccount
-        if "C001" in conditions:
-            result["details"]["C001"] = {
-                "name": "首笔交易包含 closeAccount",
-                "enabled": get_setting(db, "dealer_c001_enabled") == "true"
-            }
+        key = user_key(address)
+        state = await redis.hgetall(key)
         
-        # C002: ALT
-        if "C002" in conditions:
-            result["details"]["C002"] = {
-                "name": "使用 ALT（地址查找表）",
-                "enabled": get_setting(db, "dealer_alt_enabled") == "true",
-                "value": tx_detail.get("uses_lookup_table", False)
-            }
+        try:
+            conditions = json.loads(state.get("conditions", "[]"))
+        except:
+            conditions = []
         
-        # C003: Gas 费
-        if "C003" in conditions:
-            gas_max = get_float_setting(db, "dealer_gas_max", 0.00001)
-            result["details"]["C003"] = {
-                "name": "Gas 费小于阈值",
-                "enabled": get_setting(db, "dealer_gas_enabled") == "true",
-                "threshold": f"< {gas_max:.8f} SOL",
-                "value": f"{tx_detail.get('fee', 0):.8f} SOL"
-            }
+        result = {"conditions": conditions, "details": {}}
+        db = SessionLocal()
+        try:
+            # C001: closeAccount
+            if "C001" in conditions:
+                result["details"]["C001"] = {
+                    "name": "首笔交易包含 closeAccount",
+                    "enabled": get_setting(db, "dealer_c001_enabled") == "true"
+                }
+            
+            # C002: ALT
+            if "C002" in conditions:
+                result["details"]["C002"] = {
+                    "name": "使用 ALT（地址查找表）",
+                    "enabled": get_setting(db, "dealer_alt_enabled") == "true",
+                    "value": tx_detail.get("uses_lookup_table", False)
+                }
+            
+            # C003: Gas 费
+            if "C003" in conditions:
+                gas_max = get_float_setting(db, "dealer_gas_max", 0.00001)
+                result["details"]["C003"] = {
+                    "name": "Gas 费小于阈值",
+                    "enabled": get_setting(db, "dealer_gas_enabled") == "true",
+                    "threshold": f"< {gas_max:.8f} SOL",
+                    "value": f"{tx_detail.get('fee', 0):.8f} SOL"
+                }
+            
+            # C004: CU
+            if "C004" in conditions:
+                cu_min = get_int_setting(db, "dealer_cu_min", 0)
+                cu_max = get_int_setting(db, "dealer_cu_max", 200000)
+                result["details"]["C004"] = {
+                    "name": "CU 在范围内",
+                    "enabled": get_setting(db, "dealer_cu_enabled") == "true",
+                    "threshold": f"{cu_min} - {cu_max}",
+                    "value": tx_detail.get("cu_consumed", 0)
+                }
+            
+            # C005: Risk Score
+            if "C005" in conditions:
+                risk_min = get_int_setting(db, "dealer_risk_min", 0)
+                result["details"]["C005"] = {
+                    "name": "风险分大于阈值",
+                    "enabled": get_setting(db, "dealer_risk_enabled") == "true",
+                    "threshold": f"> {risk_min}",
+                    "value": tx_detail.get("risk_score", 0)
+                }
+        finally:
+            db.close()
         
-        # C004: CU
-        if "C004" in conditions:
-            cu_min = get_int_setting(db, "dealer_cu_min", 0)
-            cu_max = get_int_setting(db, "dealer_cu_max", 200000)
-            result["details"]["C004"] = {
-                "name": "CU 在范围内",
-                "enabled": get_setting(db, "dealer_cu_enabled") == "true",
-                "threshold": f"{cu_min} - {cu_max}",
-                "value": tx_detail.get("cu_consumed", 0)
-            }
-        
-        # C005: Risk Score
-        if "C005" in conditions:
-            risk_min = get_int_setting(db, "dealer_risk_min", 0)
-            result["details"]["C005"] = {
-                "name": "风险分大于阈值",
-                "enabled": get_setting(db, "dealer_risk_enabled") == "true",
-                "threshold": f"> {risk_min}",
-                "value": tx_detail.get("risk_score", 0)
-            }
-    finally:
-        db.close()
-    
-    return result
+        return result
+    except Exception as e:
+        logger.error(f"[庄家条件] 获取失败 address={address[:8]}...: {e}", exc_info=True)
+        return {"conditions": [], "details": {}}
 
 
 # ──────────────────────────────────────────────────────────
@@ -332,138 +358,142 @@ async def _calculate_index(tx_detail: Dict[str, Any], mint: str) -> Dict[str, An
         holdingQty -= sellQty
         holdingCost -= sellPrincipal
     """
-    redis = await _get_redis()
-    
-    address = tx_detail.get("from_address", "")
     sig = tx_detail.get("sig", "")
-    tx_type = tx_detail.get("transaction_type", "")
-    sol_spent = tx_detail.get("sol_spent", 0) or 0.0
-    amount = tx_detail.get("amount", 0) or 0.0
-    
-    if not address:
-        return {}
-    
-    # ── C002-C005 + C006 庄家检测（统一入口） ──
-    # 获取用户状态（内部包含 C002-C005 本地检测 + C006 簇组检测）
-    result = await get_trader_state_with_sig(redis, mint, address, sig)
-    state = result["state"]
-    broadcasts = result.get("broadcasts", [])
-    cluster_info = result.get("cluster_info")
-    new_cluster_broadcast = result.get("new_cluster_broadcast")
-    
-    # 从 Redis 读取当前持仓数据（统一用 {mint}_xxx key）
-    holding_qty = float(state.get(f"{mint}_holdingQty", "0"))
-    holding_cost = float(state.get(f"{mint}_holdingCost", "0"))
-    avg_price = float(state.get(f"{mint}_avgPrice", "0"))
-    total_buy_amount = float(state.get(f"{mint}_totalBuyAmount", "0"))
-    total_sell_amount = float(state.get(f"{mint}_totalSellAmount", "0"))
-    total_sell_principal = float(state.get(f"{mint}_totalSellPrincipal", "0"))
-    
-    old_holding_cost = holding_cost
-    old_realized = total_sell_amount - total_sell_principal
-    
-    if tx_type == "BUY":
-        buy_amount = abs(sol_spent)
-        buy_qty = amount
+    try:
+        redis = await _get_redis()
         
-        holding_qty += buy_qty
-        holding_cost += buy_amount
-        total_buy_amount += buy_amount
-        if holding_qty > 0:
-            avg_price = holding_cost / holding_qty
+        address = tx_detail.get("from_address", "")
+        tx_type = tx_detail.get("transaction_type", "")
+        sol_spent = tx_detail.get("sol_spent", 0) or 0.0
+        amount = tx_detail.get("amount", 0) or 0.0
         
-        logger.debug(f"[计算] {address[:8]}... BUY {buy_qty} @ {buy_amount} SOL")
-    
-    elif tx_type == "SELL":
-        sell_qty = abs(amount)
-        sell_amount = abs(sol_spent)
+        if not address:
+            return {}
         
-        # 卖出本金 = 卖出数量 × 当时均价
-        sell_principal = sell_qty * avg_price
+        # ── C002-C005 + C006 庄家检测（统一入口） ──
+        # 获取用户状态（内部包含 C002-C005 本地检测 + C006 簇组检测）
+        result = await get_trader_state_with_sig(redis, mint, address, sig)
+        state = result["state"]
+        broadcasts = result.get("broadcasts", [])
+        cluster_info = result.get("cluster_info")
+        new_cluster_broadcast = result.get("new_cluster_broadcast")
         
-        total_sell_principal += sell_principal
-        total_sell_amount += sell_amount
-        holding_qty -= sell_qty
-        holding_cost -= sell_principal
+        # 从 Redis 读取当前持仓数据（统一用 {mint}_xxx key）
+        holding_qty = float(state.get(f"{mint}_holdingQty", "0"))
+        holding_cost = float(state.get(f"{mint}_holdingCost", "0"))
+        avg_price = float(state.get(f"{mint}_avgPrice", "0"))
+        total_buy_amount = float(state.get(f"{mint}_totalBuyAmount", "0"))
+        total_sell_amount = float(state.get(f"{mint}_totalSellAmount", "0"))
+        total_sell_principal = float(state.get(f"{mint}_totalSellPrincipal", "0"))
         
-        # 防负值
-        if holding_qty < 0.001:
-            holding_qty = 0
-            holding_cost = 0
-            avg_price = 0
+        old_holding_cost = holding_cost
+        old_realized = total_sell_amount - total_sell_principal
         
-        # 更新均价
-        if holding_qty > 0:
-            avg_price = holding_cost / holding_qty
+        if tx_type == "BUY":
+            buy_amount = abs(sol_spent)
+            buy_qty = amount
+            
+            holding_qty += buy_qty
+            holding_cost += buy_amount
+            total_buy_amount += buy_amount
+            if holding_qty > 0:
+                avg_price = holding_cost / holding_qty
+            
+            logger.debug(f"[计算] {address[:8]}... BUY {buy_qty} @ {buy_amount} SOL")
         
-        realized = sell_amount - sell_principal
-        logger.debug(f"[计算] {address[:8]}... SELL {sell_qty} @ {sell_amount} SOL, 落袋: {realized:.6f} SOL")
-    
-    # 直接保存状态（传字典而不是修改 state）
-    await save_trader_state(redis, mint, address, {
-        "status": state["status"],
-        "conditions": state["conditions"],
-        "holdingQty": holding_qty,
-        "holdingCost": holding_cost,
-        "avgPrice": avg_price,
-        "totalBuyAmount": total_buy_amount,
-        "totalSellAmount": total_sell_amount,
-        "totalSellPrincipal": total_sell_principal,
-    })
-    
-    # 更新全局指标
-    new_holding_cost = holding_cost
-    new_realized = total_sell_amount - total_sell_principal
-    
-    delta_bet = new_holding_cost - old_holding_cost
-    delta_profit = new_realized - old_realized
-    
-    await update_metrics_delta(redis, mint, delta_bet, delta_profit)
-    
-    # ── 排除庄家数据 ──
-    if state.get("status") == "dealer":
-        await exclude_dealer(mint, address)
-        logger.info(f"[庄家排除] {address[:8]}... delta_bet={delta_bet}, delta_profit={delta_profit}")
-        # 庄家不广播任何信息，直接返回
-        return {"status": "dealer", "cluster_info": cluster_info}
-    
-    # 更新 Redis 中的分析结果
-    await tx_redis.update_tx_analysis(sig, {
-        "net_sol_flow": sol_spent,
-        "net_token_flow": amount,
-        "price_per_token": avg_price,
-        "wallet_tag": state["status"],
-        "processed_at": datetime.utcnow().isoformat(),
-    })
-    
-    # ── 广播（非庄家交易） ──
-    # 1. 先广播 trade（让前端先显示行）
-    await ws_manager.broadcast(mint, {
-        "type": "trade",
-        "data": {
-            **tx_detail,
-            "wallet_tag": state["status"],
-        }
-    })
-    
-    # 2. 再广播 cluster_matched（更新前端同一行的簇组标签）
-    if cluster_info:
-        await ws_manager.broadcast(mint, {
-            "type": "cluster_matched",
-            "data": cluster_info
+        elif tx_type == "SELL":
+            sell_qty = abs(amount)
+            sell_amount = abs(sol_spent)
+            
+            # 卖出本金 = 卖出数量 × 当时均价
+            sell_principal = sell_qty * avg_price
+            
+            total_sell_principal += sell_principal
+            total_sell_amount += sell_amount
+            holding_qty -= sell_qty
+            holding_cost -= sell_principal
+            
+            # 防负值
+            if holding_qty < 0.001:
+                holding_qty = 0
+                holding_cost = 0
+                avg_price = 0
+            
+            # 更新均价
+            if holding_qty > 0:
+                avg_price = holding_cost / holding_qty
+            
+            realized = sell_amount - sell_principal
+            logger.debug(f"[计算] {address[:8]}... SELL {sell_qty} @ {sell_amount} SOL, 落袋: {realized:.6f} SOL")
+        
+        # 直接保存状态（传字典而不是修改 state）
+        await save_trader_state(redis, mint, address, {
+            "status": state["status"],
+            "conditions": state["conditions"],
+            "holdingQty": holding_qty,
+            "holdingCost": holding_cost,
+            "avgPrice": avg_price,
+            "totalBuyAmount": total_buy_amount,
+            "totalSellAmount": total_sell_amount,
+            "totalSellPrincipal": total_sell_principal,
         })
-    
-    # 3. 最后广播新簇组创建
-    if new_cluster_broadcast:
-        await ws_manager.broadcast(mint, new_cluster_broadcast)
-    
-    return {
-        "holdingQty": holding_qty,
-        "holdingCost": holding_cost,
-        "avgPrice": avg_price,
-        "status": state["status"],
-        "cluster_info": cluster_info
-    }
+        
+        # 更新全局指标
+        new_holding_cost = holding_cost
+        new_realized = total_sell_amount - total_sell_principal
+        
+        delta_bet = new_holding_cost - old_holding_cost
+        delta_profit = new_realized - old_realized
+        
+        await update_metrics_delta(redis, mint, delta_bet, delta_profit)
+        
+        # ── 排除庄家数据 ──
+        if state.get("status") == "dealer":
+            await exclude_dealer(mint, address)
+            logger.info(f"[庄家排除] {address[:8]}... delta_bet={delta_bet}, delta_profit={delta_profit}")
+            # 庄家不广播任何信息，直接返回
+            return {"status": "dealer", "cluster_info": cluster_info}
+        
+        # 更新 Redis 中的分析结果
+        await tx_redis.update_tx_analysis(sig, {
+            "net_sol_flow": sol_spent,
+            "net_token_flow": amount,
+            "price_per_token": avg_price,
+            "wallet_tag": state["status"],
+            "processed_at": datetime.utcnow().isoformat(),
+        })
+        
+        # ── 广播（非庄家交易） ──
+        # 1. 先广播 trade（让前端先显示行）
+        await ws_manager.broadcast(mint, {
+            "type": "trade",
+            "data": {
+                **tx_detail,
+                "wallet_tag": state["status"],
+            }
+        })
+        
+        # 2. 再广播 cluster_matched（更新前端同一行的簇组标签）
+        if cluster_info:
+            await ws_manager.broadcast(mint, {
+                "type": "cluster_matched",
+                "data": cluster_info
+            })
+        
+        # 3. 最后广播新簇组创建
+        if new_cluster_broadcast:
+            await ws_manager.broadcast(mint, new_cluster_broadcast)
+        
+        return {
+            "holdingQty": holding_qty,
+            "holdingCost": holding_cost,
+            "avgPrice": avg_price,
+            "status": state["status"],
+            "cluster_info": cluster_info
+        }
+    except Exception as e:
+        logger.error(f"[计算] 指数计算异常 sig={sig[:8]}...: {e}", exc_info=True)
+        return {}
 
 
 async def exclude_dealer(mint: str, address: str):
@@ -473,16 +503,19 @@ async def exclude_dealer(mint: str, address: str):
     if not redis:
         return
     
-    state = await get_trader_state(redis, mint, address)
-    
-    # 从汇总中减去持仓成本
-    await update_metrics_delta(redis, mint, -state.get("holdingCost", 0), 0)
-    
-    # 更新庄家计数
-    metrics_key = await _get_metrics_key(mint)
-    await redis.hincrbyfloat(metrics_key, "dealer_count", 1)
-    
-    logger.info(f"[庄家排除] {address[:8]}... 已从汇总中排除")
+    try:
+        state = await get_trader_state(redis, mint, address)
+        
+        # 从汇总中减去持仓成本
+        await update_metrics_delta(redis, mint, -state.get("holdingCost", 0), 0)
+        
+        # 更新庄家计数
+        metrics_key = await _get_metrics_key(mint)
+        await redis.hincrbyfloat(metrics_key, "dealer_count", 1)
+        
+        logger.info(f"[庄家排除] {address[:8]}... 已从汇总中排除")
+    except Exception as e:
+        logger.error(f"[庄家排除] 失败 address={address[:8]}...: {e}", exc_info=True)
 
 
 async def include_retail(mint: str, address: str):
@@ -492,18 +525,21 @@ async def include_retail(mint: str, address: str):
     if not redis:
         return
     
-    state = await get_trader_state(redis, mint, address)
-    
-    # 将持仓成本加回汇总
-    await update_metrics_delta(redis, mint, state.get("holdingCost", 0), 0)
-    
-    # 减少庄家计数
-    metrics_key = await _get_metrics_key(mint)
-    dealer_count = await redis.hget(metrics_key, "dealer_count")
-    if dealer_count and int(dealer_count) > 0:
-        await redis.hincrbyfloat(metrics_key, "dealer_count", -1)
-    
-    logger.info(f"[散户恢复] {address[:8]}... 已重新加入汇总")
+    try:
+        state = await get_trader_state(redis, mint, address)
+        
+        # 将持仓成本加回汇总
+        await update_metrics_delta(redis, mint, state.get("holdingCost", 0), 0)
+        
+        # 减少庄家计数
+        metrics_key = await _get_metrics_key(mint)
+        dealer_count = await redis.hget(metrics_key, "dealer_count")
+        if dealer_count and int(dealer_count) > 0:
+            await redis.hincrbyfloat(metrics_key, "dealer_count", -1)
+        
+        logger.info(f"[散户恢复] {address[:8]}... 已重新加入汇总")
+    except Exception as e:
+        logger.error(f"[散户恢复] 失败 address={address[:8]}...: {e}", exc_info=True)
 
 
 # ──────────────────────────────────────────────────────────
@@ -531,52 +567,58 @@ async def _consumer_loop(mint: str):
     logger.info(f"[消费者] 开始消化队列 mint={mint}")
 
     while True:
-        tx_detail = await _trade_queue.get()
-        if tx_detail is None:  # 毒丸信号，结束
-            logger.info(f"[消费者] 收到停止信号 mint={mint}")
-            break
-
-        sig = tx_detail.get("sig", "")
-        if not sig:
-            continue
-
         try:
-            # 庄家判定 + 指数计算 + 统一广播（内部完成）
-            await _calculate_index(tx_detail, mint)
+            tx_detail = await _trade_queue.get()
+            if tx_detail is None:  # 毒丸信号，结束
+                logger.info(f"[消费者] 收到停止信号 mint={mint}")
+                break
 
-            logger.debug(f"[消费者] {sig[:8]}... 完成")
+            sig = tx_detail.get("sig", "")
+            if not sig:
+                continue
 
+            try:
+                # 庄家判定 + 指数计算 + 统一广播（内部完成）
+                await _calculate_index(tx_detail, mint)
+
+                logger.debug(f"[消费者] {sig[:8]}... 完成")
+
+            except Exception as e:
+                logger.error(f"[消费者] {sig[:8]}... 异常: {e}", exc_info=True)
         except Exception as e:
-            logger.error(f"[消费者] {sig[:8]}... 异常: {e}", exc_info=True)
+            logger.error(f"[消费者] 队列获取异常: {e}", exc_info=True)
 
 
 async def run_full_calculation(db: Session, mint: str):
     """全量指数计算（从 Redis 获取交易数据）"""
     logger.info(f"[全量计算] 开始计算 mint={mint}")
 
-    # 从 Redis 有序集合获取交易列表（先 rpc_fill，再 ws）
-    # rpc_fill 需要倒序获取（从最新到最旧），因为 backfill 时最新交易先存入
-    # 然后反转得到从旧到新的顺序，保证指数计算从最早的交易开始
-    rpc_sigs = list(reversed(await tx_redis.get_tx_list(mint, "rpc_fill")))
-    ws_sigs = await tx_redis.get_tx_list(mint, "ws")
-    all_sigs = rpc_sigs + ws_sigs
+    try:
+        # 从 Redis 有序集合获取交易列表（先 rpc_fill，再 ws）
+        # rpc_fill 需要倒序获取（从最新到最旧），因为 backfill 时最新交易先存入
+        # 然后反转得到从旧到新的顺序，保证指数计算从最早的交易开始
+        rpc_sigs = list(reversed(await tx_redis.get_tx_list(mint, "rpc_fill")))
+        ws_sigs = await tx_redis.get_tx_list(mint, "ws")
+        all_sigs = rpc_sigs + ws_sigs
 
-    logger.info(f"[全量计算] 共 {len(all_sigs)} 条交易待处理 (rpc_fill: {len(rpc_sigs)}, ws: {len(ws_sigs)})")
+        logger.info(f"[全量计算] 共 {len(all_sigs)} 条交易待处理 (rpc_fill: {len(rpc_sigs)}, ws: {len(ws_sigs)})")
 
-    for sig in all_sigs:
-        try:
-            # 从 Redis 获取交易详情
-            tx_detail = await tx_redis.get_tx(sig)
-            if not tx_detail:
-                continue
+        for sig in all_sigs:
+            try:
+                # 从 Redis 获取交易详情
+                tx_detail = await tx_redis.get_tx(sig)
+                if not tx_detail:
+                    continue
 
-            # 指数计算 + 统一广播（内部完成）
-            await _calculate_index(tx_detail, mint)
+                # 指数计算 + 统一广播（内部完成）
+                await _calculate_index(tx_detail, mint)
 
-        except Exception as e:
-            logger.error(f"[全量计算] 处理 {sig[:8]}... 失败: {e}")
+            except Exception as e:
+                logger.error(f"[全量计算] 处理 {sig[:8]}... 失败: {e}")
 
-    logger.info(f"[全量计算] 完成 mint={mint}")
+        logger.info(f"[全量计算] 完成 mint={mint}")
+    except Exception as e:
+        logger.error(f"[全量计算] 异常 mint={mint[:8]}...: {e}", exc_info=True)
 
 
 async def reset_processor(mint: str, db: Session):
@@ -585,47 +627,50 @@ async def reset_processor(mint: str, db: Session):
 
     logger.info(f"[重置] 开始清理 mint={mint}")
 
-    # 1. 停止消费者任务
-    if _consumer_task and not _consumer_task.done():
+    try:
+        # 1. 停止消费者任务
+        if _consumer_task and not _consumer_task.done():
+            if _trade_queue is not None:
+                await _trade_queue.put(None)
+            try:
+                await asyncio.wait_for(_consumer_task, timeout=3.0)
+            except asyncio.TimeoutError:
+                _consumer_task.cancel()
+                try:
+                    await _consumer_task
+                except asyncio.CancelledError:
+                    pass
+            logger.info(f"[重置] 消费者任务已停止")
+
+        # 2. 清空队列
         if _trade_queue is not None:
-            await _trade_queue.put(None)
-        try:
-            await asyncio.wait_for(_consumer_task, timeout=3.0)
-        except asyncio.TimeoutError:
-            _consumer_task.cancel()
-            try:
-                await _consumer_task
-            except asyncio.CancelledError:
-                pass
-        logger.info(f"[重置] 消费者任务已停止")
+            cleared = 0
+            while not _trade_queue.empty():
+                try:
+                    _trade_queue.get_nowait()
+                    cleared += 1
+                except asyncio.QueueEmpty:
+                    break
+            logger.info(f"[重置] 队列已清空，丢弃 {cleared} 条消息")
 
-    # 2. 清空队列
-    if _trade_queue is not None:
-        cleared = 0
-        while not _trade_queue.empty():
-            try:
-                _trade_queue.get_nowait()
-                cleared += 1
-            except asyncio.QueueEmpty:
-                break
-        logger.info(f"[重置] 队列已清空，丢弃 {cleared} 条消息")
+        # 3. 清理 Redis 指标数据（不清理用户数据）
+        await clear_mint_redis(mint)
 
-    # 3. 清理 Redis 指标数据（不清理用户数据）
-    await clear_mint_redis(mint)
+        # 4. 删除 Redis 中该 mint 的交易数据（txlist 和 tx:*）
+        from app.services.dealer_detector import _redis
+        if _redis:
+            await _redis.delete(f"txlist:rpc_fill:{mint}")
+            await _redis.delete(f"txlist:ws:{mint}")
+            logger.info(f"[重置] 已删除 Redis 交易列表: txlist:rpc_fill:{mint}, txlist:ws:{mint}")
 
-    # 4. 删除 Redis 中该 mint 的交易数据（txlist 和 tx:*）
-    from app.services.dealer_detector import _redis
-    if _redis:
-        await _redis.delete(f"txlist:rpc_fill:{mint}")
-        await _redis.delete(f"txlist:ws:{mint}")
-        logger.info(f"[重置] 已删除 Redis 交易列表: txlist:rpc_fill:{mint}, txlist:ws:{mint}")
+        # 5. 重置全局变量
+        _trade_queue = asyncio.Queue()
+        _consumer_task = None
+        _mint = ""
 
-    # 5. 重置全局变量
-    _trade_queue = asyncio.Queue()
-    _consumer_task = None
-    _mint = ""
-
-    logger.info(f"[重置] 清理完成 mint={mint}")
+        logger.info(f"[重置] 清理完成 mint={mint}")
+    except Exception as e:
+        logger.error(f"[重置] 清理异常 mint={mint[:8]}...: {e}", exc_info=True)
 
 
 async def calculate_metrics(db: Session, mint: str) -> Dict[str, float]:
@@ -635,19 +680,23 @@ async def calculate_metrics(db: Session, mint: str) -> Dict[str, float]:
     if not redis:
         return {"current_bet": 0, "current_cost": 0, "realized_profit": 0, "trade_count": 0}
 
-    metrics = await get_metrics(redis, mint)
-    
-    # 从 Redis 获取交易数量（两个有序集合的总和）
-    rpc_count = await redis.zcard(f"txlist:rpc_fill:{mint}")
-    ws_count = await redis.zcard(f"txlist:ws:{mint}")
-    trade_count = rpc_count + ws_count
-    
-    total_bet = metrics.get("total_bet", 0)
-    realized_profit = metrics.get("realized_profit", 0)
-    
-    return {
-        "current_bet": total_bet,
-        "realized_profit": realized_profit,
-        "current_cost": total_bet - realized_profit,
-        "trade_count": trade_count
-    }
+    try:
+        metrics = await get_metrics(redis, mint)
+        
+        # 从 Redis 获取交易数量（两个有序集合的总和）
+        rpc_count = await redis.zcard(f"txlist:rpc_fill:{mint}")
+        ws_count = await redis.zcard(f"txlist:ws:{mint}")
+        trade_count = rpc_count + ws_count
+        
+        total_bet = metrics.get("total_bet", 0)
+        realized_profit = metrics.get("realized_profit", 0)
+        
+        return {
+            "current_bet": total_bet,
+            "realized_profit": realized_profit,
+            "current_cost": total_bet - realized_profit,
+            "trade_count": trade_count
+        }
+    except Exception as e:
+        logger.error(f"[指标计算] 失败 mint={mint[:8]}...: {e}", exc_info=True)
+        return {"current_bet": 0, "current_cost": 0, "realized_profit": 0, "trade_count": 0}

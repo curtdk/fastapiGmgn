@@ -50,14 +50,18 @@ async def init_dealer_detector():
     """初始化：Redis 连接 + 队列 + 信号量"""
     global _redis, _dealer_check_queue, _dealer_semaphore, _retry_queue
 
-    _redis = aioredis.from_url(REDIS_URL, decode_responses=True)
-    await _redis.ping()
-    logger.info("[庄家判定] Redis 连接成功")
+    try:
+        _redis = aioredis.from_url(REDIS_URL, decode_responses=True)
+        await _redis.ping()
+        logger.info("[庄家判定] Redis 连接成功")
 
-    _dealer_check_queue = asyncio.Queue()
-    _dealer_semaphore = asyncio.Semaphore(1)
-    _retry_queue = asyncio.Queue()
-    logger.info("[庄家判定] 队列已就绪，等待首次触发")
+        _dealer_check_queue = asyncio.Queue()
+        _dealer_semaphore = asyncio.Semaphore(1)
+        _retry_queue = asyncio.Queue()
+        logger.info("[庄家判定] 队列已就绪，等待首次触发")
+    except Exception as e:
+        logger.error(f"[庄家判定] 初始化失败: {e}", exc_info=True)
+        raise
 
 
 def start_dealer_consumer():
@@ -74,23 +78,26 @@ async def close_dealer_detector():
     """关闭：停止消费者任务，关闭 Redis 连接"""
     global _dealer_consumer_task, _retry_consumer_task, _redis
 
-    if _dealer_consumer_task and not _dealer_consumer_task.done():
-        await _dealer_check_queue.put(None)
-        try:
-            await asyncio.wait_for(_dealer_consumer_task, timeout=3.0)
-        except asyncio.TimeoutError:
-            _dealer_consumer_task.cancel()
-    
-    if _retry_consumer_task and not _retry_consumer_task.done():
-        await _retry_queue.put(None)
-        try:
-            await asyncio.wait_for(_retry_consumer_task, timeout=3.0)
-        except asyncio.TimeoutError:
-            _retry_consumer_task.cancel()
-    
-    if _redis:
-        await _redis.aclose()
-    logger.info("[庄家判定] 已关闭")
+    try:
+        if _dealer_consumer_task and not _dealer_consumer_task.done():
+            await _dealer_check_queue.put(None)
+            try:
+                await asyncio.wait_for(_dealer_consumer_task, timeout=3.0)
+            except asyncio.TimeoutError:
+                _dealer_consumer_task.cancel()
+
+        if _retry_consumer_task and not _retry_consumer_task.done():
+            await _retry_queue.put(None)
+            try:
+                await asyncio.wait_for(_retry_consumer_task, timeout=3.0)
+            except asyncio.TimeoutError:
+                _retry_consumer_task.cancel()
+
+        if _redis:
+            await _redis.aclose()
+        logger.info("[庄家判定] 已关闭")
+    except Exception as e:
+        logger.error(f"[庄家判定] 关闭异常: {e}", exc_info=True)
 
 
 # ──────────────────────────────────────────────────────────
@@ -101,20 +108,26 @@ async def _dealer_queue_consumer():
     """常驻消费者：从队列取地址，执行检测"""
     logger.info("[庄家判定] 队列消费者运行中")
     while True:
-        item = await _dealer_check_queue.get()
-        if item is None:  # 毒丸信号
+        try:
+            item = await _dealer_check_queue.get()
+            if item is None:  # 毒丸信号
+                break
+
+            address, mint, sig = item
+
+            # 再次检查状态，避免短时间内重复检测
+            from app.services.trade_processor import get_trader_state_with_sig, _get_redis as tp_get_redis
+            redis = await tp_get_redis()
+            state = await get_trader_state_with_sig(redis, mint, address, sig)
+            if state.get("status") in ("retail", "dealer"):
+                continue
+
+            await _run_dealer_check(address, mint, sig)
+        except asyncio.CancelledError:
+            logger.info("[庄家判定] 队列消费者被取消")
             break
-
-        address, mint, sig = item
-
-        # 再次检查状态，避免短时间内重复检测
-        from app.services.trade_processor import get_trader_state_with_sig, _get_redis as tp_get_redis
-        redis = await tp_get_redis()
-        state = await get_trader_state_with_sig(redis, mint, address, sig)
-        if state.get("status") in ("retail", "dealer"):
-            continue
-
-        await _run_dealer_check(address, mint, sig)
+        except Exception as e:
+            logger.error(f"[庄家判定] 队列消费者异常: {e}", exc_info=True)
 
 
 # ──────────────────────────────────────────────────────────
@@ -123,32 +136,35 @@ async def _dealer_queue_consumer():
 
 async def _handle_detection_failed(redis, address, mint, sig, current_count, reason):
     """处理检测失败：入重试队列或放弃"""
-    retry_key = f"retry:{address}:{mint}"
-    new_count = current_count + 1
-    
-    if new_count >= 3:
-        # 重试 3 次都失败，放弃
-        logger.warning(f"[庄家判定] {address[:8]}... 重试 {new_count} 次失败 ({reason})，放弃")
+    try:
+        retry_key = f"retry:{address}:{mint}"
+        new_count = current_count + 1
         
-        # 广播给前端
-        await ws_manager.broadcast(mint, {
-            "type": "user_status",
-            "data": {
-                "address": address,
-                "status": "unknown",
-                "reason": "detection_failed",
-                "sig": sig,
-            }
-        })
-        
-        # 清理重试计数
-        await redis.delete(retry_key)
-    else:
-        # 入重试队列，等待 2s/4s/8s 后再试
-        await redis.set(retry_key, str(new_count))
-        wait_time = 2 ** new_count
-        logger.info(f"[庄家判定] {address[:8]}... 第 {new_count} 次失败，{wait_time}s 后重试")
-        await _retry_queue.put((address, mint, sig, wait_time))
+        if new_count >= 3:
+            # 重试 3 次都失败，放弃
+            logger.warning(f"[庄家判定] {address[:8]}... 重试 {new_count} 次失败 ({reason})，放弃")
+            
+            # 广播给前端
+            await ws_manager.broadcast(mint, {
+                "type": "user_status",
+                "data": {
+                    "address": address,
+                    "status": "unknown",
+                    "reason": "detection_failed",
+                    "sig": sig,
+                }
+            })
+            
+            # 清理重试计数
+            await redis.delete(retry_key)
+        else:
+            # 入重试队列，等待 2s/4s/8s 后再试
+            await redis.set(retry_key, str(new_count))
+            wait_time = 2 ** new_count
+            logger.info(f"[庄家判定] {address[:8]}... 第 {new_count} 次失败，{wait_time}s 后重试")
+            await _retry_queue.put((address, mint, sig, wait_time))
+    except Exception as e:
+        logger.error(f"[庄家判定] 处理失败异常 address={address[:8]}...: {e}", exc_info=True)
 
 
 async def _retry_queue_consumer():
@@ -156,20 +172,26 @@ async def _retry_queue_consumer():
     logger.info("[重试] 消费者运行中")
     
     while True:
-        item = await _retry_queue.get()
-        if item is None:
+        try:
+            item = await _retry_queue.get()
+            if item is None:
+                break
+            
+            address, mint, sig, wait_time = item
+            
+            await asyncio.sleep(wait_time)
+            
+            if not _dealer_check_queue.empty():
+                logger.debug(f"[重试] 主队列非空，{address[:8]}... 放回队列等待")
+                await _retry_queue.put((address, mint, sig, wait_time))
+                continue
+            
+            await _run_dealer_check(address, mint, sig)
+        except asyncio.CancelledError:
+            logger.info("[重试] 消费者被取消")
             break
-        
-        address, mint, sig, wait_time = item
-        
-        await asyncio.sleep(wait_time)
-        
-        if not _dealer_check_queue.empty():
-            logger.debug(f"[重试] 主队列非空，{address[:8]}... 放回队列等待")
-            await _retry_queue.put((address, mint, sig, wait_time))
-            continue
-        
-        await _run_dealer_check(address, mint, sig)
+        except Exception as e:
+            logger.error(f"[重试] 消费者异常: {e}", exc_info=True)
 
 
 def start_retry_consumer():
@@ -220,22 +242,25 @@ def _check_local_dealer_conditions(tx_detail: dict, state: dict, db=None, mint: 
         c006_enabled = get_cluster_settings(db).enabled
         
         if c006_enabled and tx_detail and mint:
-            cluster_result = run_cluster_detection(db, tx_detail, mint)
-            
-            # 收集新簇组创建的广播数据
-            if cluster_result.new_cluster_broadcast:
-                new_cluster_broadcast = cluster_result.new_cluster_broadcast
-            
-            # 无论什么类型都进行 cluster_info 返回
-            if cluster_result.matched:
-                status = cluster_result.cluster_type  # retail/dealer/unknown
-                conditions.append("C006")
-                cluster_info = {
-                    "address": tx_detail.get("from_address", ""),
-                    "sig": tx_detail.get("sig", ""),
-                    "cluster_name": cluster_result.cluster.name if cluster_result.cluster else None,
-                    "cluster_type": cluster_result.cluster_type,
-                }
+            try:
+                cluster_result = run_cluster_detection(db, tx_detail, mint)
+                
+                # 收集新簇组创建的广播数据
+                if cluster_result.new_cluster_broadcast:
+                    new_cluster_broadcast = cluster_result.new_cluster_broadcast
+                
+                # 无论什么类型都进行 cluster_info 返回
+                if cluster_result.matched:
+                    status = cluster_result.cluster_type  # retail/dealer/unknown
+                    conditions.append("C006")
+                    cluster_info = {
+                        "address": tx_detail.get("from_address", ""),
+                        "sig": tx_detail.get("sig", ""),
+                        "cluster_name": cluster_result.cluster.name if cluster_result.cluster else None,
+                        "cluster_type": cluster_result.cluster_type,
+                    }
+            except Exception as e:
+                logger.warning(f"[庄家判定] 簇组检测失败: {e}")
         
         # ── 条件 C002：使用 ALT（地址查找表） ──
         if "C002" not in conditions and tx_detail:
@@ -274,6 +299,8 @@ def _check_local_dealer_conditions(tx_detail: dict, state: dict, db=None, mint: 
                 if risk_score > risk_min:
                     conditions.append("C005")
                     status = "dealer"
+    except Exception as e:
+        logger.error(f"[庄家判定] 本地条件检测异常: {e}", exc_info=True)
     finally:
         if should_close_db:
             db.close()
@@ -284,27 +311,30 @@ def _check_local_dealer_conditions(tx_detail: dict, state: dict, db=None, mint: 
 async def _apply_dealer_result(redis, address: str, mint: str, sig: str, state: dict, 
                                conditions: list, is_dealer: bool):
     """应用庄家判定结果：保存状态、排除汇总、广播 WS"""
-    from app.services.trade_processor import save_trader_state, exclude_dealer
-    
-    state["status"] = "dealer" if is_dealer else "retail"
-    state["conditions"] = conditions
-    await save_trader_state(redis, mint, address, state)
-    
-    if is_dealer:
-        await exclude_dealer(mint, address)
-        logger.info(f"[庄家判定] {address[:8]}... 满足 {conditions}，判定为庄家，已排除")
-    else:
-        logger.info(f"[庄家判定] {address[:8]}... 判定为散户")
-    
-    await ws_manager.broadcast(mint, {
-        "type": "user_status",
-        "data": {
-            "address": address,
-            "status": state["status"],
-            "conditions": conditions,
-            "sig": sig,
-        }
-    })
+    try:
+        from app.services.trade_processor import save_trader_state, exclude_dealer
+        
+        state["status"] = "dealer" if is_dealer else "retail"
+        state["conditions"] = conditions
+        await save_trader_state(redis, mint, address, state)
+        
+        if is_dealer:
+            await exclude_dealer(mint, address)
+            logger.info(f"[庄家判定] {address[:8]}... 满足 {conditions}，判定为庄家，已排除")
+        else:
+            logger.info(f"[庄家判定] {address[:8]}... 判定为散户")
+        
+        await ws_manager.broadcast(mint, {
+            "type": "user_status",
+            "data": {
+                "address": address,
+                "status": state["status"],
+                "conditions": conditions,
+                "sig": sig,
+            }
+        })
+    except Exception as e:
+        logger.error(f"[庄家判定] 应用结果失败 address={address[:8]}...: {e}", exc_info=True)
 
 
 # ──────────────────────────────────────────────────────────
@@ -321,49 +351,49 @@ async def _run_dealer_check(address: str, mint: str, sig: str):
     from app.utils.database import SessionLocal
     from app.services.settings_service import get_setting
 
-    redis = await tp_get_redis()
-    retry_key = f"retry:{address}:{mint}"
-    retry_count = await redis.get(retry_key)
-    retry_count = int(retry_count) if retry_count else 0
-    
-    db = SessionLocal()
     try:
-        state = await get_trader_state(redis, mint, address)
-        conditions = list(state.get("conditions", []))
+        redis = await tp_get_redis()
+        retry_key = f"retry:{address}:{mint}"
+        retry_count = await redis.get(retry_key)
+        retry_count = int(retry_count) if retry_count else 0
         
-        # ── 条件 C001：首笔交易包含 closeAccount（Helius API） ──
-        c001_enabled = get_setting(db, "dealer_c001_enabled")
-        if c001_enabled != "true":
-            # C001 未启用，直接跳过检测，保持 unknown 状态
-            return
+        db = SessionLocal()
+        try:
+            state = await get_trader_state(redis, mint, address)
+            conditions = list(state.get("conditions", []))
+            
+            # ── 条件 C001：首笔交易包含 closeAccount（Helius API） ──
+            c001_enabled = get_setting(db, "dealer_c001_enabled")
+            if c001_enabled != "true":
+                # C001 未启用，直接跳过检测，保持 unknown 状态
+                return
 
-        api_key = await _get_helius_api_key()
-        if not api_key:
-            await _handle_detection_failed(redis, address, mint, sig, retry_count, "API Key 未配置")
-            return
+            api_key = await _get_helius_api_key()
+            if not api_key:
+                await _handle_detection_failed(redis, address, mint, sig, retry_count, "API Key 未配置")
+                return
 
-        # 获取钱包最旧一笔交易（sortOrder asc, limit 1）
-        first_tx = await _fetch_first_transaction(address, api_key)
-        if not first_tx:
-            await _handle_detection_failed(redis, address, mint, sig, retry_count, "无历史交易")
-            return
+            # 获取钱包最旧一笔交易（sortOrder asc, limit 1）
+            first_tx = await _fetch_first_transaction(address, api_key)
+            if not first_tx:
+                await _handle_detection_failed(redis, address, mint, sig, retry_count, "无历史交易")
+                return
 
-        is_dealer = False
-        if "C001" not in conditions:
-            if _check_c001(first_tx, address):
-                conditions.append("C001")
-                is_dealer = True
-                logger.info(f"[庄家判定] {address[:8]}... 满足 C001")
+            is_dealer = False
+            if "C001" not in conditions:
+                if _check_c001(first_tx, address):
+                    conditions.append("C001")
+                    is_dealer = True
+                    logger.info(f"[庄家判定] {address[:8]}... 满足 C001")
 
-        await _apply_dealer_result(redis, address, mint, sig, state, conditions, is_dealer)
+            await _apply_dealer_result(redis, address, mint, sig, state, conditions, is_dealer)
 
+        finally:
+            db.close()
+            if _dealer_semaphore:
+                _dealer_semaphore.release()
     except Exception as e:
         logger.error(f"[庄家判定] {address[:8]}... 判定异常: {e}", exc_info=True)
-        # await _handle_detection_failed(redis, address, mint, sig, retry_count, str(e))
-    finally:
-        db.close()
-        if _dealer_semaphore:
-            _dealer_semaphore.release()
 
 
 def _check_c001(tx_data: dict, address: str) -> bool:

@@ -32,13 +32,21 @@ class TradeBackfill:
 
     def _get_api_key(self) -> str:
         """获取 Helius API Key"""
-        from app.services.settings_service import get_setting
-        return get_setting(self.db, "helius_api_key") or ""
+        try:
+            from app.services.settings_service import get_setting
+            return get_setting(self.db, "helius_api_key") or ""
+        except Exception as e:
+            logger.warning(f"[回填] 获取 API Key 失败: {e}")
+            return ""
 
     def _get_network(self) -> str:
         """获取网络"""
-        import os
-        return os.getenv("HELIUS_NETWORK", "mainnet-beta")
+        try:
+            import os
+            return os.getenv("HELIUS_NETWORK", "mainnet-beta")
+        except Exception as e:
+            logger.warning(f"[回填] 获取网络失败: {e}")
+            return "mainnet-beta"
 
     async def run(self):
         """执行回填流程"""
@@ -52,25 +60,31 @@ class TradeBackfill:
             if skip_ws_wait:
                 # 测试模式：直接获取全部历史数据，不等待 sync_point
                 logger.info("[回填] 测试模式：跳过 sync_point 等待")
-                await ws_manager.broadcast(self.mint, {
-                    "type": "status",
-                    "data": {
-                        "mint": self.mint,
-                        "status": "FILLING",
-                        "message": "测试模式：直接获取全部历史数据...",
-                    }
-                })
+                try:
+                    await ws_manager.broadcast(self.mint, {
+                        "type": "status",
+                        "data": {
+                            "mint": self.mint,
+                            "status": "FILLING",
+                            "message": "测试模式：直接获取全部历史数据...",
+                        }
+                    })
+                except Exception as e:
+                    logger.warning(f"[回填] 广播状态失败: {e}")
                 self.total_fetched = await self._fetch_all_transactions_no_limit()
             else:
                 # 正常模式：等待 sync_point
-                await ws_manager.broadcast(self.mint, {
-                    "type": "status",
-                    "data": {
-                        "mint": self.mint,
-                        "status": "WAITING_SYNC",
-                        "message": "等待实时流 sync_point...",
-                    }
-                })
+                try:
+                    await ws_manager.broadcast(self.mint, {
+                        "type": "status",
+                        "data": {
+                            "mint": self.mint,
+                            "status": "WAITING_SYNC",
+                            "message": "等待实时流 sync_point...",
+                        }
+                    })
+                except Exception as e:
+                    logger.warning(f"[回填] 广播状态失败: {e}")
 
                 sync_point = await self._wait_for_sync_point()
                 if not sync_point:
@@ -83,47 +97,62 @@ class TradeBackfill:
                 self.total_fetched = await self._fetch_all_transactions_before(sync_point)
 
             if not self.total_fetched:
+                try:
+                    await ws_manager.broadcast(self.mint, {
+                        "type": "status",
+                        "data": {
+                            "mint": self.mint,
+                            "status": "STREAMING",
+                            "message": "无历史数据，直接进入实时流",
+                            "total_trades": 0,
+                        }
+                    })
+                except Exception as e:
+                    logger.warning(f"[回填] 广播状态失败: {e}")
+                return
+
+            # 3. 回填完成，触发指数计算
+            try:
                 await ws_manager.broadcast(self.mint, {
                     "type": "status",
                     "data": {
                         "mint": self.mint,
-                        "status": "STREAMING",
-                        "message": "无历史数据，直接进入实时流",
-                        "total_trades": 0,
+                        "status": "DATA_READY",
+                        "message": f"回填完成，共 {self.total_fetched} 条历史数据，开始计算指标...",
+                        "total_trades": self.total_fetched,
+                        "progress": 100.0,
                     }
                 })
-                return
-
-            # 3. 回填完成，触发指数计算
-            await ws_manager.broadcast(self.mint, {
-                "type": "status",
-                "data": {
-                    "mint": self.mint,
-                    "status": "DATA_READY",
-                    "message": f"回填完成，共 {self.total_fetched} 条历史数据，开始计算指标...",
-                    "total_trades": self.total_fetched,
-                    "progress": 100.0,
-                }
-            })
+            except Exception as e:
+                logger.warning(f"[回填] 广播状态失败: {e}")
 
             # 4. 触发全量指数计算
             await self._trigger_full_calculation()
 
         except Exception as e:
             logger.error(f"[回填] 异常: {e}", exc_info=True)
-            await ws_manager.broadcast(self.mint, {
-                "type": "error",
-                "data": {"mint": self.mint, "message": f"回填异常: {str(e)}"}
-            })
+            try:
+                await ws_manager.broadcast(self.mint, {
+                    "type": "error",
+                    "data": {"mint": self.mint, "message": f"回填异常: {str(e)}"}
+                })
+            except Exception:
+                pass
         finally:
             self.running = False
 
     async def _wait_for_sync_point(self, timeout: float = 30.0) -> Optional[str]:
         """等待 TradeStream 的 sync_point 就绪，超时后继续等待，不返回"""
         while self.running:
-            if self.stream and self.stream.sync_point:
-                return self.stream.sync_point
-            await asyncio.sleep(0.5)
+            try:
+                if self.stream and self.stream.sync_point:
+                    return self.stream.sync_point
+                await asyncio.sleep(0.5)
+            except asyncio.CancelledError:
+                return None
+            except Exception as e:
+                logger.warning(f"[回填] 等待 sync_point 异常: {e}")
+                await asyncio.sleep(0.5)
         return None
 
     async def _fetch_all_transactions_before(self, sync_point: str) -> int:
@@ -145,91 +174,115 @@ class TradeBackfill:
         _BACKFILL_INTERVAL = 0.2
 
         api_key = self._get_api_key()
+        if not api_key:
+            logger.error("[回填] API Key 为空，跳过回填")
+            return 0
 
-        # 复用同一个 AsyncClient，避免每次分页都新建 TCP 连接
-        async with httpx.AsyncClient(timeout=60) as client:
-            while self.running and total_saved < max_total:
-                params = {
-                    "limit": batch_size,
-                    "commitment": "confirmed",
-                    "transactionDetails": "full",
-                    "encoding": "jsonParsed",
-                    "maxSupportedTransactionVersion": 0,
-                    "filters": {
-                        "signature": {"lt": sync_point},
-                    },
-                }
-                if pagination_token:
-                    params["paginationToken"] = pagination_token
+        try:
+            # 复用同一个 AsyncClient，避免每次分页都新建 TCP 连接
+            async with httpx.AsyncClient(timeout=60) as client:
+                while self.running and total_saved < max_total:
+                    params = {
+                        "limit": batch_size,
+                        "commitment": "confirmed",
+                        "transactionDetails": "full",
+                        "encoding": "jsonParsed",
+                        "maxSupportedTransactionVersion": 0,
+                        "filters": {
+                            "signature": {"lt": sync_point},
+                        },
+                    }
+                    if pagination_token:
+                        params["paginationToken"] = pagination_token
 
-                body = {
-                    "jsonrpc": "2.0",
-                    "id": 1,
-                    "method": "getTransactionsForAddress",
-                    "params": [self.mint, params],
-                }
-
-                resp = await client.post(
-                    f"{HELIUS_RPC_URL}/?api-key={api_key}",
-                    json=body
-                )
-                resp.raise_for_status()
-                data = resp.json()
-
-                result = data.get("result", {})
-                txs = result.get("data", [])
-                if not txs:
-                    break
-
-                # 解析并直接存入 Redis
-                for tx in txs:
-                    sig = tx.get("transaction", {}).get("signatures", [""])[0]
-                    if not sig:
-                        continue
-
-                    meta = tx.get("meta", {})
-                    if meta.get("err"):
-                        continue
-
-                    tx_data = {
-                        "_signature": sig,
-                        "slot": tx.get("slot", 0),
-                        "blockTime": tx.get("blockTime"),
-                        "transaction": tx.get("transaction", {}),
-                        "meta": meta,
+                    body = {
+                        "jsonrpc": "2.0",
+                        "id": 1,
+                        "method": "getTransactionsForAddress",
+                        "params": [self.mint, params],
                     }
 
-                    detail = self._extract_trade_info(tx_data)
-                    if detail:
-                        # 检查是否已存在
-                        existing = await tx_redis.get_tx(sig)
-                        if existing:
+                    try:
+                        resp = await client.post(
+                            f"{HELIUS_RPC_URL}/?api-key={api_key}",
+                            json=body
+                        )
+                        resp.raise_for_status()
+                        data = resp.json()
+                    except httpx.HTTPStatusError as e:
+                        logger.error(f"[回填] HTTP 错误: {e.response.status_code}")
+                        await asyncio.sleep(_BACKFILL_INTERVAL * 2)
+                        continue
+                    except Exception as e:
+                        logger.error(f"[回填] 请求失败: {e}")
+                        await asyncio.sleep(_BACKFILL_INTERVAL * 2)
+                        continue
+
+                    result = data.get("result", {})
+                    txs = result.get("data", [])
+                    if not txs:
+                        break
+
+                    # 解析并直接存入 Redis
+                    for tx in txs:
+                        try:
+                            sig = tx.get("transaction", {}).get("signatures", [""])[0]
+                            if not sig:
+                                continue
+
+                            meta = tx.get("meta", {})
+                            if meta.get("err"):
+                                continue
+
+                            tx_data = {
+                                "_signature": sig,
+                                "slot": tx.get("slot", 0),
+                                "blockTime": tx.get("blockTime"),
+                                "transaction": tx.get("transaction", {}),
+                                "meta": meta,
+                            }
+
+                            detail = self._extract_trade_info(tx_data)
+                            if detail:
+                                # 检查是否已存在
+                                existing = await tx_redis.get_tx(sig)
+                                if existing:
+                                    continue
+                                
+                                # 直接存入 Redis
+                                await tx_redis.save_tx(detail)
+                                # 添加到有序集合（seq 作为 score，保证从旧到新）
+                                await tx_redis.add_tx_to_list(self.mint, sig, "rpc_fill", score=total_saved)
+                                total_saved += 1
+                        except Exception as e:
+                            logger.warning(f"[回填] 处理交易失败: {e}")
                             continue
-                        
-                        # 直接存入 Redis
-                        await tx_redis.save_tx(detail)
-                        # 添加到有序集合（seq 作为 score，保证从旧到新）
-                        await tx_redis.add_tx_to_list(self.mint, sig, "rpc_fill", score=total_saved)
-                        total_saved += 1
 
-                # 进度通知
-                await ws_manager.broadcast(self.mint, {
-                    "type": "status",
-                    "data": {
-                        "mint": self.mint,
-                        "status": "FILLING",
-                        "message": f"已保存 {total_saved} 条交易...",
-                        "total_trades": total_saved,
-                    }
-                })
+                    # 进度通知
+                    try:
+                        await ws_manager.broadcast(self.mint, {
+                            "type": "status",
+                            "data": {
+                                "mint": self.mint,
+                                "status": "FILLING",
+                                "message": f"已保存 {total_saved} 条交易...",
+                                "total_trades": total_saved,
+                            }
+                        })
+                    except Exception as e:
+                        logger.warning(f"[回填] 广播进度失败: {e}")
 
-                # 分页
-                pagination_token = result.get("paginationToken")
-                if not pagination_token:
-                    break
+                    # 分页
+                    pagination_token = result.get("paginationToken")
+                    if not pagination_token:
+                        break
 
-                # 批次间间隔
-                await asyncio.sleep(_BACKFILL_INTERVAL)
+                    # 批次间间隔
+                    await asyncio.sleep(_BACKFILL_INTERVAL)
+        except asyncio.CancelledError:
+            logger.info("[回填] 获取交易被取消")
+        except Exception as e:
+            logger.error(f"[回填] 获取交易异常: {e}", exc_info=True)
 
         return total_saved
 
@@ -245,87 +298,106 @@ class TradeBackfill:
         _BACKFILL_INTERVAL = 0.2
 
         api_key = self._get_api_key()
+        if not api_key:
+            logger.error("[回填] API Key 为空，跳过回填")
+            return 0
 
-        async with httpx.AsyncClient(timeout=60) as client:
-            while self.running and total_saved < max_total:
-                params = {
-                    "limit": batch_size,
-                    "commitment": "confirmed",
-                    "transactionDetails": "full",
-                    "encoding": "jsonParsed",
-                    "maxSupportedTransactionVersion": 0,
-                }
-                if pagination_token:
-                    params["paginationToken"] = pagination_token
+        try:
+            async with httpx.AsyncClient(timeout=60) as client:
+                while self.running and total_saved < max_total:
+                    params = {
+                        "limit": batch_size,
+                        "commitment": "confirmed",
+                        "transactionDetails": "full",
+                        "encoding": "jsonParsed",
+                        "maxSupportedTransactionVersion": 0,
+                    }
+                    if pagination_token:
+                        params["paginationToken"] = pagination_token
 
-                body = {
-                    "jsonrpc": "2.0",
-                    "id": 1,
-                    "method": "getTransactionsForAddress",
-                    "params": [self.mint, params],
-                }
-
-                resp = await client.post(
-                    f"{HELIUS_RPC_URL}/?api-key={api_key}",
-                    json=body
-                )
-                resp.raise_for_status()
-                data = resp.json()
-
-                result = data.get("result", {})
-                txs = result.get("data", [])
-                if not txs:
-                    break
-
-                # 解析并直接存入 Redis
-                for tx in txs:
-                    sig = tx.get("transaction", {}).get("signatures", [""])[0]
-                    if not sig:
-                        continue
-
-                    meta = tx.get("meta", {})
-                    if meta.get("err"):
-                        continue
-
-                    tx_data = {
-                        "_signature": sig,
-                        "slot": tx.get("slot", 0),
-                        "blockTime": tx.get("blockTime"),
-                        "transaction": tx.get("transaction", {}),
-                        "meta": meta,
+                    body = {
+                        "jsonrpc": "2.0",
+                        "id": 1,
+                        "method": "getTransactionsForAddress",
+                        "params": [self.mint, params],
                     }
 
-                    detail = self._extract_trade_info(tx_data)
-                    if detail:
-                        # 检查是否已存在
-                        # existing = await tx_redis.get_tx(sig)
-                        # if existing:
-                        #     continue
-                        
-                        # 直接存入 Redis
-                        await tx_redis.save_tx(detail)
-                        # 添加到有序集合（seq 作为 score，保证从旧到新）
-                        await tx_redis.add_tx_to_list(self.mint, sig, "rpc_fill", score=total_saved)
-                        total_saved += 1
+                    try:
+                        resp = await client.post(
+                            f"{HELIUS_RPC_URL}/?api-key={api_key}",
+                            json=body
+                        )
+                        resp.raise_for_status()
+                        data = resp.json()
+                    except httpx.HTTPStatusError as e:
+                        logger.error(f"[回填] HTTP 错误: {e.response.status_code}")
+                        await asyncio.sleep(_BACKFILL_INTERVAL * 2)
+                        continue
+                    except Exception as e:
+                        logger.error(f"[回填] 请求失败: {e}")
+                        await asyncio.sleep(_BACKFILL_INTERVAL * 2)
+                        continue
 
-                # 进度通知
-                await ws_manager.broadcast(self.mint, {
-                    "type": "status",
-                    "data": {
-                        "mint": self.mint,
-                        "status": "FILLING",
-                        "message": f"测试模式：已保存 {total_saved} 条交易...",
-                        "total_trades": total_saved,
-                    }
-                })
+                    result = data.get("result", {})
+                    txs = result.get("data", [])
+                    if not txs:
+                        break
 
-                # 分页
-                pagination_token = result.get("paginationToken")
-                if not pagination_token:
-                    break
+                    # 解析并直接存入 Redis
+                    for tx in txs:
+                        try:
+                            sig = tx.get("transaction", {}).get("signatures", [""])[0]
+                            if not sig:
+                                continue
 
-                # 批次间间隔
-                await asyncio.sleep(_BACKFILL_INTERVAL)
+                            meta = tx.get("meta", {})
+                            if meta.get("err"):
+                                continue
+
+                            tx_data = {
+                                "_signature": sig,
+                                "slot": tx.get("slot", 0),
+                                "blockTime": tx.get("blockTime"),
+                                "transaction": tx.get("transaction", {}),
+                                "meta": meta,
+                            }
+
+                            detail = self._extract_trade_info(tx_data)
+                            if detail:
+                                # 直接存入 Redis
+                                await tx_redis.save_tx(detail)
+                                # 添加到有序集合（seq 作为 score，保证从旧到新）
+                                await tx_redis.add_tx_to_list(self.mint, sig, "rpc_fill", score=total_saved)
+                                total_saved += 1
+                        except Exception as e:
+                            logger.warning(f"[回填] 处理交易失败: {e}")
+                            continue
+
+                    # 进度通知
+                    try:
+                        await ws_manager.broadcast(self.mint, {
+                            "type": "status",
+                            "data": {
+                                "mint": self.mint,
+                                "status": "FILLING",
+                                "message": f"测试模式：已保存 {total_saved} 条交易...",
+                                "total_trades": total_saved,
+                            }
+                        })
+                    except Exception as e:
+                        logger.warning(f"[回填] 广播进度失败: {e}")
+
+                    # 分页
+                    pagination_token = result.get("paginationToken")
+                    if not pagination_token:
+                        break
+
+                    # 批次间间隔
+                    await asyncio.sleep(_BACKFILL_INTERVAL)
+        except asyncio.CancelledError:
+            logger.info("[回填] 测试模式获取交易被取消")
+        except Exception as e:
+            logger.error(f"[回填] 测试模式获取交易异常: {e}", exc_info=True)
 
         return total_saved
 
@@ -377,8 +449,8 @@ class TradeBackfill:
                             elif ix_type == 3:  # SetComputeUnitPrice
                                 if len(decoded) >= 9:
                                     result["cu_price"] = int.from_bytes(decoded[1:9], 'little')
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"[回填] 提取 compute info 失败: {e}")
         return result
 
     def _extract_instruction_details(self, message: Dict[str, Any], meta: Dict[str, Any]) -> Dict[str, Any]:
@@ -395,130 +467,119 @@ class TradeBackfill:
             "program_ids": [],
         }
         
-        account_keys = message.get("accountKeys", [])
-        result["account_keys_count"] = len(account_keys)
-        
-        for key in account_keys:
-            if isinstance(key, dict):
-                if key.get("signer"):
-                    result["signers_count"] += 1
-                if key.get("source") == "lookupTable":
-                    result["uses_lookup_table"] = True
-        
-        instructions = message.get("instructions", [])
-        result["instructions_count"] = len(instructions)
-        
-        for idx, ix in enumerate(instructions):
-            program_id = ix.get("programId", "")
-            ix_type = ix.get("parsed", {}).get("type", "") or ix.get("instructionType", "")
-            if not ix_type:
-                ix_type = self._decode_instruction_type(program_id, ix.get("data", ""))
+        try:
+            account_keys = message.get("accountKeys", [])
+            result["account_keys_count"] = len(account_keys)
             
-            result["main_instructions"].append({
-                "index": idx,
-                "program_id": program_id,
-                "type": ix_type,
-            })
-            if program_id and program_id not in result["program_ids"]:
-                result["program_ids"].append(program_id)
-        
-        inner_count = 0
-        for ix_group in meta.get("innerInstructions", []):
-            group_index = ix_group.get("index", 0)
-            for idx, ix in enumerate(ix_group.get("instructions", [])):
-                inner_count += 1
+            for key in account_keys:
+                if isinstance(key, dict):
+                    if key.get("signer"):
+                        result["signers_count"] += 1
+                    if key.get("source") == "lookupTable":
+                        result["uses_lookup_table"] = True
+            
+            instructions = message.get("instructions", [])
+            result["instructions_count"] = len(instructions)
+            
+            for idx, ix in enumerate(instructions):
                 program_id = ix.get("programId", "")
                 ix_type = ix.get("parsed", {}).get("type", "") or ix.get("instructionType", "")
                 if not ix_type:
                     ix_type = self._decode_instruction_type(program_id, ix.get("data", ""))
                 
-                result["inner_instructions"].append({
-                    "group_index": group_index,
+                result["main_instructions"].append({
                     "index": idx,
                     "program_id": program_id,
                     "type": ix_type,
                 })
                 if program_id and program_id not in result["program_ids"]:
                     result["program_ids"].append(program_id)
-        
-        result["inner_instructions_count"] = inner_count
-        result["total_instruction_count"] = result["instructions_count"] + inner_count
+            
+            inner_count = 0
+            for ix_group in meta.get("innerInstructions", []):
+                group_index = ix_group.get("index", 0)
+                for idx, ix in enumerate(ix_group.get("instructions", [])):
+                    inner_count += 1
+                    program_id = ix.get("programId", "")
+                    ix_type = ix.get("parsed", {}).get("type", "") or ix.get("instructionType", "")
+                    if not ix_type:
+                        ix_type = self._decode_instruction_type(program_id, ix.get("data", ""))
+                    
+                    result["inner_instructions"].append({
+                        "group_index": group_index,
+                        "index": idx,
+                        "program_id": program_id,
+                        "type": ix_type,
+                    })
+                    if program_id and program_id not in result["program_ids"]:
+                        result["program_ids"].append(program_id)
+            
+            result["inner_instructions_count"] = inner_count
+            result["total_instruction_count"] = result["instructions_count"] + inner_count
+        except Exception as e:
+            logger.warning(f"[回填] 提取指令详情失败: {e}")
         
         return result
 
     def _analyze_risk(self, hints: Dict[str, Any], priority_fee: float) -> Dict[str, Any]:
         """分析风险指标"""
-        indicators = []
-        score = 0
-        
-        if hints["account_keys_count"] > 20:
-            indicators.append(f"高账户数: {hints['account_keys_count']}")
-            score += 25
-        elif hints["account_keys_count"] > 15:
-            indicators.append(f"中等账户数: {hints['account_keys_count']}")
-            score += 10
-        
-        if hints["uses_lookup_table"]:
-            indicators.append("使用了地址查找表 (ALT)")
-            score += 20
-        
-        if priority_fee > 0.5:
-            indicators.append(f"高 Priority Fee: {priority_fee:.6f} SOL")
-            score += 20
-        elif priority_fee > 0.1:
-            indicators.append(f"中等 Priority Fee: {priority_fee:.6f} SOL")
-            score += 10
-        
-        if hints["instructions_count"] > 1:
-            indicators.append("复杂交易 (非简单转账)")
-            score += 10
-        
-        dex_programs = ["6EF8rrecth", "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8"]
-        is_dex = any(pid in hints["program_ids"] for pid in dex_programs)
-        if is_dex:
-            indicators.append("DEX 交易")
-            score += 5
-        
-        if score >= 60:
-            verdict = "高风险"
-        elif score >= 30:
-            verdict = "中等风险"
-        elif score >= 15:
-            verdict = "低风险"
-        else:
-            verdict = "普通"
-        
-        return {"score": min(score, 100), "verdict": verdict, "indicators": indicators}
+        try:
+            indicators = []
+            score = 0
+            
+            if hints["account_keys_count"] > 20:
+                indicators.append(f"高账户数: {hints['account_keys_count']}")
+                score += 25
+            elif hints["account_keys_count"] > 15:
+                indicators.append(f"中等账户数: {hints['account_keys_count']}")
+                score += 10
+            
+            if hints["uses_lookup_table"]:
+                indicators.append("使用了地址查找表 (ALT)")
+                score += 20
+            
+            if priority_fee > 0.5:
+                indicators.append(f"高 Priority Fee: {priority_fee:.6f} SOL")
+                score += 20
+            elif priority_fee > 0.1:
+                indicators.append(f"中等 Priority Fee: {priority_fee:.6f} SOL")
+                score += 10
+            
+            if hints["instructions_count"] > 1:
+                indicators.append("复杂交易 (非简单转账)")
+                score += 10
+            
+            dex_programs = ["6EF8rrecth", "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8"]
+            is_dex = any(pid in hints["program_ids"] for pid in dex_programs)
+            if is_dex:
+                indicators.append("DEX 交易")
+                score += 5
+            
+            if score >= 60:
+                verdict = "高风险"
+            elif score >= 30:
+                verdict = "中等风险"
+            elif score >= 15:
+                verdict = "低风险"
+            else:
+                verdict = "普通"
+            
+            return {"score": min(score, 100), "verdict": verdict, "indicators": indicators}
+        except Exception as e:
+            logger.warning(f"[回填] 风险分析失败: {e}")
+            return {"score": 0, "verdict": "普通", "indicators": []}
 
     def _detect_jito_tip(self, inner_instructions, signer: str) -> int:
         """检测 Jito 小费金额"""
-        KNOWN_JITO_TIP_ACCOUNTS = {
-            "96gYZGLnJYVFmbjzopPSU6QiEV5fGqZNyN9nmNhvrZU5",
-            "HFqU5x63VTqvQss8hp11i4wT8PQ69LBAatPfitZfFWhS",
-            "ADaUMid9yfUytqMBgopwjb2DTLSokTSzLJt6c6GmGwfT",
-            "Cw8CFyM9FkoMi7K7Crf6HNQqf4uEMFPjRZaLkL3TJppF",
-            "DfXygSm4jCyNCybVYYK6DwvWqjKee8pbDmJGcLWNDXjh",
-        }
-        transfers = []
-        for ix_group in inner_instructions:
-            for ix in ix_group.get("instructions", []):
-                is_system = (ix.get("program") == "system" or ix.get("programId") == "11111111111111111111111111111111")
-                if not is_system:
-                    continue
-                parsed = ix.get("parsed", {})
-                if parsed.get("type") != "transfer":
-                    continue
-                info = parsed.get("info", {})
-                if info.get("source") != signer:
-                    continue
-                lamports = info.get("lamports", 0)
-                dest = info.get("destination", "")
-                if lamports > 0 and dest:
-                    transfers.append(lamports)
-
-        if len(transfers) >= 2:
-            return min(transfers)
-        if len(transfers) == 1:
+        try:
+            KNOWN_JITO_TIP_ACCOUNTS = {
+                "96gYZGLnJYVFmbjzopPSU6QiEV5fGqZNyN9nmNhvrZU5",
+                "HFqU5x63VTqvQss8hp11i4wT8PQ69LBAatPfitZfFWhS",
+                "ADaUMid9yfUytqMBgopwjb2DTLSokTSzLJt6c6GmGwfT",
+                "Cw8CFyM9FkoMi7K7Crf6HNQqf4uEMFPjRZaLkL3TJppF",
+                "DfXygSm4jCyNCybVYYK6DwvWqjKee8pbDmJGcLWNDXjh",
+            }
+            transfers = []
             for ix_group in inner_instructions:
                 for ix in ix_group.get("instructions", []):
                     is_system = (ix.get("program") == "system" or ix.get("programId") == "11111111111111111111111111111111")
@@ -528,9 +589,31 @@ class TradeBackfill:
                     if parsed.get("type") != "transfer":
                         continue
                     info = parsed.get("info", {})
-                    if (info.get("source") == signer and info.get("lamports", 0) == transfers[0] and info.get("destination", "") in KNOWN_JITO_TIP_ACCOUNTS):
-                        return transfers[0]
-        return 0
+                    if info.get("source") != signer:
+                        continue
+                    lamports = info.get("lamports", 0)
+                    dest = info.get("destination", "")
+                    if lamports > 0 and dest:
+                        transfers.append(lamports)
+
+            if len(transfers) >= 2:
+                return min(transfers)
+            if len(transfers) == 1:
+                for ix_group in inner_instructions:
+                    for ix in ix_group.get("instructions", []):
+                        is_system = (ix.get("program") == "system" or ix.get("programId") == "11111111111111111111111111111111")
+                        if not is_system:
+                            continue
+                        parsed = ix.get("parsed", {})
+                        if parsed.get("type") != "transfer":
+                            continue
+                        info = parsed.get("info", {})
+                        if (info.get("source") == signer and info.get("lamports", 0) == transfers[0] and info.get("destination", "") in KNOWN_JITO_TIP_ACCOUNTS):
+                            return transfers[0]
+            return 0
+        except Exception as e:
+            logger.warning(f"[回填] Jito 小费检测失败: {e}")
+            return 0
 
     def _extract_trade_info(self, tx: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """从标准 Solana RPC 交易数据中提取关键信息（资金流向优先协议 + 增强版）"""
@@ -691,8 +774,6 @@ class TradeBackfill:
                 "source": "rpc_fill",
             }
 
-
-
             # 定义一个转换函数
             def json_serial(obj):
                 if isinstance(obj, (datetime)):
@@ -702,11 +783,9 @@ class TradeBackfill:
             # 在日志记录时使用
             logger.info(f"[簇组测试] tx_detail: {json.dumps(result_data, default=json_serial, ensure_ascii=False)}")
             
-            # # 输出 tx_detail 日志（用于簇组匹配测试）
-            # logger.info(f"[簇组测试] tx_detail: {json.dumps(result_data, ensure_ascii=False)}")
             return result_data
         except Exception as e:
-            logger.warning(f"[回填] 解析交易失败: {e}")
+            logger.warning(f"[回填] 解析交易失败: {e}", exc_info=True)
             return None
 
     async def _trigger_full_calculation(self):
@@ -723,16 +802,19 @@ class TradeBackfill:
             # 3. 启动消费者，消化队列中积压的 WS 消息
             await start_consumer(self.mint)
             
-            await ws_manager.broadcast(self.mint, {
-                "type": "status",
-                "data": {
-                    "mint": self.mint,
-                    "status": "CALCULATION_DONE",
-                    "message": "指标计算完成，消费者已启动",
-                }
-            })
+            try:
+                await ws_manager.broadcast(self.mint, {
+                    "type": "status",
+                    "data": {
+                        "mint": self.mint,
+                        "status": "CALCULATION_DONE",
+                        "message": "指标计算完成，消费者已启动",
+                    }
+                })
+            except Exception as e:
+                logger.warning(f"[回填] 广播计算完成失败: {e}")
         except Exception as e:
-            logger.error(f"[回填] 触发计算失败: {e}")
+            logger.error(f"[回填] 触发计算失败: {e}", exc_info=True)
 
     def stop(self):
         """停止回填"""
