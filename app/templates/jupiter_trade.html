@@ -47,11 +47,11 @@
   </div>
 
   <div class="container-fluid p-1">
-    <!-- 钱包信息 (点击刷新) -->
-    <div class="wallet-info" onclick="refreshAll()">
+    <!-- 钱包信息 (点击复制地址) -->
+    <div class="wallet-info" id="walletInfo" onclick="copyWalletAddress()">
       <div class="d-flex justify-content-between">
         <div>
-          <span style="font-size:9px;opacity:0.7;">💼 钱包</span>
+          <span style="font-size:9px;opacity:0.7;">💼 钱包 (点击复制)</span>
           <div class="addr" id="walletAddress">-</div>
         </div>
         <div class="text-end">
@@ -100,6 +100,18 @@
     <!-- 卖出面板 -->
     <div class="trade-card">
       <h6>🔴 卖出</h6>
+      <div class="row g-1 mb-2">
+        <div class="col-5">
+          <label class="label-sm">代币数量</label>
+          <div class="input-group">
+            <input type="number" id="sellAmount" class="form-control" placeholder="0.0" step="0.000001" min="0">
+            <span class="input-group-text">Token</span>
+          </div>
+        </div>
+        <div class="col-3 d-flex align-items-end">
+          <button class="btn btn-sell w-100" onclick="doSell()">🔴 卖出</button>
+        </div>
+      </div>
       <div>
         <label class="label-sm">快捷比例 (点击即卖)</label>
         <div class="quick-row" id="sellQuickBtns"></div>
@@ -128,6 +140,22 @@
       await loadSettings();
       await loadWalletInfo();
     });
+
+    // 复制钱包地址
+    function copyWalletAddress() {
+      if (fullWalletAddress) {
+        navigator.clipboard.writeText(fullWalletAddress).then(() => {
+          // 显示复制成功提示
+          const oldText = document.getElementById('walletAddress').textContent;
+          document.getElementById('walletAddress').textContent = '已复制!';
+          setTimeout(() => {
+            document.getElementById('walletAddress').textContent = oldText;
+          }, 1000);
+        }).catch(() => {
+          alert('复制地址: ' + fullWalletAddress);
+        });
+      }
+    }
 
     // 加载设置
     async function loadSettings() {
@@ -174,19 +202,12 @@
       }
     }
 
-    // 刷新所有
-    async function refreshAll() {
-      await loadWalletInfo();
-      if (currentMint) await loadTokenBalance(currentMint);
-    }
-
     // 刷新代币余额（带状态显示）
     async function refreshTokenBalance() {
       const mint = document.getElementById('tradeMint').value.trim();
       if (!mint) { currentMint = ''; document.getElementById('tokenBalanceInfo').style.display = 'none'; return; }
       currentMint = mint;
       
-      // 显示状态
       const btn = document.getElementById('btnRefreshBalance');
       btn.disabled = true;
       btn.textContent = '⏳';
@@ -285,7 +306,6 @@
           addStatusLine('💰 正在获取代币余额...', 'wait');
           currentMint = mint;
           
-          // 获取余额
           try {
             const balanceResp = await fetch('/api/jupiter/balance/' + mint);
             if (balanceResp.ok) {
@@ -309,6 +329,16 @@
       }
     }
 
+    // 卖出
+    async function doSell() {
+      const mint = document.getElementById('tradeMint').value.trim();
+      const tokenAmount = parseFloat(document.getElementById('sellAmount').value);
+      if (!mint) { alert('请输入 Mint 地址'); return; }
+      if (!tokenAmount || tokenAmount <= 0) { alert('请输入代币数量'); return; }
+      if (confirmEnabled && !confirm('确认卖出 ' + tokenAmount + ' 代币?')) return;
+      await executeSellByAmount(mint, tokenAmount);
+    }
+
     // 快捷卖出
     async function doQuickSell(percent) {
       const mint = document.getElementById('tradeMint').value.trim();
@@ -317,7 +347,7 @@
       await executeSell(mint, parseInt(percent));
     }
 
-    // 实际卖出
+    // 实际卖出（按百分比）
     async function executeSell(mint, percent) {
       showLoading('执行卖出...');
       addStatusLine('🔄 正在提交卖出交易...', 'wait');
@@ -337,13 +367,73 @@
           addStatusLine('💰 正在获取代币余额...', 'wait');
           currentMint = mint;
           
-          // 获取余额
           try {
             const balanceResp = await fetch('/api/jupiter/balance/' + mint);
             if (balanceResp.ok) {
               const balanceData = await balanceResp.json();
               document.getElementById('tokenBalanceInfo').style.display = 'flex';
               document.getElementById('tokenBalance').textContent = balanceData.token_balance ? balanceData.token_balance.balance_sol.toFixed(4) : '0';
+            }
+          } catch (e) {}
+          
+          await loadWalletInfo();
+          addStatusLine('✅ 余额已更新', 'done');
+          showResult(true, data.message, data);
+        } else {
+          addStatusLine('❌ 交易失败: ' + (data.error || data.message || '未知错误'), 'err');
+          showResult(false, data.message, data);
+        }
+      } catch (e) {
+        hideLoading();
+        addStatusLine('❌ 请求失败: ' + e.message, 'err');
+        showResult(false, '请求失败', { error: e.message });
+      }
+    }
+
+    // 实际卖出（按数量）
+    async function executeSellByAmount(mint, tokenAmount) {
+      showLoading('执行卖出...');
+      addStatusLine('🔄 正在提交卖出交易...', 'wait');
+      
+      try {
+        // 先获取余额，计算百分比
+        const balanceResp = await fetch('/api/jupiter/balance/' + mint);
+        if (!balanceResp.ok) {
+          throw new Error('获取余额失败');
+        }
+        const balanceData = await balanceResp.json();
+        const totalBalance = balanceData.token_balance ? balanceData.token_balance.balance : 0;
+        
+        if (totalBalance === 0) {
+          hideLoading();
+          addStatusLine('❌ 代币余额为 0', 'err');
+          showResult(false, '代币余额为 0，无法卖出', { error: '余额为 0' });
+          return;
+        }
+        
+        // 计算卖出比例
+        const percent = Math.min(100, Math.round((tokenAmount / totalBalance) * 100));
+        
+        const resp = await fetch('/api/jupiter/sell', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mint, percent: percent, slippage_bps: 500 })
+        });
+        
+        const data = await resp.json();
+        hideLoading();
+
+        if (data.success) {
+          addStatusLine('✅ 交易已提交，状态: ' + (data.status || '-'), 'done');
+          addStatusLine('💰 正在获取代币余额...', 'wait');
+          currentMint = mint;
+          
+          try {
+            const balanceResp2 = await fetch('/api/jupiter/balance/' + mint);
+            if (balanceResp2.ok) {
+              const balanceData2 = await balanceResp2.json();
+              document.getElementById('tokenBalanceInfo').style.display = 'flex';
+              document.getElementById('tokenBalance').textContent = balanceData2.token_balance ? balanceData2.token_balance.balance_sol.toFixed(4) : '0';
             }
           } catch (e) {}
           
