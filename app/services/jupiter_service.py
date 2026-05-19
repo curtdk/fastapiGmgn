@@ -32,6 +32,7 @@ class JupiterService:
     def __init__(self):
         self.payer = None
         self._initialized = False
+        self._priority = "Medium"  # 缓存优先级设置
     
     def _ensure_initialized(self):
         """确保钱包已初始化"""
@@ -253,12 +254,13 @@ class JupiterService:
         # 转换为 lamports (SOL 有 9 位小数)
         amount_lamports = int(sol_amount * 1e9)
         
-        # 获取订单
+        # 获取订单（使用缓存的 priority）
         order_result = self._get_order(
             input_mint=self.SOL_MINT,
             output_mint=mint,
             amount=amount_lamports,
-            slippage_bps=slippage_bps
+            slippage_bps=slippage_bps,
+            priority=self._priority
         )
         
         if not order_result["success"]:
@@ -268,7 +270,7 @@ class JupiterService:
             }
         
         data = order_result["data"]
-        logger.info(f"订单获取成功: inAmount={data.get('inAmount')}, outAmount={data.get('outAmount')}")
+        logger.info(f"订单获取成功: inAmount={data.get('inAmount')}, outAmount={data.get('outAmount')}, priority={self._priority}")
         
         if data.get('errorMessage'):
             logger.warning(f"订单警告: {data.get('errorMessage')}")
@@ -338,12 +340,13 @@ class JupiterService:
                 "error": "计算卖出数量为 0，请检查余额"
             }
         
-        # 获取订单 (卖出代币换 SOL)
+        # 获取订单 (卖出代币换 SOL，使用缓存的 priority)
         order_result = self._get_order(
             input_mint=mint,
             output_mint=self.SOL_MINT,
             amount=sell_amount,
-            slippage_bps=slippage_bps
+            slippage_bps=slippage_bps,
+            priority=self._priority
         )
         
         if not order_result["success"]:
@@ -354,7 +357,7 @@ class JupiterService:
         
         data = order_result["data"]
         out_amount = int(data.get('outAmount', 0))
-        logger.info(f"订单获取成功: inAmount={data.get('inAmount')}, outAmount={data.get('outAmount')} ({out_amount/1e9:.6f} SOL)")
+        logger.info(f"订单获取成功: inAmount={data.get('inAmount')}, outAmount={data.get('outAmount')} ({out_amount/1e9:.6f} SOL), priority={self._priority}")
         
         if data.get('errorMessage'):
             logger.warning(f"订单警告: {data.get('errorMessage')}")

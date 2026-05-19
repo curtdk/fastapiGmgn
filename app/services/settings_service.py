@@ -44,6 +44,7 @@ DEFAULT_SETTINGS = {
     "jupiter_buy_slippage": "500",               # 买入滑点 (bps)
     "jupiter_sell_slippage": "500",              # 卖出滑点 (bps)
     "jupiter_priority": "Medium",                # 优先级: Min/Low/Medium/High/VeryHigh
+    "jupiter_confirm": "true",                   # 交易前二次确认
 }
 
 

@@ -150,3 +150,27 @@ async def sell_token(request: SellRequest):
     except Exception as e:
         logger.error(f"卖出请求异常: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/update-settings")
+async def update_jupiter_settings():
+    """更新 Jupiter 服务设置（从数据库读取最新配置）"""
+    from app.utils.database import get_db
+    from app.services.settings_service import get_setting
+    
+    try:
+        service = get_jupiter_service()
+        db = next(get_db())
+        
+        # 更新 priority 设置
+        priority = get_setting(db, "jupiter_priority") or "Medium"
+        service._priority = priority
+        logger.info(f"Jupiter priority 更新为: {priority}")
+        
+        return {
+            "success": True,
+            "priority": priority
+        }
+    except Exception as e:
+        logger.error(f"更新 Jupiter 设置失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

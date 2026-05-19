@@ -81,6 +81,13 @@
       </select>
     </div>
     <div class="help-text">优先级越高，Gas 费用越高，但交易确认更快</div>
+    <div class="settings-row mt-3">
+      <label>二次确认</label>
+      <select id="confirm" class="form-select">
+        <option value="true">是</option>
+        <option value="false">否 (点击即交易)</option>
+      </select>
+    </div>
   </div>
 
   <div class="mt-3">
@@ -99,6 +106,7 @@ const DEFAULT_SELL_PERCENTS = '10,50,100';
 const DEFAULT_BUY_SLIPPAGE = '500';
 const DEFAULT_SELL_SLIPPAGE = '500';
 const DEFAULT_PRIORITY = 'Medium';
+const DEFAULT_CONFIRM = 'true';
 
 async function loadSettings() {
   try {
@@ -110,6 +118,7 @@ async function loadSettings() {
     document.getElementById('buy_slippage').value = data.jupiter_buy_slippage || DEFAULT_BUY_SLIPPAGE;
     document.getElementById('sell_slippage').value = data.jupiter_sell_slippage || DEFAULT_SELL_SLIPPAGE;
     document.getElementById('priority').value = data.jupiter_priority || DEFAULT_PRIORITY;
+    document.getElementById('confirm').value = data.jupiter_confirm || DEFAULT_CONFIRM;
     
     updatePreview();
   } catch (e) {
@@ -136,6 +145,7 @@ async function saveSettings() {
   const buySlippage = document.getElementById('buy_slippage').value;
   const sellSlippage = document.getElementById('sell_slippage').value;
   const priority = document.getElementById('priority').value;
+  const confirm = document.getElementById('confirm').value;
   
   try {
     await fetch('/admin/api/settings', {
@@ -166,6 +176,12 @@ async function saveSettings() {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ key: 'jupiter_priority', value: priority }),
+    });
+    
+    await fetch('/admin/api/settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key: 'jupiter_confirm', value: confirm }),
     });
     
     alert('设置已保存！');
