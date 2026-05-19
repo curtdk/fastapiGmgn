@@ -23,7 +23,8 @@ class BuyRequest(BaseModel):
 class SellRequest(BaseModel):
     """卖出请求"""
     mint: str = Field(..., description="代币 Mint 地址")
-    percent: int = Field(default=100, ge=1, le=100, description="卖出百分比 (1-100)")
+    token_amount: Optional[float] = Field(default=None, description="直接传代币数量")
+    percent: Optional[int] = Field(default=None, ge=1, le=100, description="或传百分比 (1-100)")
     slippage_bps: int = Field(default=500, ge=1, le=10000, description="滑点 (bps)")
 
 
@@ -53,8 +54,6 @@ async def get_token_balance(mint: str):
     try:
         service = get_jupiter_service()
         return {
-            "wallet_address": service.wallet_address,
-            "sol_balance": service.get_sol_balance(),
             "token_balance": service.get_token_balance(mint)
         }
     except Exception as e:
@@ -112,19 +111,32 @@ async def sell_token(request: SellRequest):
     
     Args:
         mint: 代币 Mint 地址
-        percent: 卖出百分比 (1-100)
+        token_amount: 直接传代币数量（内部单位）
+        percent: 或传百分比 (1-100)
         slippage_bps: 滑点 (默认 500 = 5%)
     
     Returns:
         交易结果，包含 signature 和链接
     """
     try:
-        logger.info(f"卖出请求: mint={request.mint}, percent={request.percent}%")
         service = get_jupiter_service()
+        
+        # 如果传入 token_amount，先获取余额计算百分比
+        percent = request.percent
+        if request.token_amount is not None:
+            token_info = service.get_token_balance(request.mint)
+            total_balance = token_info.get("balance", 0)
+            if total_balance > 0:
+                percent = min(100, int(request.token_amount / total_balance * 100))
+            logger.info(f"卖出请求: mint={request.mint}, token_amount={request.token_amount}, 换算 percent={percent}%")
+        else:
+            if percent is None:
+                percent = 100
+            logger.info(f"卖出请求: mint={request.mint}, percent={percent}%")
         
         result = service.sell(
             mint=request.mint,
-            percent=request.percent,
+            percent=percent,
             slippage_bps=request.slippage_bps
         )
         
@@ -132,7 +144,7 @@ async def sell_token(request: SellRequest):
             return {
                 "success": True,
                 "type": "SELL",
-                "message": f"卖出成功！卖出了 {request.percent}% 的代币，获得 {result.get('out_amount_sol', 0):.6f} SOL",
+                "message": f"卖出成功！获得了 {result.get('out_amount_sol', 0):.6f} SOL",
                 "signature": result.get("signature"),
                 "status": result.get("status"),
                 "in_amount": result.get("in_amount"),

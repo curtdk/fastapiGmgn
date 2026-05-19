@@ -8,10 +8,12 @@
   <style>
     body { background: #f5f5f5; padding: 10px; }
     .trade-card { background: #fff; border-radius: 6px; padding: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 8px; }
-    .wallet-info { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 6px; padding: 8px 10px; margin-bottom: 8px; cursor: pointer; }
-    .wallet-info:hover { opacity: 0.9; }
-    .wallet-info .addr { font-family: monospace; font-size: 9px; opacity: 0.9; }
-    .balance-value { font-weight: 600; font-size: 11px; }
+    .wallet-info { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 6px; padding: 8px 10px; margin-bottom: 8px; display: flex; justify-content: space-between; }
+    .wallet-addr { cursor: pointer; }
+    .wallet-addr:hover { opacity: 0.8; }
+    .wallet-addr .addr { font-family: monospace; font-size: 9px; opacity: 0.9; }
+    .balance-value { font-weight: 600; font-size: 11px; cursor: pointer; }
+    .balance-value:hover { opacity: 0.8; }
     .btn-buy { background: linear-gradient(135deg, #2fb344 0%, #27ae60 100%); border: none; color: white; padding: 6px 12px; font-size: 11px; }
     .btn-sell { background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%); border: none; color: white; padding: 6px 12px; font-size: 11px; }
     .form-control, .form-select { font-size: 10px; padding: 5px 8px; }
@@ -47,17 +49,15 @@
   </div>
 
   <div class="container-fluid p-1">
-    <!-- 钱包信息 (点击复制地址) -->
-    <div class="wallet-info" id="walletInfo" onclick="copyWalletAddress()">
-      <div class="d-flex justify-content-between">
-        <div>
-          <span style="font-size:9px;opacity:0.7;">💼 钱包 (点击复制)</span>
-          <div class="addr" id="walletAddress">-</div>
-        </div>
-        <div class="text-end">
-          <span style="font-size:9px;opacity:0.7;">💰 SOL</span>
-          <div class="balance-value" id="solBalance">-</div>
-        </div>
+    <!-- 钱包信息 -->
+    <div class="wallet-info">
+      <div class="wallet-addr" onclick="copyWalletAddress()">
+        <span style="font-size:9px;opacity:0.7;">💼 钱包 (点击复制)</span>
+        <div class="addr" id="walletAddress">-</div>
+      </div>
+      <div class="text-end" onclick="refreshAll()">
+        <span style="font-size:9px;opacity:0.7;">💰 SOL</span>
+        <div class="balance-value" id="solBalance">-</div>
       </div>
     </div>
 
@@ -145,7 +145,6 @@
     function copyWalletAddress() {
       if (fullWalletAddress) {
         navigator.clipboard.writeText(fullWalletAddress).then(() => {
-          // 显示复制成功提示
           const oldText = document.getElementById('walletAddress').textContent;
           document.getElementById('walletAddress').textContent = '已复制!';
           setTimeout(() => {
@@ -200,6 +199,12 @@
         document.getElementById('walletAddress').textContent = '-';
         document.getElementById('solBalance').textContent = '-';
       }
+    }
+
+    // 刷新所有
+    async function refreshAll() {
+      await loadWalletInfo();
+      if (currentMint) await loadTokenBalance(currentMint);
     }
 
     // 刷新代币余额（带状态显示）
@@ -329,7 +334,7 @@
       }
     }
 
-    // 卖出
+    // 卖出（直接传代币数量）
     async function doSell() {
       const mint = document.getElementById('tradeMint').value.trim();
       const tokenAmount = parseFloat(document.getElementById('sellAmount').value);
@@ -339,7 +344,7 @@
       await executeSellByAmount(mint, tokenAmount);
     }
 
-    // 快捷卖出
+    // 快捷卖出（按百分比）
     async function doQuickSell(percent) {
       const mint = document.getElementById('tradeMint').value.trim();
       if (!mint) { alert('请先输入 Mint 地址'); return; }
@@ -390,34 +395,16 @@
       }
     }
 
-    // 实际卖出（按数量）
+    // 实际卖出（直接传代币数量）
     async function executeSellByAmount(mint, tokenAmount) {
       showLoading('执行卖出...');
       addStatusLine('🔄 正在提交卖出交易...', 'wait');
       
       try {
-        // 先获取余额，计算百分比
-        const balanceResp = await fetch('/api/jupiter/balance/' + mint);
-        if (!balanceResp.ok) {
-          throw new Error('获取余额失败');
-        }
-        const balanceData = await balanceResp.json();
-        const totalBalance = balanceData.token_balance ? balanceData.token_balance.balance : 0;
-        
-        if (totalBalance === 0) {
-          hideLoading();
-          addStatusLine('❌ 代币余额为 0', 'err');
-          showResult(false, '代币余额为 0，无法卖出', { error: '余额为 0' });
-          return;
-        }
-        
-        // 计算卖出比例
-        const percent = Math.min(100, Math.round((tokenAmount / totalBalance) * 100));
-        
         const resp = await fetch('/api/jupiter/sell', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ mint, percent: percent, slippage_bps: 500 })
+          body: JSON.stringify({ mint, token_amount: tokenAmount, slippage_bps: 500 })
         });
         
         const data = await resp.json();
