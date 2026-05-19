@@ -131,7 +131,7 @@ class JupiterService:
             "decimals": decimals
         }
     
-    def _get_order(self, input_mint: str, output_mint: str, amount: int, slippage_bps: int = 200) -> Dict[str, Any]:
+    def _get_order(self, input_mint: str, output_mint: str, amount: int, slippage_bps: int = 500, priority: str = "Medium") -> Dict[str, Any]:
         """获取订单"""
         import requests
         
@@ -142,7 +142,7 @@ class JupiterService:
             "amount": amount,
             "taker": self.wallet_address,
             "slippageBps": slippage_bps,
-            "priorityLevel": "Low",
+            "priorityLevel": priority,
         }
         headers = {}
         if JUPITER_API_KEY:

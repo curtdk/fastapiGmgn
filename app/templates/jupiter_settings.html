@@ -2,22 +2,25 @@
 {% block title %}Jupiter 设置{% endblock %}
 {% block content %}
 <style>
-  .settings-card { background: #fff; border-radius: 8px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); max-width: 600px; margin-bottom: 20px; }
-  .card-title { font-size: 16px; font-weight: 600; margin-bottom: 16px; color: #333; }
-  .desc { font-size: 12px; color: #868e96; margin-top: 4px; }
-  .form-label { font-weight: 500; }
-  .help-text { font-size: 11px; color: #868e96; }
-  .quick-preview { background: #f8f9fa; border-radius: 6px; padding: 12px; margin-top: 12px; }
-  .quick-preview .label { font-size: 11px; color: #666; margin-bottom: 6px; }
-  .quick-preview .tags { display: flex; flex-wrap: wrap; gap: 6px; }
-  .quick-preview .tag { background: #667eea; color: white; padding: 3px 10px; border-radius: 12px; font-size: 11px; }
+  .settings-card { background: #fff; border-radius: 8px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); max-width: 600px; margin-bottom: 16px; }
+  .card-title { font-size: 14px; font-weight: 600; margin-bottom: 12px; color: #333; }
+  .desc { font-size: 11px; color: #868e96; margin-top: 4px; }
+  .form-label { font-weight: 500; font-size: 12px; }
+  .help-text { font-size: 10px; color: #868e96; }
+  .quick-preview { background: #f8f9fa; border-radius: 6px; padding: 10px; margin-top: 10px; }
+  .quick-preview .label { font-size: 10px; color: #666; margin-bottom: 5px; }
+  .quick-preview .tags { display: flex; flex-wrap: wrap; gap: 5px; }
+  .quick-preview .tag { background: #667eea; color: white; padding: 3px 8px; border-radius: 10px; font-size: 10px; }
   .quick-preview .tag.sell { background: #e74c3c; }
+  .settings-row { display: flex; align-items: center; gap: 16px; margin-bottom: 12px; }
+  .settings-row label { min-width: 80px; font-size: 12px; }
+  .settings-row input, .settings-row select { flex: 1; max-width: 200px; }
 </style>
 
 <div class="container-fluid">
   <h2 class="page-title">Jupiter 交易设置</h2>
   
-  <div class="settings-card mt-4">
+  <div class="settings-card">
     <div class="card-title">🟢 买入快捷 SOL 数量</div>
     <div class="mb-2">
       <label class="form-label">买入金额列表</label>
@@ -43,6 +46,43 @@
     </div>
   </div>
 
+  <div class="settings-card">
+    <div class="card-title">⚙️ 交易参数设置</div>
+    <div class="settings-row">
+      <label>买入滑点</label>
+      <select id="buy_slippage" class="form-select">
+        <option value="50">0.5%</option>
+        <option value="100">1%</option>
+        <option value="200">2%</option>
+        <option value="500">5%</option>
+        <option value="1000">10%</option>
+        <option value="2000">20%</option>
+      </select>
+    </div>
+    <div class="settings-row">
+      <label>卖出滑点</label>
+      <select id="sell_slippage" class="form-select">
+        <option value="50">0.5%</option>
+        <option value="100">1%</option>
+        <option value="200">2%</option>
+        <option value="500">5%</option>
+        <option value="1000">10%</option>
+        <option value="2000">20%</option>
+      </select>
+    </div>
+    <div class="settings-row">
+      <label>优先级</label>
+      <select id="priority" class="form-select">
+        <option value="Min">Min (极低)</option>
+        <option value="Low">Low (低)</option>
+        <option value="Medium">Medium (中)</option>
+        <option value="High">High (高)</option>
+        <option value="VeryHigh">VeryHigh (极高)</option>
+      </select>
+    </div>
+    <div class="help-text">优先级越高，Gas 费用越高，但交易确认更快</div>
+  </div>
+
   <div class="mt-3">
     <button class="btn btn-primary" onclick="saveSettings()">保存设置</button>
     <button class="btn btn-outline-secondary ms-2" onclick="resetDefaults()">恢复默认</button>
@@ -54,16 +94,22 @@
 </div>
 
 <script>
-const DEFAULT_BUY = '0.05,0.1,0.3,0.5';
-const DEFAULT_SELL = '10,50,100';
+const DEFAULT_BUY_AMOUNTS = '0.05,0.1,0.3,0.5';
+const DEFAULT_SELL_PERCENTS = '10,50,100';
+const DEFAULT_BUY_SLIPPAGE = '500';
+const DEFAULT_SELL_SLIPPAGE = '500';
+const DEFAULT_PRIORITY = 'Medium';
 
 async function loadSettings() {
   try {
     const resp = await fetch('/admin/api/settings');
     const data = await resp.json();
     
-    document.getElementById('buy_amounts').value = data.jupiter_buy_amounts || DEFAULT_BUY;
-    document.getElementById('sell_percents').value = data.jupiter_sell_percents || DEFAULT_SELL;
+    document.getElementById('buy_amounts').value = data.jupiter_buy_amounts || DEFAULT_BUY_AMOUNTS;
+    document.getElementById('sell_percents').value = data.jupiter_sell_percents || DEFAULT_SELL_PERCENTS;
+    document.getElementById('buy_slippage').value = data.jupiter_buy_slippage || DEFAULT_BUY_SLIPPAGE;
+    document.getElementById('sell_slippage').value = data.jupiter_sell_slippage || DEFAULT_SELL_SLIPPAGE;
+    document.getElementById('priority').value = data.jupiter_priority || DEFAULT_PRIORITY;
     
     updatePreview();
   } catch (e) {
@@ -87,6 +133,9 @@ function updatePreview() {
 async function saveSettings() {
   const buyAmounts = document.getElementById('buy_amounts').value.trim();
   const sellPercents = document.getElementById('sell_percents').value.trim();
+  const buySlippage = document.getElementById('buy_slippage').value;
+  const sellSlippage = document.getElementById('sell_slippage').value;
+  const priority = document.getElementById('priority').value;
   
   try {
     await fetch('/admin/api/settings', {
@@ -101,6 +150,24 @@ async function saveSettings() {
       body: JSON.stringify({ key: 'jupiter_sell_percents', value: sellPercents }),
     });
     
+    await fetch('/admin/api/settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key: 'jupiter_buy_slippage', value: buySlippage }),
+    });
+    
+    await fetch('/admin/api/settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key: 'jupiter_sell_slippage', value: sellSlippage }),
+    });
+    
+    await fetch('/admin/api/settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key: 'jupiter_priority', value: priority }),
+    });
+    
     alert('设置已保存！');
     updatePreview();
   } catch (e) {
@@ -109,8 +176,11 @@ async function saveSettings() {
 }
 
 function resetDefaults() {
-  document.getElementById('buy_amounts').value = DEFAULT_BUY;
-  document.getElementById('sell_percents').value = DEFAULT_SELL;
+  document.getElementById('buy_amounts').value = DEFAULT_BUY_AMOUNTS;
+  document.getElementById('sell_percents').value = DEFAULT_SELL_PERCENTS;
+  document.getElementById('buy_slippage').value = DEFAULT_BUY_SLIPPAGE;
+  document.getElementById('sell_slippage').value = DEFAULT_SELL_SLIPPAGE;
+  document.getElementById('priority').value = DEFAULT_PRIORITY;
   updatePreview();
 }
 

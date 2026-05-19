@@ -41,6 +41,9 @@ DEFAULT_SETTINGS = {
     # Jupiter 交易设置
     "jupiter_buy_amounts": "0.05,0.1,0.3,0.5",  # 买入 SOL 数量快捷选项
     "jupiter_sell_percents": "10,50,100",        # 卖出比例快捷选项
+    "jupiter_buy_slippage": "500",               # 买入滑点 (bps)
+    "jupiter_sell_slippage": "500",              # 卖出滑点 (bps)
+    "jupiter_priority": "Medium",                # 优先级: Min/Low/Medium/High/VeryHigh
 }
 
 

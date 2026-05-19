@@ -10,147 +10,66 @@
     .trade-card {
       background: #fff;
       border-radius: 8px;
-      padding: 16px;
+      padding: 12px;
       box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-      margin-bottom: 12px;
+      margin-bottom: 10px;
     }
     .wallet-info {
       background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
       color: white;
       border-radius: 8px;
-      padding: 12px 16px;
-      margin-bottom: 12px;
-    }
-    .wallet-info .address {
-      font-family: monospace;
+      padding: 10px 12px;
+      margin-bottom: 10px;
       font-size: 11px;
-      word-break: break-all;
     }
-    .balance-row {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      font-size: 13px;
-    }
+    .wallet-address { font-family: monospace; font-size: 9px; cursor: pointer; opacity: 0.9; }
+    .wallet-address:hover { opacity: 1; text-decoration: underline; }
+    .balance-row { display: flex; justify-content: space-between; font-size: 12px; }
     .balance-value { font-weight: 600; }
     .btn-buy { background: linear-gradient(135deg, #2fb344 0%, #27ae60 100%); border: none; color: white; }
-    .btn-buy:hover { background: linear-gradient(135deg, #27ae60 0%, #2fb344 100%); color: white; }
     .btn-sell { background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%); border: none; color: white; }
-    .btn-sell:hover { background: linear-gradient(135deg, #c0392b 0%, #e74c3c 100%); color: white; }
-    .btn-sm { padding: 4px 8px; font-size: 11px; }
-    .btn-refresh-sm { background: rgba(255,255,255,0.2); border: none; color: white; padding: 2px 6px; font-size: 10px; }
-    .btn-refresh-sm:hover { background: rgba(255,255,255,0.3); color: white; }
-    .input-group-text { font-size: 12px; }
-    .form-control, .form-select { font-size: 12px; padding: 6px 10px; }
-    h5 { font-size: 14px; font-weight: 600; }
-    h6 { font-size: 12px; }
-    .result-area {
-      border: 1px dashed #dee2e6;
-      border-radius: 6px;
-      padding: 12px;
-      min-height: 60px;
-      margin-top: 12px;
-      font-size: 12px;
-    }
+    .btn-refresh { background: rgba(255,255,255,0.2); border: none; color: white; padding: 2px 6px; font-size: 10px; }
+    .input-group-text { font-size: 11px; }
+    .form-control, .form-select { font-size: 11px; padding: 6px 8px; }
+    .result-area { border: 1px dashed #dee2e6; border-radius: 6px; padding: 10px; min-height: 50px; font-size: 11px; }
     .result-success { border-color: #2fb344; background: #f0fff4; }
     .result-error { border-color: #e74c3c; background: #fff5f5; }
-    .tx-link { 
-      display: inline-block;
-      background: #e9ecef;
-      padding: 2px 8px;
-      border-radius: 4px;
-      font-family: monospace;
-      font-size: 10px;
-      word-break: break-all;
-      margin-top: 4px;
-    }
-    .spinner-border-sm { width: 0.75rem; height: 0.75rem; }
-    .loading-overlay {
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background: rgba(0,0,0,0.5);
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      z-index: 9999;
-    }
-    .loading-card {
-      background: white;
-      padding: 20px 30px;
-      border-radius: 8px;
-      text-align: center;
-      font-size: 13px;
-    }
-    .token-balance-box {
-      background: #2d2d2d;
-      border-radius: 6px;
-      padding: 8px 12px;
-      margin-top: 8px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      color: white;
-    }
-    .token-balance-box .label { font-size: 11px; opacity: 0.9; }
-    .token-balance-box .value { font-size: 14px; font-weight: 600; color: #4ade80; }
-    .token-balance-box .mint { font-size: 9px; opacity: 0.7; font-family: monospace; }
+    .tx-link { display: inline-block; background: #e9ecef; padding: 2px 8px; border-radius: 4px; font-size: 10px; word-break: break-all; }
+    .loading-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center; z-index: 9999; }
+    .loading-card { background: white; padding: 16px 24px; border-radius: 8px; text-align: center; font-size: 12px; }
+    .token-balance-row { display: flex; justify-content: space-between; align-items: center; background: #2d2d2d; border-radius: 6px; padding: 8px 10px; margin-top: 8px; color: white; }
+    .token-balance-row .label { font-size: 10px; opacity: 0.9; }
+    .token-balance-row .value { font-size: 13px; font-weight: 600; color: #4ade80; }
+    /* 状态步骤样式 */
     .status-steps {
-      background: #f8f9fa;
-      border-radius: 6px;
-      padding: 10px;
-      margin-bottom: 12px;
+      background: #fff;
+      border-radius: 8px;
+      padding: 10px 12px;
+      margin-bottom: 10px;
       font-size: 11px;
+      border: 2px solid #667eea;
+      box-shadow: 0 2px 8px rgba(102,126,234,0.3);
     }
-    .status-step {
-      display: flex;
-      align-items: center;
-      padding: 3px 0;
-      color: #999;
-    }
-    .status-step.active { color: #333; }
+    .status-step { display: flex; align-items: center; padding: 4px 0; color: #ccc; }
+    .status-step.active { color: #667eea; font-weight: 600; }
     .status-step.done { color: #2fb344; }
-    .status-step .icon { margin-right: 6px; }
-    .quick-btn {
-      padding: 4px 10px;
-      font-size: 11px;
-      border-radius: 12px;
-      border: 1px solid #dee2e6;
-      background: #f8f9fa;
-      cursor: pointer;
-      transition: all 0.2s;
-    }
-    .quick-btn:hover {
-      background: #667eea;
-      color: white;
-      border-color: #667eea;
-    }
-    .quick-btn.sell:hover {
-      background: #e74c3c;
-      border-color: #e74c3c;
-    }
-    .quick-row {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 6px;
-      margin-top: 6px;
-    }
-    .section-label {
-      font-size: 10px;
-      color: #666;
-      margin-bottom: 4px;
-    }
+    .status-step .icon { width: 20px; text-align: center; margin-right: 8px; }
+    .quick-btn { padding: 4px 10px; font-size: 10px; border-radius: 10px; border: 1px solid #dee2e6; background: #f8f9fa; cursor: pointer; }
+    .quick-btn:hover { background: #667eea; color: white; border-color: #667eea; }
+    .quick-btn.sell:hover { background: #e74c3c; border-color: #e74c3c; }
+    .quick-row { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 5px; }
+    .quick-row.buy-btns .quick-btn.sell:hover { background: #667eea; border-color: #667eea; }
+    .section-label { font-size: 10px; color: #666; margin-bottom: 3px; }
+    .inline-balance { display: flex; justify-content: space-between; align-items: center; background: #f8f9fa; border-radius: 6px; padding: 6px 10px; margin-top: 6px; }
+    .inline-balance .value { font-weight: 600; color: #2fb344; font-size: 12px; }
+    .inline-balance .btn-refresh { padding: 1px 5px; font-size: 9px; }
   </style>
 </head>
 <body>
   <!-- Loading Overlay -->
   <div id="loadingOverlay" class="loading-overlay" style="display: none;">
     <div class="loading-card">
-      <div class="spinner-border text-primary mb-2" role="status" style="width:1.5rem;height:1.5rem;">
-        <span class="visually-hidden">Loading...</span>
-      </div>
+      <div class="spinner-border text-primary mb-2" role="status" style="width:1.2rem;height:1.2rem;"></div>
       <div id="loadingText" class="h6 mb-0">处理中...</div>
     </div>
   </div>
@@ -158,115 +77,102 @@
   <div class="container-fluid p-2">
     <!-- 钱包信息 -->
     <div class="wallet-info">
-      <div class="d-flex justify-content-between align-items-start mb-2">
+      <div class="d-flex justify-content-between mb-2">
         <div>
-          <h6 class="mb-1">💼 我的钱包</h6>
-          <div class="wallet-address" id="walletAddress">加载中...</div>
-        </div>
-        <div class="d-flex gap-1">
-          <button class="btn btn-refresh-sm" onclick="refreshAll()">🔄</button>
-        </div>
-      </div>
-      <div class="balance-row">
-        <span>💰 SOL</span>
-        <span class="balance-value" id="solBalance">-</span>
-      </div>
-      <div class="token-balance-box" id="tokenBalanceInfo" style="display: none;">
-        <div>
-          <div class="label">🪙 代币余额</div>
-          <div class="mint" id="currentMintDisplay"></div>
+          <span style="font-size:10px;opacity:0.8;">💼 钱包</span>
+          <div class="wallet-address" id="walletAddress" title="点击复制地址" onclick="copyAddress()">-</div>
         </div>
         <div class="text-end">
-          <div class="value" id="tokenBalance">-</div>
-          <button class="btn btn-refresh-sm" onclick="refreshTokenBalance()">🔄</button>
+          <span style="font-size:10px;opacity:0.8;">💰 SOL</span>
+          <div class="balance-value" id="solBalance">-</div>
         </div>
       </div>
     </div>
 
     <!-- 状态步骤显示 -->
     <div class="status-steps" id="statusSteps" style="display: none;">
-      <div class="status-step" id="stepSubmit"><span class="icon">⏳</span> 提交交易</div>
-      <div class="status-step" id="stepConfirm"><span class="icon">🔄</span> 等待确认</div>
-      <div class="status-step" id="stepVerify"><span class="icon">🔍</span> 验证交易</div>
-      <div class="status-step" id="stepBalance"><span class="icon">💰</span> 获取余额</div>
+      <div style="font-weight:600;margin-bottom:8px;color:#667eea;">📊 交易状态</div>
+      <div class="status-step" id="stepSubmit"><span class="icon">⭕</span> 提交交易</div>
+      <div class="status-step" id="stepConfirm"><span class="icon">⭕</span> 等待确认</div>
+      <div class="status-step" id="stepVerify"><span class="icon">⭕</span> 验证交易</div>
+      <div class="status-step" id="stepBalance"><span class="icon">⭕</span> 获取余额</div>
     </div>
 
-    <!-- Mint 输入 -->
+    <!-- Mint 输入 + 余额 -->
     <div class="trade-card">
       <div class="mb-2">
-        <label class="form-label" style="font-size:11px;">Mint 地址</label>
-        <input type="text" id="tradeMint" class="form-control" 
-               placeholder="输入代币 Mint 地址" style="font-family: monospace;">
+        <label class="form-label" style="font-size:10px;">Mint 地址</label>
+        <input type="text" id="tradeMint" class="form-control" placeholder="输入代币 Mint 地址" style="font-family:monospace;font-size:10px;">
+      </div>
+      <div class="inline-balance" id="tokenBalanceInfo" style="display: none;">
+        <span class="label">🪙 代币余额</span>
+        <div class="d-flex align-items-center gap-2">
+          <span class="value" id="tokenBalance">-</span>
+          <button class="btn btn-refresh" onclick="refreshTokenBalance()">🔄</button>
+        </div>
       </div>
     </div>
 
     <!-- 买入面板 -->
     <div class="trade-card">
-      <h6 class="mb-2">🟢 买入</h6>
+      <h6 style="font-size:12px;margin-bottom:8px;">🟢 买入</h6>
       <div class="row g-2 mb-2">
-        <div class="col-6">
-          <label class="form-label" style="font-size:11px;">SOL 数量</label>
+        <div class="col-5">
+          <label style="font-size:10px;">SOL 数量</label>
           <div class="input-group">
-            <input type="number" id="buyAmount" class="form-control" 
-                   placeholder="0.0" step="0.001" min="0.001">
+            <input type="number" id="buyAmount" class="form-control" placeholder="0.0" step="0.001" min="0.001">
             <span class="input-group-text">SOL</span>
           </div>
         </div>
-        <div class="col-6">
-          <label class="form-label" style="font-size:11px;">滑点</label>
+        <div class="col-3">
+          <label style="font-size:10px;">滑点</label>
           <select id="slippage" class="form-select">
+            <option value="50">0.5%</option>
             <option value="100">1%</option>
             <option value="200">2%</option>
             <option value="500" selected>5%</option>
             <option value="1000">10%</option>
-            <option value="2000">20%</option>
           </select>
         </div>
+        <div class="col-4 d-flex align-items-end">
+          <button class="btn btn-buy w-100" onclick="doBuy()">🟢 买入</button>
+        </div>
       </div>
-      <div class="mb-2">
-        <div class="section-label">快捷金额</div>
+      <div>
+        <div class="section-label">快捷金额 (点击即买)</div>
         <div class="quick-row" id="buyQuickBtns"></div>
       </div>
-      <button class="btn btn-buy w-100" onclick="doBuy()">🟢 买入</button>
     </div>
 
     <!-- 卖出面板 -->
     <div class="trade-card">
-      <h6 class="mb-2">🔴 卖出</h6>
+      <h6 style="font-size:12px;margin-bottom:8px;">🔴 卖出</h6>
       <div class="row g-2 mb-2">
-        <div class="col-6">
-          <label class="form-label" style="font-size:11px;">卖出比例</label>
-          <div class="input-group">
-            <input type="number" id="sellPercent" class="form-control" 
-                   value="100" step="1" min="1" max="100">
-            <span class="input-group-text">%</span>
-          </div>
-        </div>
-        <div class="col-6">
-          <label class="form-label" style="font-size:11px;">滑点</label>
+        <div class="col-3">
+          <label style="font-size:10px;">滑点</label>
           <select id="sellSlippage" class="form-select">
+            <option value="50">0.5%</option>
             <option value="100">1%</option>
             <option value="200">2%</option>
             <option value="500" selected>5%</option>
             <option value="1000">10%</option>
-            <option value="2000">20%</option>
           </select>
         </div>
+        <div class="col-3 d-flex align-items-end">
+          <button class="btn btn-sell w-100" onclick="doSell()">🔴 卖出</button>
+        </div>
       </div>
-      <div class="mb-2">
-        <div class="section-label">快捷比例</div>
+      <div>
+        <div class="section-label">快捷比例 (点击即卖)</div>
         <div class="quick-row" id="sellQuickBtns"></div>
       </div>
-      <button class="btn btn-sell w-100" onclick="doSell()">🔴 卖出</button>
     </div>
 
     <!-- 结果显示 -->
     <div class="trade-card">
-      <h6 class="mb-2">📋 结果</h6>
+      <h6 style="font-size:12px;margin-bottom:6px;">📋 结果</h6>
       <div id="resultArea" class="result-area">
-        <div class="text-muted text-center" style="font-size:11px;">
-          交易结果将显示在这里
-        </div>
+        <div class="text-muted text-center" style="font-size:10px;">交易结果将显示在这里</div>
       </div>
     </div>
   </div>
@@ -276,6 +182,7 @@
     let currentMint = '';
     let buyAmounts = [];
     let sellPercents = [];
+    let fullWalletAddress = '';
 
     // 初始化
     document.addEventListener('DOMContentLoaded', async () => {
@@ -283,15 +190,22 @@
       await loadWalletInfo();
     });
 
+    // 复制钱包地址
+    function copyAddress() {
+      if (fullWalletAddress) {
+        navigator.clipboard.writeText(fullWalletAddress).then(() => {
+          alert('地址已复制: ' + fullWalletAddress);
+        });
+      }
+    }
+
     // 加载设置
     async function loadSettings() {
       try {
         const resp = await fetch('/admin/api/settings');
         const data = await resp.json();
-        
         buyAmounts = (data.jupiter_buy_amounts || '0.05,0.1,0.3,0.5').split(',').map(v => v.trim()).filter(v => v);
         sellPercents = (data.jupiter_sell_percents || '10,50,100').split(',').map(v => v.trim()).filter(v => v);
-        
         renderQuickButtons();
       } catch (e) {
         buyAmounts = ['0.05', '0.1', '0.3', '0.5'];
@@ -304,23 +218,13 @@
     function renderQuickButtons() {
       const buyContainer = document.getElementById('buyQuickBtns');
       buyContainer.innerHTML = buyAmounts.map(v => 
-        `<button class="quick-btn" onclick="setBuyAmount('${v}')">${v}</button>`
+        `<button class="quick-btn" onclick="doQuickBuy('${v}')">${v} SOL</button>`
       ).join('');
       
       const sellContainer = document.getElementById('sellQuickBtns');
       sellContainer.innerHTML = sellPercents.map(v => 
-        `<button class="quick-btn sell" onclick="setSellPercent('${v}')">${v}%</button>`
+        `<button class="quick-btn sell" onclick="doQuickSell('${v}')">${v}%</button>`
       ).join('');
-    }
-
-    // 设置买入金额
-    function setBuyAmount(amount) {
-      document.getElementById('buyAmount').value = amount;
-    }
-
-    // 设置卖出比例
-    function setSellPercent(percent) {
-      document.getElementById('sellPercent').value = percent;
     }
 
     // 加载钱包信息
@@ -328,10 +232,12 @@
       try {
         const resp = await fetch('/api/jupiter/wallet');
         const data = await resp.json();
-        document.getElementById('walletAddress').textContent = data.wallet_address || '未知';
-        document.getElementById('solBalance').textContent = (data.sol_balance || 0).toFixed(4) + ' SOL';
+        fullWalletAddress = data.wallet_address || '';
+        const short = fullWalletAddress ? fullWalletAddress.substring(0, 6) + '...' + fullWalletAddress.substring(fullWalletAddress.length - 4) : '未知';
+        document.getElementById('walletAddress').textContent = short;
+        document.getElementById('solBalance').textContent = (data.sol_balance || 0).toFixed(4);
       } catch (e) {
-        document.getElementById('walletAddress').textContent = '加载失败';
+        document.getElementById('walletAddress').textContent = '-';
         document.getElementById('solBalance').textContent = '-';
       }
     }
@@ -344,12 +250,10 @@
 
     // 刷新代币余额
     async function refreshTokenBalance() {
-      if (!currentMint) {
-        const mint = document.getElementById('tradeMint').value.trim();
-        if (!mint) return;
-        currentMint = mint;
-      }
-      await loadTokenBalance(currentMint);
+      const mint = document.getElementById('tradeMint').value.trim();
+      if (!mint) { currentMint = ''; document.getElementById('tokenBalanceInfo').style.display = 'none'; return; }
+      currentMint = mint;
+      await loadTokenBalance(mint);
     }
 
     // 加载代币余额
@@ -360,11 +264,9 @@
         const data = await resp.json();
         document.getElementById('tokenBalanceInfo').style.display = 'flex';
         document.getElementById('tokenBalance').textContent = data.token_balance ? data.token_balance.balance_sol.toFixed(4) : '0';
-        document.getElementById('currentMintDisplay').textContent = mint.substring(0, 16) + '...';
       } catch (e) {
         document.getElementById('tokenBalanceInfo').style.display = 'flex';
         document.getElementById('tokenBalance').textContent = '-';
-        document.getElementById('currentMintDisplay').textContent = mint.substring(0, 16) + '...';
       }
     }
 
@@ -382,10 +284,10 @@
       const step = document.getElementById(stepId);
       if (!step) return;
       step.className = 'status-step ' + status;
-      const icon = step.querySelector('.icon');
-      if (status === 'done') icon.textContent = '✅';
-      else if (status === 'active') icon.textContent = '⏳';
-      else icon.textContent = '⭕';
+      const iconEl = step.querySelector('.icon');
+      if (status === 'done') iconEl.textContent = '✅';
+      else if (status === 'active') iconEl.textContent = '⏳';
+      else iconEl.textContent = '⭕';
     }
     function showSteps() {
       document.getElementById('statusSteps').style.display = 'block';
@@ -395,7 +297,7 @@
       setStep('stepBalance', '');
     }
     function hideSteps() {
-      document.getElementById('statusSteps').style.display = 'none';
+      setTimeout(() => { document.getElementById('statusSteps').style.display = 'none'; }, 5000);
     }
 
     // 显示结果
@@ -403,19 +305,14 @@
       const area = document.getElementById('resultArea');
       if (success) {
         area.className = 'result-area result-success';
-        let html = '<div class="text-success fw-bold mb-2">✅ ' + message + '</div>';
-        html += '<div><strong>状态:</strong> ' + (data.status || '-') + '</div>';
-        if (data.in_amount) html += '<div><strong>输入:</strong> ' + data.in_amount + '</div>';
-        if (data.out_amount) html += '<div><strong>输出:</strong> ' + data.out_amount + '</div>';
+        let html = '<div class="text-success fw-bold mb-1">✅ ' + message + '</div>';
+        if (data.status) html += '<div><strong>状态:</strong> ' + data.status + '</div>';
         if (data.out_amount_sol) html += '<div><strong>获得:</strong> ' + data.out_amount_sol.toFixed(6) + ' SOL</div>';
-        if (data.tx_url) {
-          html += '<div class="mt-2"><a href="' + data.tx_url + '" target="_blank" class="tx-link">查看交易 ↗</a></div>';
-        }
+        if (data.tx_url) html += '<div class="mt-1"><a href="' + data.tx_url + '" target="_blank" class="tx-link">查看交易 ↗</a></div>';
         area.innerHTML = html;
       } else {
         area.className = 'result-area result-error';
-        area.innerHTML = '<div class="text-danger fw-bold mb-2">❌ ' + message + '</div>' +
-                         '<div><code>' + (data.error || '未知错误') + '</code></div>';
+        area.innerHTML = '<div class="text-danger fw-bold mb-1">❌ ' + message + '</div><div><code>' + (data.error || '未知错误') + '</code></div>';
       }
     }
 
@@ -424,10 +321,21 @@
       const mint = document.getElementById('tradeMint').value.trim();
       const solAmount = parseFloat(document.getElementById('buyAmount').value);
       const slippage = parseInt(document.getElementById('slippage').value);
-
       if (!mint) { alert('请输入 Mint 地址'); return; }
       if (!solAmount || solAmount <= 0) { alert('请输入 SOL 数量'); return; }
+      await executeBuy(mint, solAmount, slippage);
+    }
 
+    // 快捷买入
+    async function doQuickBuy(amount) {
+      const mint = document.getElementById('tradeMint').value.trim();
+      if (!mint) { alert('请先输入 Mint 地址'); return; }
+      const slippage = parseInt(document.getElementById('slippage').value);
+      await executeBuy(mint, parseFloat(amount), slippage);
+    }
+
+    // 实际买入逻辑
+    async function executeBuy(mint, solAmount, slippage) {
       showSteps();
       setStep('stepSubmit', 'active');
       showLoading('执行买入...');
@@ -449,12 +357,10 @@
           setStep('stepConfirm', 'done');
           setStep('stepVerify', 'done');
           setStep('stepBalance', 'active');
-          
           currentMint = mint;
           await loadTokenBalance(mint);
           await loadWalletInfo();
           setStep('stepBalance', 'done');
-          
           showResult(true, data.message, data);
         } else {
           setStep('stepConfirm', 'done');
@@ -465,19 +371,28 @@
         hideLoading();
         showResult(false, '请求失败', { error: e.message });
       }
-      
-      setTimeout(hideSteps, 3000);
+      hideSteps();
     }
 
     // 执行卖出
     async function doSell() {
       const mint = document.getElementById('tradeMint').value.trim();
-      const percent = parseInt(document.getElementById('sellPercent').value);
+      const percent = parseInt(document.getElementById('sellPercent')?.value) || 100;
       const slippage = parseInt(document.getElementById('sellSlippage').value);
-
       if (!mint) { alert('请输入 Mint 地址'); return; }
-      if (!percent || percent <= 0) { alert('请输入卖出比例'); return; }
+      await executeSell(mint, percent, slippage);
+    }
 
+    // 快捷卖出 (点击即执行)
+    async function doQuickSell(percent) {
+      const mint = document.getElementById('tradeMint').value.trim();
+      if (!mint) { alert('请先输入 Mint 地址'); return; }
+      const slippage = parseInt(document.getElementById('sellSlippage').value);
+      await executeSell(mint, parseInt(percent), slippage);
+    }
+
+    // 实际卖出逻辑
+    async function executeSell(mint, percent, slippage) {
       showSteps();
       setStep('stepSubmit', 'active');
       showLoading('执行卖出...');
@@ -499,12 +414,10 @@
           setStep('stepConfirm', 'done');
           setStep('stepVerify', 'done');
           setStep('stepBalance', 'active');
-          
           currentMint = mint;
           await loadTokenBalance(mint);
           await loadWalletInfo();
           setStep('stepBalance', 'done');
-          
           showResult(true, data.message, data);
         } else {
           setStep('stepConfirm', 'done');
@@ -515,8 +428,7 @@
         hideLoading();
         showResult(false, '请求失败', { error: e.message });
       }
-      
-      setTimeout(hideSteps, 3000);
+      hideSteps();
     }
 
     // Mint 输入变化时自动加载余额
@@ -525,6 +437,9 @@
       if (mint) {
         currentMint = mint;
         loadTokenBalance(mint);
+      } else {
+        document.getElementById('tokenBalanceInfo').style.display = 'none';
+        currentMint = '';
       }
     });
   </script>
