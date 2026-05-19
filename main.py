@@ -13,6 +13,7 @@ from sqladmin.authentication import AuthenticationBackend
 from app.routes import users, auth
 from app.routes.trades import router as trades_router, settings_router, active_monitors
 from app.routes.cluster_api import router as cluster_api_router
+from app.routes.jupiter_api import router as jupiter_api_router
 from app.utils.database import engine, Base, SessionLocal
 from app.models.models import User, Token
 from app.models.trade import Setting
@@ -89,6 +90,7 @@ app.include_router(settings_router)
 from app.routes.trades import live_router
 app.include_router(live_router)
 app.include_router(cluster_api_router)  # 簇组 API 路由
+app.include_router(jupiter_api_router)  # Jupiter 交易 API
 
 # ========== Admin Model Views ==========
 class UserAdmin(ModelView, model=User):
@@ -362,6 +364,21 @@ class ClusterSettingsMenu(BaseView):
         )
 
 
+class JupiterTradeMenu(BaseView):
+    """Jupiter 交易菜单项"""
+    name = "Jupiter 交易"
+    icon = "fa-solid fa-exchange-alt"
+
+    @expose("/jupiter-trade", methods=["GET"])
+    async def jupiter_trade_page(self, request: Request):
+        """Jupiter 交易页面"""
+        return await self.templates.TemplateResponse(
+            request,
+            "jupiter_trade.html",
+            {"request": request}
+        )
+
+
 # Redis 相关类已移至 app/admin/redis_admin.py
 from app.admin.redis_admin import RedisViewerMenu, RedisKeysMenu, RedisApiView
 
@@ -412,6 +429,7 @@ admin.add_base_view(DealerSettingsMenu)
 admin.add_base_view(TradeLiveMenu)
 admin.add_base_view(ClusterListMenu)      # 簇组列表
 admin.add_base_view(ClusterSettingsMenu)  # 簇组设置
+admin.add_base_view(JupiterTradeMenu)     # Jupiter 交易
 admin.add_base_view(RedisViewerMenu)
 admin.add_base_view(RedisKeysMenu)
 admin.add_base_view(RedisApiView)
