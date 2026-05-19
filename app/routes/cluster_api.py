@@ -7,15 +7,90 @@ router = APIRouter(prefix="/admin", tags=["簇组管理"])
 
 
 @router.get("/api/clusters")
-async def api_get_clusters(request: Request):
-    """获取所有簇组"""
+async def api_get_clusters(
+    request: Request,
+    search: str = "",
+    sort_by: str = "created_at",
+    sort_order: str = "desc",
+    page: int = 1,
+    page_size: int = 20,
+):
+    """获取所有簇组（支持搜索、排序、分页）"""
     from app.services.cluster.manager import create_manager
     from app.utils.database import SessionLocal
+    
+    # 参数校验
+    page = max(1, page)
+    page_size = max(1, min(100, page_size))
+    sort_order = "asc" if sort_order == "asc" else "desc"
+    
+    # 允许排序的字段
+    allowed_sort_fields = {
+        "base_cu", "base_program_count", "base_main_instruction_count",
+        "base_inner_instruction_count", "tx_count", "user_count", "created_at"
+    }
+    if sort_by not in allowed_sort_fields:
+        sort_by = "created_at"
+    
     db = SessionLocal()
     try:
         manager = create_manager(db)
         clusters = await manager.get_all_clusters()
-        return JSONResponse([c.to_dict() for c in clusters])
+        
+        # 搜索过滤（匹配簇组名称或用户地址）
+        if search:
+            search_lower = search.lower()
+            filtered = []
+            for c in clusters:
+                # 匹配簇组名称
+                if search_lower in c.name.lower():
+                    filtered.append(c)
+                # 匹配用户地址
+                elif any(search_lower in user.lower() for user in c.users):
+                    filtered.append(c)
+            clusters = filtered
+        
+        # 排序
+        reverse = sort_order == "desc"
+        def sort_key(c):
+            if sort_by == "base_cu":
+                return c.base_cu
+            elif sort_by == "base_program_count":
+                return c.base_program_count
+            elif sort_by == "base_main_instruction_count":
+                return c.base_main_instruction_count
+            elif sort_by == "base_inner_instruction_count":
+                return c.base_inner_instruction_count
+            elif sort_by == "tx_count":
+                return c.tx_count
+            elif sort_by == "user_count":
+                return c.user_count
+            else:  # created_at
+                return c.created_at
+        
+        clusters = sorted(clusters, key=sort_key, reverse=reverse)
+        
+        # 分页
+        total = len(clusters)
+        total_pages = (total + page_size - 1) // page_size if total > 0 else 1
+        start_idx = (page - 1) * page_size
+        end_idx = start_idx + page_size
+        paginated = clusters[start_idx:end_idx]
+        
+        return JSONResponse({
+            "clusters": [c.to_dict() for c in paginated],
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": total_pages,
+            # 统计数据
+            "stats": {
+                "total_clusters": len(clusters),
+                "dealer_clusters": sum(1 for c in clusters if c.cluster_type == "dealer"),
+                "retail_clusters": sum(1 for c in clusters if c.cluster_type == "retail"),
+                "total_txs": sum(c.tx_count for c in clusters),
+            }
+        })
     finally:
         db.close()
 

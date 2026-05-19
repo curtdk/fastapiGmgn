@@ -102,6 +102,7 @@
       
       <!-- 快捷搜索按钮 -->
       <div class="quick-btns" id="quickBtns">
+        <button class="quick-btn" onclick="searchPrefix('cluster:', this)">cluster: <span class="count" id="countCluster">-</span></button>
         <button class="quick-btn" onclick="searchPrefix('metrics:', this)">metrics: <span class="count" id="countMetrics">-</span></button>
         <button class="quick-btn" onclick="searchPrefix('tx:', this)">tx: <span class="count" id="countTx">-</span></button>
         <button class="quick-btn" onclick="searchPrefix('txlist:', this)">txlist: <span class="count" id="countTxlist">-</span></button>
@@ -130,6 +131,7 @@
       
       <!-- 批量删除操作 -->
       <div class="action-row" style="margin-top:8px;">
+        <button class="btn btn-danger btn-xs" onclick="deletePrefix('cluster:')">删cluster</button>
         <button class="btn btn-danger btn-xs" onclick="deletePrefix('metrics:')">删metrics</button>
         <button class="btn btn-danger btn-xs" onclick="deletePrefix('tx:')">删tx</button>
         <button class="btn btn-danger btn-xs" onclick="deletePrefix('txlist:')">删txlist</button>
@@ -252,7 +254,7 @@ function toggleSection(sectionId) {
 
 async function loadPrefixCounts() {
   try {
-    const prefixes = ['metrics:', 'tx:', 'txlist:', 'user:', 'stream:', 'retry:', 'trader:'];
+    const prefixes = ['cluster:', 'metrics:', 'tx:', 'txlist:', 'user:', 'stream:', 'retry:', 'trader:'];
     for (const prefix of prefixes) {
       const resp = await fetch(`/admin/api/redis/keys?prefix=${prefix}&page_size=1`);
       const data = await resp.json();
@@ -524,7 +526,7 @@ async function deleteAll() {
     return;
   }
   try {
-    const prefixes = ['metrics:', 'tx:', 'txlist:', 'user:', 'stream:', 'retry:', 'trader:'];
+    const prefixes = ['cluster:', 'metrics:', 'tx:', 'txlist:', 'user:', 'stream:', 'retry:', 'trader:'];
     for (const prefix of prefixes) {
       await fetch('/admin/api/redis/delete-by-prefix', {
         method: 'DELETE',

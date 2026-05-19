@@ -23,7 +23,7 @@
   .btn-danger { background: #dc3545; color: #fff; }
   .btn-success { background: #28a745; color: #fff; }
   .btn-sm { padding: 4px 8px; font-size: 11px; }
-  .filter-bar { display: flex; gap: 16px; margin-bottom: 16px; align-items: center; }
+  .filter-bar { display: flex; gap: 16px; margin-bottom: 16px; align-items: center; flex-wrap: wrap; }
   .filter-bar select, .filter-bar input { padding: 6px; border: 1px solid #ced4da; border-radius: 4px; }
   .cluster-name { font-family: monospace; font-size: 11px; }
   .toggle-switch { position: relative; width: 40px; height: 22px; }
@@ -36,6 +36,21 @@
   .tx-list { max-height: 300px; overflow-y: auto; }
   .tx-item { padding: 6px 8px; border-bottom: 1px solid #e9ecef; font-size: 11px; font-family: monospace; cursor: pointer; }
   .tx-item:hover { background: #f8f9fa; }
+  .search-input { width: 200px; }
+  .sort-header { cursor: pointer; user-select: none; }
+  .sort-header:hover { background: #e9ecef; }
+  .sort-icon { margin-left: 4px; opacity: 0.3; }
+  .sort-icon.active { opacity: 1; }
+  .pagination { display: flex; align-items: center; gap: 8px; margin-top: 16px; justify-content: space-between; flex-wrap: wrap; }
+  .pagination-info { font-size: 12px; color: #666; }
+  .pagination-controls { display: flex; align-items: center; gap: 4px; }
+  .pagination-controls select, .pagination-controls input { padding: 4px; border: 1px solid #ced4da; border-radius: 4px; }
+  .pagination-controls input { width: 60px; text-align: center; }
+  .page-btn { padding: 4px 8px; border: 1px solid #ced4da; border-radius: 4px; background: #fff; cursor: pointer; font-size: 12px; }
+  .page-btn:hover:not(:disabled) { background: #e9ecef; }
+  .page-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .page-btn.active { background: #007bff; color: #fff; border-color: #007bff; }
+  .page-jump { display: flex; align-items: center; gap: 4px; }
 </style>
 
 <div class="container">
@@ -66,14 +81,17 @@
   </div>
 
   <div class="filter-bar">
-    <label>类型筛选：</label>
+    <label>搜索：</label>
+    <input type="text" id="searchInput" class="search-input" placeholder="簇组名称/用户名" onkeyup="if(event.key==='Enter')loadClusters()">
+    
+    <label>类型：</label>
     <select id="typeFilter" onchange="loadClusters()">
       <option value="">全部</option>
       <option value="unknown">未定义</option>
       <option value="retail">散户</option>
       <option value="dealer">庄家</option>
     </select>
-    <label>判定来源：</label>
+    <label>判定：</label>
     <select id="judgmentFilter" onchange="loadClusters()">
       <option value="">全部</option>
       <option value="system">系统判定</option>
@@ -86,17 +104,17 @@
       <thead>
         <tr>
           <th>启用</th>
-          <th>簇组名称</th>
+          <th class="sort-header" onclick="toggleSort('name')">簇组名称 <span class="sort-icon" id="sort-name">↕</span></th>
           <th>类型</th>
-          <th>判定来源</th>
+          <th>判定</th>
           <th>文件夹</th>
-          <th>基准CU</th>
-          <th>基准程序数</th>
-          <th>主指令数</th>
-          <th>内部指令数</th>
-          <th>Tx数</th>
-          <th>用户数</th>
-          <th>创建时间</th>
+          <th class="sort-header" onclick="toggleSort('base_cu')">基准CU <span class="sort-icon" id="sort-base_cu">↕</span></th>
+          <th class="sort-header" onclick="toggleSort('base_program_count')">基准程序数 <span class="sort-icon" id="sort-base_program_count">↕</span></th>
+          <th class="sort-header" onclick="toggleSort('base_main_instruction_count')">主指令数 <span class="sort-icon" id="sort-base_main_instruction_count">↕</span></th>
+          <th class="sort-header" onclick="toggleSort('base_inner_instruction_count')">内部指令数 <span class="sort-icon" id="sort-base_inner_instruction_count">↕</span></th>
+          <th class="sort-header" onclick="toggleSort('tx_count')">Tx数 <span class="sort-icon" id="sort-tx_count">↕</span></th>
+          <th class="sort-header" onclick="toggleSort('user_count')">用户数 <span class="sort-icon" id="sort-user_count">↕</span></th>
+          <th class="sort-header" onclick="toggleSort('created_at')">创建时间 <span class="sort-icon" id="sort-created_at">↕</span></th>
           <th>操作</th>
         </tr>
       </thead>
@@ -104,6 +122,29 @@
         <tr><td colspan="13" style="text-align: center;">加载中...</td></tr>
       </tbody>
     </table>
+  </div>
+
+  <div class="pagination">
+    <div class="pagination-info">
+      共 <span id="totalCount">0</span> 条，每页
+      <select id="pageSize" onchange="changePageSize()">
+        <option value="10">10</option>
+        <option value="20" selected>20</option>
+        <option value="50">50</option>
+        <option value="100">100</option>
+      </select> 条
+    </div>
+    <div class="pagination-controls">
+      <button class="page-btn" id="firstPageBtn" onclick="goToPage(1)">首页</button>
+      <button class="page-btn" id="prevPageBtn" onclick="prevPage()">上一页</button>
+      <span id="pageInfo">第 1 / 1 页</span>
+      <button class="page-btn" id="nextPageBtn" onclick="nextPage()">下一页</button>
+      <button class="page-btn" id="lastPageBtn" onclick="goToPage(currentTotalPages)">末页</button>
+      <div class="page-jump">
+        跳转：<input type="number" id="jumpPage" min="1" onkeyup="if(event.key==='Enter')jumpToPage()">
+        <button class="page-btn" onclick="jumpToPage()">跳转</button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -141,23 +182,54 @@
 
 <script>
 let clusters = [];
+let currentPage = 1;
+let currentPageSize = 20;
+let currentTotalPages = 1;
+let currentTotal = 0;
+let currentSortBy = 'created_at';
+let currentSortOrder = 'desc';
 
 async function loadClusters() {
   try {
-    const resp = await fetch('/admin/api/clusters');
-    clusters = await resp.json();
-    renderTable();
-    updateStats();
+    const search = document.getElementById('searchInput').value;
+    const typeFilter = document.getElementById('typeFilter').value;
+    const judgmentFilter = document.getElementById('judgmentFilter').value;
+    
+    const params = new URLSearchParams({
+      search: search,
+      sort_by: currentSortBy,
+      sort_order: currentSortOrder,
+      page: currentPage,
+      page_size: currentPageSize,
+    });
+    
+    const resp = await fetch('/admin/api/clusters?' + params);
+    const data = await resp.json();
+    
+    clusters = data.clusters;
+    currentTotal = data.total;
+    currentTotalPages = data.total_pages;
+    
+    // 更新统计数据
+    if (data.stats) {
+      document.getElementById('totalClusters').textContent = data.stats.total_clusters;
+      document.getElementById('dealerClusters').textContent = data.stats.dealer_clusters;
+      document.getElementById('retailClusters').textContent = data.stats.retail_clusters;
+      document.getElementById('totalTxs').textContent = data.stats.total_txs;
+    }
+    
+    renderTable(typeFilter, judgmentFilter);
+    renderPagination();
+    updateSortIcons();
   } catch (e) {
     console.error('加载失败:', e);
   }
 }
 
-function renderTable() {
+function renderTable(typeFilter, judgmentFilter) {
   const tbody = document.getElementById('clusterTable');
-  const typeFilter = document.getElementById('typeFilter').value;
-  const judgmentFilter = document.getElementById('judgmentFilter').value;
   
+  // 前端类型筛选（虽然后端已返回全量数据，但保留前端筛选作为双重保障）
   const filtered = clusters.filter(c => {
     if (typeFilter && c.cluster_type !== typeFilter) return false;
     if (judgmentFilter && c.judgment_type !== judgmentFilter) return false;
@@ -174,7 +246,7 @@ function renderTable() {
     const typeClass = `type-${c.cluster_type}`;
     const typeText = c.cluster_type === 'unknown' ? '未定义' : c.cluster_type === 'retail' ? '散户' : '庄家';
     const judgmentText = c.judgment_type === 'system' ? '系统' : '手动';
-    const createdAt = new Date(c.created_at * 1000).toLocaleString();
+    const createdAt = new Date(parseInt(c.created_at) * 1000).toLocaleString();
     const isEnabled = c.enabled === true || c.enabled === 'true';
     
     html += `<tr data-name="${c.name}">
@@ -208,11 +280,75 @@ function renderTable() {
   tbody.innerHTML = html;
 }
 
-function updateStats() {
-  document.getElementById('totalClusters').textContent = clusters.length;
-  document.getElementById('dealerClusters').textContent = clusters.filter(c => c.cluster_type === 'dealer').length;
-  document.getElementById('retailClusters').textContent = clusters.filter(c => c.cluster_type === 'retail').length;
-  document.getElementById('totalTxs').textContent = clusters.reduce((sum, c) => sum + (c.tx_count || 0), 0);
+function renderPagination() {
+  document.getElementById('totalCount').textContent = currentTotal;
+  document.getElementById('pageInfo').textContent = `第 ${currentPage} / ${currentTotalPages} 页`;
+  document.getElementById('pageSize').value = currentPageSize;
+  document.getElementById('jumpPage').max = currentTotalPages;
+  
+  document.getElementById('firstPageBtn').disabled = currentPage <= 1;
+  document.getElementById('prevPageBtn').disabled = currentPage <= 1;
+  document.getElementById('nextPageBtn').disabled = currentPage >= currentTotalPages;
+  document.getElementById('lastPageBtn').disabled = currentPage >= currentTotalPages;
+}
+
+function toggleSort(field) {
+  if (currentSortBy === field) {
+    currentSortOrder = currentSortOrder === 'asc' ? 'desc' : 'asc';
+  } else {
+    currentSortBy = field;
+    currentSortOrder = 'desc';
+  }
+  currentPage = 1;
+  loadClusters();
+}
+
+function updateSortIcons() {
+  // 清除所有排序图标
+  document.querySelectorAll('.sort-icon').forEach(el => {
+    el.textContent = '↕';
+    el.classList.remove('active');
+  });
+  
+  // 设置当前排序图标
+  const icon = document.getElementById('sort-' + currentSortBy);
+  if (icon) {
+    icon.textContent = currentSortOrder === 'asc' ? '↑' : '↓';
+    icon.classList.add('active');
+  }
+}
+
+function changePageSize() {
+  currentPageSize = parseInt(document.getElementById('pageSize').value);
+  currentPage = 1;
+  loadClusters();
+}
+
+function goToPage(page) {
+  currentPage = page;
+  loadClusters();
+}
+
+function prevPage() {
+  if (currentPage > 1) {
+    currentPage--;
+    loadClusters();
+  }
+}
+
+function nextPage() {
+  if (currentPage < currentTotalPages) {
+    currentPage++;
+    loadClusters();
+  }
+}
+
+function jumpToPage() {
+  const page = parseInt(document.getElementById('jumpPage').value);
+  if (page >= 1 && page <= currentTotalPages) {
+    currentPage = page;
+    loadClusters();
+  }
 }
 
 async function showDetail(name) {
@@ -245,7 +381,7 @@ async function showDetail(name) {
       <tr><td><strong>内部指令数</strong></td><td>${c.base_inner_instruction_count} ± ${c.base_inner_offset}</td></tr>
       <tr><td><strong>Tx数</strong></td><td>${c.tx_count}</td></tr>
       <tr><td><strong>用户数</strong></td><td>${c.user_count}</td></tr>
-      <tr><td><strong>程序ID列表</strong></td><td><pre style="font-size: 10px; overflow: auto;">${JSON.stringify(c.base_programs || [], null, 2)}</pre></td></tr>
+      <tr><td><strong>程序ID列表</strong></td><td><pre style="font-size: 10px; overflow: auto;">${JSON.stringify(JSON.parse(c.base_programs || '[]'), null, 2)}</pre></td></tr>
     </table>
     <h5 class="mt-3">交易列表</h5>
     ${txsHtml}
