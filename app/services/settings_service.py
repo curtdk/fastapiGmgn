@@ -38,6 +38,9 @@ DEFAULT_SETTINGS = {
     "cluster_inner_instruction_offset": "0", # 内部指令数量偏移量
     "cluster_tx_threshold": "50",           # 自动判定庄家 Tx数阈值
     "cluster_user_threshold": "50",         # 自动判定庄家用户数阈值
+    # Jupiter 交易设置
+    "jupiter_buy_amounts": "0.05,0.1,0.3,0.5",  # 买入 SOL 数量快捷选项
+    "jupiter_sell_percents": "10,50,100",        # 卖出比例快捷选项
 }
 
 

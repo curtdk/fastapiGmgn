@@ -1,0 +1,123 @@
+{% extends "sqladmin/layout.html" %}
+{% block title %}Jupiter 设置{% endblock %}
+{% block content %}
+<style>
+  .settings-card { background: #fff; border-radius: 8px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); max-width: 600px; margin-bottom: 20px; }
+  .card-title { font-size: 16px; font-weight: 600; margin-bottom: 16px; color: #333; }
+  .desc { font-size: 12px; color: #868e96; margin-top: 4px; }
+  .form-label { font-weight: 500; }
+  .help-text { font-size: 11px; color: #868e96; }
+  .quick-preview { background: #f8f9fa; border-radius: 6px; padding: 12px; margin-top: 12px; }
+  .quick-preview .label { font-size: 11px; color: #666; margin-bottom: 6px; }
+  .quick-preview .tags { display: flex; flex-wrap: wrap; gap: 6px; }
+  .quick-preview .tag { background: #667eea; color: white; padding: 3px 10px; border-radius: 12px; font-size: 11px; }
+  .quick-preview .tag.sell { background: #e74c3c; }
+</style>
+
+<div class="container-fluid">
+  <h2 class="page-title">Jupiter 交易设置</h2>
+  
+  <div class="settings-card mt-4">
+    <div class="card-title">🟢 买入快捷 SOL 数量</div>
+    <div class="mb-2">
+      <label class="form-label">买入金额列表</label>
+      <input type="text" id="buy_amounts" class="form-control" placeholder="0.05,0.1,0.3,0.5" style="font-family: monospace;">
+      <div class="help-text mt-1">用逗号分隔，例如: 0.05,0.1,0.3,0.5</div>
+    </div>
+    <div class="quick-preview">
+      <div class="label">预览：点击交易页面买入按钮时可选的值</div>
+      <div class="tags" id="buyPreview"></div>
+    </div>
+  </div>
+
+  <div class="settings-card">
+    <div class="card-title">🔴 卖出快捷比例</div>
+    <div class="mb-2">
+      <label class="form-label">卖出比例列表</label>
+      <input type="text" id="sell_percents" class="form-control" placeholder="10,50,100" style="font-family: monospace;">
+      <div class="help-text mt-1">用逗号分隔（百分比），例如: 10,50,100</div>
+    </div>
+    <div class="quick-preview">
+      <div class="label">预览：点击交易页面卖出按钮时可选的值</div>
+      <div class="tags" id="sellPreview"></div>
+    </div>
+  </div>
+
+  <div class="mt-3">
+    <button class="btn btn-primary" onclick="saveSettings()">保存设置</button>
+    <button class="btn btn-outline-secondary ms-2" onclick="resetDefaults()">恢复默认</button>
+  </div>
+  
+  <div class="mt-3">
+    <a href="/admin/jupiter-trade" class="btn btn-outline-primary">打开交易页面 →</a>
+  </div>
+</div>
+
+<script>
+const DEFAULT_BUY = '0.05,0.1,0.3,0.5';
+const DEFAULT_SELL = '10,50,100';
+
+async function loadSettings() {
+  try {
+    const resp = await fetch('/admin/api/settings');
+    const data = await resp.json();
+    
+    document.getElementById('buy_amounts').value = data.jupiter_buy_amounts || DEFAULT_BUY;
+    document.getElementById('sell_percents').value = data.jupiter_sell_percents || DEFAULT_SELL;
+    
+    updatePreview();
+  } catch (e) {
+    alert('加载设置失败: ' + e.message);
+  }
+}
+
+function updatePreview() {
+  const buyValues = document.getElementById('buy_amounts').value.split(',').map(v => v.trim()).filter(v => v);
+  const sellValues = document.getElementById('sell_percents').value.split(',').map(v => v.trim()).filter(v => v);
+  
+  document.getElementById('buyPreview').innerHTML = buyValues.map(v => 
+    `<span class="tag">${v} SOL</span>`
+  ).join('');
+  
+  document.getElementById('sellPreview').innerHTML = sellValues.map(v => 
+    `<span class="tag sell">${v}%</span>`
+  ).join('');
+}
+
+async function saveSettings() {
+  const buyAmounts = document.getElementById('buy_amounts').value.trim();
+  const sellPercents = document.getElementById('sell_percents').value.trim();
+  
+  try {
+    await fetch('/admin/api/settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key: 'jupiter_buy_amounts', value: buyAmounts }),
+    });
+    
+    await fetch('/admin/api/settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key: 'jupiter_sell_percents', value: sellPercents }),
+    });
+    
+    alert('设置已保存！');
+    updatePreview();
+  } catch (e) {
+    alert('保存失败: ' + e.message);
+  }
+}
+
+function resetDefaults() {
+  document.getElementById('buy_amounts').value = DEFAULT_BUY;
+  document.getElementById('sell_percents').value = DEFAULT_SELL;
+  updatePreview();
+}
+
+// 输入时实时更新预览
+document.getElementById('buy_amounts').addEventListener('input', updatePreview);
+document.getElementById('sell_percents').addEventListener('input', updatePreview);
+
+window.addEventListener('DOMContentLoaded', loadSettings);
+</script>
+{% endblock %}

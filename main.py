@@ -379,6 +379,21 @@ class JupiterTradeMenu(BaseView):
         )
 
 
+class JupiterSettingsMenu(BaseView):
+    """Jupiter 设置菜单项"""
+    name = "Jupiter 设置"
+    icon = "fa-solid fa-coins"
+
+    @expose("/jupiter-settings", methods=["GET"])
+    async def jupiter_settings_page(self, request: Request):
+        """Jupiter 设置页面"""
+        return await self.templates.TemplateResponse(
+            request,
+            "jupiter_settings.html",
+            {"request": request}
+        )
+
+
 # Redis 相关类已移至 app/admin/redis_admin.py
 from app.admin.redis_admin import RedisViewerMenu, RedisKeysMenu, RedisApiView
 
@@ -430,6 +445,7 @@ admin.add_base_view(TradeLiveMenu)
 admin.add_base_view(ClusterListMenu)      # 簇组列表
 admin.add_base_view(ClusterSettingsMenu)  # 簇组设置
 admin.add_base_view(JupiterTradeMenu)     # Jupiter 交易
+admin.add_base_view(JupiterSettingsMenu)  # Jupiter 设置
 admin.add_base_view(RedisViewerMenu)
 admin.add_base_view(RedisKeysMenu)
 admin.add_base_view(RedisApiView)

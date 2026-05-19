@@ -54,3 +54,18 @@ class ClusterSettingsView(BaseView):
             "cluster/cluster_settings.html",
             {"request": request}
         )
+
+
+class JupiterSettingsView(BaseView):
+    """Jupiter 交易设置页面"""
+    name = "Jupiter 设置"
+    icon = "fa-solid fa-coins"
+
+    @expose("/jupiter-settings", methods=["GET"])
+    async def jupiter_settings_page(self, request: Request):
+        """Jupiter 买卖快捷选项设置"""
+        return await self.templates.TemplateResponse(
+            request,
+            "jupiter_settings.html",
+            {"request": request}
+        )
