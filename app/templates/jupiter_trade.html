@@ -88,7 +88,7 @@
           </div>
         </div>
         <div class="col-3 d-flex align-items-end">
-          <button class="btn btn-buy w-100" id="btnBuy" onclick="doBuy()">🟢 买入</button>
+          <button class="btn btn-buy w-100" onclick="doBuy()">🟢 买入</button>
         </div>
       </div>
       <div>
@@ -122,7 +122,6 @@
     let sellPercents = [];
     let fullWalletAddress = '';
     let confirmEnabled = true;
-    let isRunning = false;  // 运行状态标志
 
     // 初始化
     document.addEventListener('DOMContentLoaded', async () => {
@@ -162,7 +161,6 @@
 
     // 加载钱包信息
     async function loadWalletInfo() {
-      if (isRunning) return;
       try {
         const resp = await fetch('/api/jupiter/wallet');
         const data = await resp.json();
@@ -178,15 +176,12 @@
 
     // 刷新所有
     async function refreshAll() {
-      if (isRunning) { alert('正在运行中，请稍候...'); return; }
       await loadWalletInfo();
       if (currentMint) await loadTokenBalance(currentMint);
     }
 
     // 刷新代币余额（带状态显示）
     async function refreshTokenBalance() {
-      if (isRunning) { alert('正在运行中，请稍候...'); return; }
-      
       const mint = document.getElementById('tradeMint').value.trim();
       if (!mint) { currentMint = ''; document.getElementById('tokenBalanceInfo').style.display = 'none'; return; }
       currentMint = mint;
@@ -198,48 +193,23 @@
       
       try {
         addStatusLine('🔄 正在获取代币余额...', 'wait');
-        await loadTokenBalance(mint);
+        const resp = await fetch('/api/jupiter/balance/' + mint);
+        if (!resp.ok) {
+          const errData = await resp.json().catch(() => ({}));
+          throw new Error(errData.detail || 'HTTP ' + resp.status);
+        }
+        const data = await resp.json();
+        document.getElementById('tokenBalanceInfo').style.display = 'flex';
+        document.getElementById('tokenBalance').textContent = data.token_balance ? data.token_balance.balance_sol.toFixed(4) : '0';
         addStatusLine('✅ 余额已更新', 'done');
       } catch (e) {
         addStatusLine('❌ 获取余额失败: ' + e.message, 'err');
+        document.getElementById('tokenBalanceInfo').style.display = 'flex';
+        document.getElementById('tokenBalance').textContent = '-';
       }
       
       btn.disabled = false;
       btn.textContent = '🔄';
-    }
-
-    // 加载代币余额
-    async function loadTokenBalance(mint) {
-      if (!mint) return;
-      try {
-        const resp = await fetch('/api/jupiter/balance/' + mint);
-        const data = await resp.json();
-        document.getElementById('tokenBalanceInfo').style.display = 'flex';
-        document.getElementById('tokenBalance').textContent = data.token_balance ? data.token_balance.balance_sol.toFixed(4) : '0';
-      } catch (e) {
-        document.getElementById('tokenBalanceInfo').style.display = 'flex';
-        document.getElementById('tokenBalance').textContent = '-';
-        throw e;
-      }
-    }
-
-    // 检查运行状态
-    function checkRunning() {
-      if (isRunning) {
-        alert('正在运行中，请稍候...');
-        return true;
-      }
-      return false;
-    }
-
-    // 设置运行状态
-    function setRunning(running) {
-      isRunning = running;
-      // 禁用/启用按钮
-      const btnBuy = document.getElementById('btnBuy');
-      const btnRefresh = document.getElementById('btnRefreshBalance');
-      if (btnBuy) btnBuy.disabled = running;
-      if (btnRefresh) btnRefresh.disabled = running;
     }
 
     // 显示加载状态
@@ -279,7 +249,6 @@
 
     // 买入
     async function doBuy() {
-      if (checkRunning()) return;
       const mint = document.getElementById('tradeMint').value.trim();
       const solAmount = parseFloat(document.getElementById('buyAmount').value);
       if (!mint) { alert('请输入 Mint 地址'); return; }
@@ -290,7 +259,6 @@
 
     // 快捷买入
     async function doQuickBuy(amount) {
-      if (checkRunning()) return;
       const mint = document.getElementById('tradeMint').value.trim();
       if (!mint) { alert('请先输入 Mint 地址'); return; }
       if (confirmEnabled && !confirm('确认买入 ' + amount + ' SOL?')) return;
@@ -299,7 +267,6 @@
 
     // 实际买入
     async function executeBuy(mint, solAmount) {
-      setRunning(true);
       showLoading('执行买入...');
       addStatusLine('🔄 正在提交买入交易...', 'wait');
       
@@ -317,12 +284,22 @@
           addStatusLine('✅ 交易已提交，状态: ' + (data.status || '-'), 'done');
           addStatusLine('💰 正在获取代币余额...', 'wait');
           currentMint = mint;
-          await loadTokenBalance(mint);
+          
+          // 获取余额
+          try {
+            const balanceResp = await fetch('/api/jupiter/balance/' + mint);
+            if (balanceResp.ok) {
+              const balanceData = await balanceResp.json();
+              document.getElementById('tokenBalanceInfo').style.display = 'flex';
+              document.getElementById('tokenBalance').textContent = balanceData.token_balance ? balanceData.token_balance.balance_sol.toFixed(4) : '0';
+            }
+          } catch (e) {}
+          
           await loadWalletInfo();
           addStatusLine('✅ 余额已更新', 'done');
           showResult(true, data.message, data);
         } else {
-          addStatusLine('❌ 交易失败: ' + (data.error || '未知错误'), 'err');
+          addStatusLine('❌ 交易失败: ' + (data.error || data.message || '未知错误'), 'err');
           showResult(false, data.message, data);
         }
       } catch (e) {
@@ -330,13 +307,10 @@
         addStatusLine('❌ 请求失败: ' + e.message, 'err');
         showResult(false, '请求失败', { error: e.message });
       }
-      
-      setRunning(false);
     }
 
     // 快捷卖出
     async function doQuickSell(percent) {
-      if (checkRunning()) return;
       const mint = document.getElementById('tradeMint').value.trim();
       if (!mint) { alert('请先输入 Mint 地址'); return; }
       if (confirmEnabled && !confirm('确认卖出 ' + percent + '%?')) return;
@@ -345,7 +319,6 @@
 
     // 实际卖出
     async function executeSell(mint, percent) {
-      setRunning(true);
       showLoading('执行卖出...');
       addStatusLine('🔄 正在提交卖出交易...', 'wait');
       
@@ -363,12 +336,22 @@
           addStatusLine('✅ 交易已提交，状态: ' + (data.status || '-'), 'done');
           addStatusLine('💰 正在获取代币余额...', 'wait');
           currentMint = mint;
-          await loadTokenBalance(mint);
+          
+          // 获取余额
+          try {
+            const balanceResp = await fetch('/api/jupiter/balance/' + mint);
+            if (balanceResp.ok) {
+              const balanceData = await balanceResp.json();
+              document.getElementById('tokenBalanceInfo').style.display = 'flex';
+              document.getElementById('tokenBalance').textContent = balanceData.token_balance ? balanceData.token_balance.balance_sol.toFixed(4) : '0';
+            }
+          } catch (e) {}
+          
           await loadWalletInfo();
           addStatusLine('✅ 余额已更新', 'done');
           showResult(true, data.message, data);
         } else {
-          addStatusLine('❌ 交易失败: ' + (data.error || '未知错误'), 'err');
+          addStatusLine('❌ 交易失败: ' + (data.error || data.message || '未知错误'), 'err');
           showResult(false, data.message, data);
         }
       } catch (e) {
@@ -376,8 +359,6 @@
         addStatusLine('❌ 请求失败: ' + e.message, 'err');
         showResult(false, '请求失败', { error: e.message });
       }
-      
-      setRunning(false);
     }
 
     // Mint 输入变化时显示余额区域

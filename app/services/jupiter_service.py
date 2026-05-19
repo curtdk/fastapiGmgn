@@ -32,7 +32,28 @@ class JupiterService:
     def __init__(self):
         self.payer = None
         self._initialized = False
-        self._priority = "Medium"  # 缓存优先级设置
+        self._busy = False  # 交易中锁
+        self._priority = self._load_priority()  # 从数据库读取
+    
+    def _load_priority(self):
+        """从数据库加载 priority 设置"""
+        try:
+            from app.utils.database import get_db
+            from app.services.settings_service import get_setting
+            db = next(get_db())
+            return get_setting(db, "jupiter_priority") or "Medium"
+        except Exception:
+            return "Medium"
+    
+    def _ensure_not_busy(self):
+        """检查是否正在交易中"""
+        if self._busy:
+            raise ValueError("上一笔交易尚未完成，请稍候")
+        self._busy = True
+    
+    def _release_busy(self):
+        """释放交易锁"""
+        self._busy = False
     
     def _ensure_initialized(self):
         """确保钱包已初始化"""
@@ -237,71 +258,75 @@ class JupiterService:
         Returns:
             交易结果，包含 success, signature, error 等
         """
-        self._ensure_initialized()
-        
-        logger.info(f"开始买入操作: mint={mint}, sol_amount={sol_amount}")
-        
-        # 检查 SOL 余额
-        sol_balance = self.get_sol_balance()
-        logger.info(f"SOL 余额: {sol_balance}")
-        
-        if sol_balance < sol_amount:
-            return {
-                "success": False,
-                "error": f"SOL 余额不足: 需要 {sol_amount} SOL, 当前余额 {sol_balance} SOL"
-            }
-        
-        # 转换为 lamports (SOL 有 9 位小数)
-        amount_lamports = int(sol_amount * 1e9)
-        
-        # 获取订单（使用缓存的 priority）
-        order_result = self._get_order(
-            input_mint=self.SOL_MINT,
-            output_mint=mint,
-            amount=amount_lamports,
-            slippage_bps=slippage_bps,
-            priority=self._priority
-        )
-        
-        if not order_result["success"]:
-            return {
-                "success": False,
-                "error": f"获取订单失败: {order_result.get('error', '未知错误')}"
-            }
-        
-        data = order_result["data"]
-        logger.info(f"订单获取成功: inAmount={data.get('inAmount')}, outAmount={data.get('outAmount')}, priority={self._priority}")
-        
-        if data.get('errorMessage'):
-            logger.warning(f"订单警告: {data.get('errorMessage')}")
-        
-        if not data.get('transaction'):
-            return {
-                "success": False,
-                "error": "没有获取到交易指令"
-            }
-        
-        # 签名并执行
-        execute_result = self._sign_and_execute(data)
-        
-        if execute_result["success"]:
-            result_data = execute_result["data"]
-            signature = result_data.get('signature', '')
+        self._ensure_not_busy()
+        try:
+            self._ensure_initialized()
             
-            return {
-                "success": True,
-                "type": "BUY",
-                "signature": signature,
-                "status": result_data.get('status', 'unknown'),
-                "in_amount": data.get('inAmount'),
-                "out_amount": data.get('outAmount'),
-                "tx_url": f"https://solscan.io/tx/{signature}" if signature else None
-            }
-        else:
-            return {
-                "success": False,
-                "error": f"执行失败: {execute_result.get('error', '未知错误')}"
-            }
+            logger.info(f"开始买入操作: mint={mint}, sol_amount={sol_amount}")
+            
+            # 检查 SOL 余额
+            sol_balance = self.get_sol_balance()
+            logger.info(f"SOL 余额: {sol_balance}")
+            
+            if sol_balance < sol_amount:
+                return {
+                    "success": False,
+                    "error": f"SOL 余额不足: 需要 {sol_amount} SOL, 当前余额 {sol_balance} SOL"
+                }
+            
+            # 转换为 lamports (SOL 有 9 位小数)
+            amount_lamports = int(sol_amount * 1e9)
+            
+            # 获取订单（使用缓存的 priority）
+            order_result = self._get_order(
+                input_mint=self.SOL_MINT,
+                output_mint=mint,
+                amount=amount_lamports,
+                slippage_bps=slippage_bps,
+                priority=self._priority
+            )
+            
+            if not order_result["success"]:
+                return {
+                    "success": False,
+                    "error": f"获取订单失败: {order_result.get('error', '未知错误')}"
+                }
+            
+            data = order_result["data"]
+            logger.info(f"订单获取成功: inAmount={data.get('inAmount')}, outAmount={data.get('outAmount')}, priority={self._priority}")
+            
+            if data.get('errorMessage'):
+                logger.warning(f"订单警告: {data.get('errorMessage')}")
+            
+            if not data.get('transaction'):
+                return {
+                    "success": False,
+                    "error": "没有获取到交易指令"
+                }
+            
+            # 签名并执行
+            execute_result = self._sign_and_execute(data)
+            
+            if execute_result["success"]:
+                result_data = execute_result["data"]
+                signature = result_data.get('signature', '')
+                
+                return {
+                    "success": True,
+                    "type": "BUY",
+                    "signature": signature,
+                    "status": result_data.get('status', 'unknown'),
+                    "in_amount": data.get('inAmount'),
+                    "out_amount": data.get('outAmount'),
+                    "tx_url": f"https://solscan.io/tx/{signature}" if signature else None
+                }
+            else:
+                return {
+                    "success": False,
+                    "error": f"执行失败: {execute_result.get('error', '未知错误')}"
+                }
+        finally:
+            self._release_busy()
     
     def sell(self, mint: str, percent: int = 100, slippage_bps: int = 500) -> Dict[str, Any]:
         """
@@ -315,81 +340,85 @@ class JupiterService:
         Returns:
             交易结果，包含 success, signature, error 等
         """
-        self._ensure_initialized()
-        
-        logger.info(f"开始卖出操作: mint={mint}, percent={percent}%")
-        
-        # 获取代币余额
-        token_info = self.get_token_balance(mint)
-        total_balance = token_info["balance"]
-        
-        if total_balance == 0:
-            return {
-                "success": False,
-                "error": "代币余额为 0，无法卖出"
-            }
-        
-        logger.info(f"代币余额: {token_info['balance_sol']}")
-        
-        # 计算卖出数量
-        sell_amount = int(total_balance * percent / 100)
-        
-        if sell_amount == 0:
-            return {
-                "success": False,
-                "error": "计算卖出数量为 0，请检查余额"
-            }
-        
-        # 获取订单 (卖出代币换 SOL，使用缓存的 priority)
-        order_result = self._get_order(
-            input_mint=mint,
-            output_mint=self.SOL_MINT,
-            amount=sell_amount,
-            slippage_bps=slippage_bps,
-            priority=self._priority
-        )
-        
-        if not order_result["success"]:
-            return {
-                "success": False,
-                "error": f"获取订单失败: {order_result.get('error', '未知错误')}"
-            }
-        
-        data = order_result["data"]
-        out_amount = int(data.get('outAmount', 0))
-        logger.info(f"订单获取成功: inAmount={data.get('inAmount')}, outAmount={data.get('outAmount')} ({out_amount/1e9:.6f} SOL), priority={self._priority}")
-        
-        if data.get('errorMessage'):
-            logger.warning(f"订单警告: {data.get('errorMessage')}")
-        
-        if not data.get('transaction'):
-            return {
-                "success": False,
-                "error": "没有获取到交易指令"
-            }
-        
-        # 签名并执行
-        execute_result = self._sign_and_execute(data)
-        
-        if execute_result["success"]:
-            result_data = execute_result["data"]
-            signature = result_data.get('signature', '')
+        self._ensure_not_busy()
+        try:
+            self._ensure_initialized()
             
-            return {
-                "success": True,
-                "type": "SELL",
-                "signature": signature,
-                "status": result_data.get('status', 'unknown'),
-                "in_amount": data.get('inAmount'),
-                "out_amount": data.get('outAmount'),
-                "out_amount_sol": out_amount / 1e9,
-                "tx_url": f"https://solscan.io/tx/{signature}" if signature else None
-            }
-        else:
-            return {
-                "success": False,
-                "error": f"执行失败: {execute_result.get('error', '未知错误')}"
-            }
+            logger.info(f"开始卖出操作: mint={mint}, percent={percent}%")
+            
+            # 获取代币余额
+            token_info = self.get_token_balance(mint)
+            total_balance = token_info["balance"]
+            
+            if total_balance == 0:
+                return {
+                    "success": False,
+                    "error": "代币余额为 0，无法卖出"
+                }
+            
+            logger.info(f"代币余额: {token_info['balance_sol']}")
+            
+            # 计算卖出数量
+            sell_amount = int(total_balance * percent / 100)
+            
+            if sell_amount == 0:
+                return {
+                    "success": False,
+                    "error": "计算卖出数量为 0，请检查余额"
+                }
+            
+            # 获取订单 (卖出代币换 SOL，使用缓存的 priority)
+            order_result = self._get_order(
+                input_mint=mint,
+                output_mint=self.SOL_MINT,
+                amount=sell_amount,
+                slippage_bps=slippage_bps,
+                priority=self._priority
+            )
+            
+            if not order_result["success"]:
+                return {
+                    "success": False,
+                    "error": f"获取订单失败: {order_result.get('error', '未知错误')}"
+                }
+            
+            data = order_result["data"]
+            out_amount = int(data.get('outAmount', 0))
+            logger.info(f"订单获取成功: inAmount={data.get('inAmount')}, outAmount={data.get('outAmount')} ({out_amount/1e9:.6f} SOL), priority={self._priority}")
+            
+            if data.get('errorMessage'):
+                logger.warning(f"订单警告: {data.get('errorMessage')}")
+            
+            if not data.get('transaction'):
+                return {
+                    "success": False,
+                    "error": "没有获取到交易指令"
+                }
+            
+            # 签名并执行
+            execute_result = self._sign_and_execute(data)
+            
+            if execute_result["success"]:
+                result_data = execute_result["data"]
+                signature = result_data.get('signature', '')
+                
+                return {
+                    "success": True,
+                    "type": "SELL",
+                    "signature": signature,
+                    "status": result_data.get('status', 'unknown'),
+                    "in_amount": data.get('inAmount'),
+                    "out_amount": data.get('outAmount'),
+                    "out_amount_sol": out_amount / 1e9,
+                    "tx_url": f"https://solscan.io/tx/{signature}" if signature else None
+                }
+            else:
+                return {
+                    "success": False,
+                    "error": f"执行失败: {execute_result.get('error', '未知错误')}"
+                }
+        finally:
+            self._release_busy()
 
 
 # 单例实例
