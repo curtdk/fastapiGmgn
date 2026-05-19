@@ -40,6 +40,8 @@
     .btn-buy:hover { background: linear-gradient(135deg, #27ae60 0%, #2fb344 100%); color: white; }
     .btn-sell { background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%); border: none; color: white; }
     .btn-sell:hover { background: linear-gradient(135deg, #c0392b 0%, #e74c3c 100%); color: white; }
+    .btn-refresh { background: rgba(255,255,255,0.2); border: none; color: white; }
+    .btn-refresh:hover { background: rgba(255,255,255,0.3); color: white; }
     .btn-lg { padding: 12px 32px; font-size: 16px; font-weight: 600; }
     .form-control-lg { padding: 12px 16px; font-size: 16px; }
     .result-area {
@@ -85,6 +87,23 @@
       border-radius: 8px;
       padding: 12px;
       margin-top: 12px;
+      color: white;
+    }
+    .token-balance-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .token-balance-value {
+      font-size: 20px;
+      font-weight: 600;
+    }
+    .current-mint {
+      font-family: monospace;
+      font-size: 11px;
+      opacity: 0.8;
+      word-break: break-all;
     }
   </style>
 </head>
@@ -106,19 +125,20 @@
       <div class="d-flex justify-content-between align-items-start">
         <div>
           <h5 class="mb-2">💼 我的钱包</h5>
-          <div class="wallet-address mb-3" id="walletAddress">加载中...</div>
+          <div class="wallet-address mb-2" id="walletAddress">加载中...</div>
         </div>
-        <button class="btn btn-outline-light btn-sm" onclick="refreshBalance()">🔄 刷新</button>
+        <button class="btn btn-refresh btn-sm" onclick="refreshAll()">🔄 刷新</button>
       </div>
       <div class="balance-item">
         <span class="balance-label">💰 SOL 余额</span>
         <span class="balance-value" id="solBalance">-</span>
       </div>
       <div class="token-balance" id="tokenBalanceInfo" style="display: none;">
-        <div class="d-flex justify-content-between">
-          <span>🪙 代币余额</span>
-          <span id="tokenBalance">-</span>
+        <div class="token-balance-header">
+          <span>🪙 代币余额 <span id="currentMintDisplay" class="current-mint"></span></span>
+          <button class="btn btn-refresh btn-sm" onclick="refreshTokenBalance()">🔄</button>
         </div>
+        <div class="token-balance-value" id="tokenBalance">-</div>
       </div>
     </div>
 
@@ -225,23 +245,27 @@
         
         document.getElementById('walletAddress').textContent = data.wallet_address || '未知';
         document.getElementById('solBalance').textContent = (data.sol_balance || 0).toFixed(4) + ' SOL';
-        
-        // 如果当前有 mint，显示代币余额
-        if (currentMint) {
-          loadTokenBalance(currentMint);
-        }
       } catch (e) {
         document.getElementById('walletAddress').textContent = '加载失败: ' + e.message;
         document.getElementById('solBalance').textContent = '-';
       }
     }
 
-    // 刷新余额
-    async function refreshBalance() {
+    // 刷新所有余额
+    async function refreshAll() {
       await loadWalletInfo();
       if (currentMint) {
         await loadTokenBalance(currentMint);
       }
+    }
+
+    // 刷新代币余额（手动按钮调用）
+    async function refreshTokenBalance() {
+      if (!currentMint) {
+        alert('请先输入要查询的 Mint 地址');
+        return;
+      }
+      await loadTokenBalance(currentMint);
     }
 
     // 加载代币余额
@@ -255,12 +279,19 @@
         if (data.token_balance && data.token_balance.balance > 0) {
           document.getElementById('tokenBalanceInfo').style.display = 'block';
           document.getElementById('tokenBalance').textContent = data.token_balance.balance_sol.toFixed(4);
+          document.getElementById('currentMintDisplay').textContent = mint;
         } else {
-          document.getElementById('tokenBalanceInfo').style.display = 'none';
+          // 代币余额为0也显示，方便查看
+          document.getElementById('tokenBalanceInfo').style.display = 'block';
+          document.getElementById('tokenBalance').textContent = '0';
+          document.getElementById('currentMintDisplay').textContent = mint;
         }
       } catch (e) {
         console.error('获取代币余额失败:', e);
-        document.getElementById('tokenBalanceInfo').style.display = 'none';
+        // 失败时也显示区域，但标记为失败
+        document.getElementById('tokenBalanceInfo').style.display = 'block';
+        document.getElementById('tokenBalance').textContent = '加载失败';
+        document.getElementById('currentMintDisplay').textContent = mint;
       }
     }
 
@@ -321,7 +352,7 @@
       }
     }
 
-    // 执行买入
+    // 执行买入（直接执行，不预检余额）
     async function doBuy() {
       const mint = document.getElementById('buyMint').value.trim();
       const solAmount = parseFloat(document.getElementById('buyAmount').value);
@@ -340,7 +371,7 @@
         return;
       }
 
-      showLoading('正在获取报价...');
+      showLoading('正在执行买入交易...');
       
       try {
         const resp = await fetch('/api/jupiter/buy', {
@@ -359,10 +390,12 @@
         
         if (data.success) {
           showResult(true, data.message, data);
-          // 更新代币余额
+          // 买入成功后，更新当前 mint 并刷新代币余额
           currentMint = mint;
-          await loadTokenBalance(mint);
-          await refreshBalance();
+          // 同步到卖出面板
+          document.getElementById('sellMint').value = mint;
+          // 刷新余额
+          await refreshAll();
         } else {
           showResult(false, data.message, data);
         }
@@ -372,7 +405,7 @@
       }
     }
 
-    // 执行卖出
+    // 执行卖出（直接执行，不预检余额）
     async function doSell() {
       const mint = document.getElementById('sellMint').value.trim();
       const percent = parseInt(document.getElementById('sellPercent').value);
@@ -391,7 +424,7 @@
         return;
       }
 
-      showLoading('正在获取报价...');
+      showLoading('正在执行卖出交易...');
       
       try {
         const resp = await fetch('/api/jupiter/sell', {
@@ -410,10 +443,9 @@
         
         if (data.success) {
           showResult(true, data.message, data);
-          // 更新余额
+          // 刷新余额
           currentMint = mint;
-          await loadTokenBalance(mint);
-          await refreshBalance();
+          await refreshAll();
         } else {
           showResult(false, data.message, data);
         }
@@ -423,20 +455,24 @@
       }
     }
 
-    // 当买入 Mint 变化时，自动同步到卖出面板
+    // 当买入 Mint 变化时，同步到卖出面板并更新代币余额
     document.getElementById('buyMint').addEventListener('change', function() {
       const sellMint = document.getElementById('sellMint');
-      if (!sellMint.value.trim()) {
-        sellMint.value = this.value;
-        currentMint = this.value;
-        loadTokenBalance(this.value);
+      const mint = this.value.trim();
+      if (mint) {
+        sellMint.value = mint;
+        currentMint = mint;
+        loadTokenBalance(mint);
       }
     });
 
     // 当卖出 Mint 变化时，更新代币余额显示
     document.getElementById('sellMint').addEventListener('change', function() {
-      currentMint = this.value;
-      loadTokenBalance(this.value);
+      const mint = this.value.trim();
+      if (mint) {
+        currentMint = mint;
+        loadTokenBalance(mint);
+      }
     });
   </script>
 </body>
