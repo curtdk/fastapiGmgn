@@ -248,14 +248,23 @@ class Strategy2(BaseStrategy):
                     buy_sig = result.get("signature", "")
                     out_amount = result.get("out_amount", 0)
                     
-                    # 计算实际买入代币数量（假设代币 9 位小数）
-                    # 处理 out_amount 可能是字符串的情况
+                    # 从缓存获取 decimals（避免额外 RPC 调用）
+                    cached = jupiter._balance_cache.get(mint)
+                    decimals = cached.get("decimals", 9) if cached else 9
+                    
+                    # 计算实际买入代币数量
                     try:
-                        buy_amount = float(out_amount) / 1e9
+                        buy_amount = float(out_amount) / (10 ** decimals)
                     except (ValueError, TypeError):
                         logger.error(f"[策略2] out_amount 转换失败: {out_amount}")
                         buy_amount = 0
+                        decimals = 9
                     buy_avg_price = buy_sol / buy_amount if buy_amount > 0 else 0
+                    
+                    # 输出详细计算过程到日志
+                    _add_strategy_log(f"📊 买入价格: sol_spent={buy_sol} SOL, out_amount={out_amount}, decimals={decimals}")
+                    _add_strategy_log(f"📊 买入均价: {buy_avg_price:.10f} SOL/代币 = {buy_sol}/({out_amount}/10^{decimals})")
+                    _add_strategy_log(f"📊 实际获得: {buy_amount} 代币 = {out_amount}/10^{decimals}")
                     
                     # 更新持仓
                     self.update_position(
@@ -266,7 +275,7 @@ class Strategy2(BaseStrategy):
                         buy_avg_price=buy_avg_price,
                     )
                     
-                    logger.info(f"[策略2] ✅ 买入成功: sig={buy_sig[:16]}..., cost={buy_sol} SOL, amount={buy_amount}")
+                    logger.info(f"[策略2] ✅ 买入成功: sig={buy_sig[:16]}..., cost={buy_sol} SOL, amount={buy_amount}, decimals={decimals}")
                     _add_strategy_log(f"✅ 买入成功: {buy_sol} SOL, 获得 {buy_amount} 代币")
                     
                     # 切换到监控利润状态
@@ -304,9 +313,9 @@ class Strategy2(BaseStrategy):
         sol_spent = abs(tx_detail.get("sol_spent", 0))
         amount_raw = tx_detail.get("amount", 0)
         
-        # 处理 amount 可能是字符串的情况，并转换为最小单位
+        # amount 已经是处理过的代币数量，不需要再除以 decimals
         try:
-            amount = abs(float(amount_raw)) / 1e9  # 统一除以 1e9，与买入保持一致
+            amount = abs(float(amount_raw))
         except (ValueError, TypeError):
             logger.error(f"[策略2] amount 转换失败: {amount_raw}")
             return
@@ -323,6 +332,12 @@ class Strategy2(BaseStrategy):
         current_value = buy_amount * market_price
         profit = current_value - buy_cost
         profit_rate = (profit / buy_cost) * 100 if buy_cost > 0 else 0
+        
+        # 输出详细计算过程到日志
+        _add_strategy_log(f"📊 市价监控: sol_spent={sol_spent:.6f} SOL, amount={amount} 代币")
+        _add_strategy_log(f"📊 市场单价: {market_price:.10f} SOL/代币 = {sol_spent}/{amount}")
+        _add_strategy_log(f"📊 持仓市值: {current_value:.6f} SOL = {buy_amount} × {market_price}")
+        _add_strategy_log(f"📊 利润计算: {profit:.6f} SOL ({profit_rate:.2f}%) = {current_value} - {buy_cost}")
         
         logger.info(f"[策略2] 💰 当前利润: {profit:.4f} SOL ({profit_rate:.2f}%), 市值: {current_value:.4f} SOL, 成本: {buy_cost:.4f} SOL")
         
@@ -360,6 +375,10 @@ class Strategy2(BaseStrategy):
                     buy_cost = self.position["buy_cost"]
                     profit = out_amount_sol - buy_cost
                     profit_rate = (profit / buy_cost) * 100 if buy_cost > 0 else 0
+                    
+                    # 输出详细计算过程到日志
+                    _add_strategy_log(f"📊 卖出结果: out_amount_sol={out_amount_sol:.6f} SOL, 成本={buy_cost:.6f} SOL")
+                    _add_strategy_log(f"📊 卖出利润: {profit:.6f} SOL ({profit_rate:.2f}%) = {out_amount_sol} - {buy_cost}")
                     
                     logger.info(f"[策略2] ✅ 卖出成功: sig={sell_sig[:16]}..., 获得 {out_amount_sol:.4f} SOL, 利润 {profit:.4f} SOL ({profit_rate:.2f}%)")
                     _add_strategy_log(f"✅ 卖出成功: 获得 {out_amount_sol:.4f} SOL, 利润 {profit:.4f} SOL ({profit_rate:.2f}%)")
