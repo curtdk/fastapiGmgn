@@ -344,12 +344,22 @@ class JupiterService:
             if execute_result["success"]:
                 result_data = execute_result["data"]
                 signature = result_data.get('signature', '')
+                status = result_data.get('status', '')
+                
+                # 检查交易是否真正成功（不仅仅 HTTP 请求成功）
+                if status and status != 'Success' and status != 'COMPLETED':
+                    logger.error(f"[Jupiter] 交易执行失败: status={status}")
+                    return {
+                        "success": False,
+                        "error": f"交易执行失败: status={status}",
+                        "status": status
+                    }
                 
                 return {
                     "success": True,
                     "type": "BUY",
                     "signature": signature,
-                    "status": result_data.get('status', 'unknown'),
+                    "status": status,
                     "in_amount": data.get('inAmount'),
                     "out_amount": data.get('outAmount'),
                     "tx_url": f"https://solscan.io/tx/{signature}" if signature else None
@@ -439,12 +449,22 @@ class JupiterService:
             if execute_result["success"]:
                 result_data = execute_result["data"]
                 signature = result_data.get('signature', '')
+                status = result_data.get('status', '')
+                
+                # 检查交易是否真正成功（不仅仅 HTTP 请求成功）
+                if status and status != 'Success' and status != 'COMPLETED':
+                    logger.error(f"[Jupiter] 交易执行失败: status={status}")
+                    return {
+                        "success": False,
+                        "error": f"交易执行失败: status={status}",
+                        "status": status
+                    }
                 
                 return {
                     "success": True,
                     "type": "SELL",
                     "signature": signature,
-                    "status": result_data.get('status', 'unknown'),
+                    "status": status,
                     "in_amount": data.get('inAmount'),
                     "out_amount": data.get('outAmount'),
                     "out_amount_sol": out_amount / 1e9,

@@ -248,9 +248,15 @@ class Strategy2(BaseStrategy):
                     buy_sig = result.get("signature", "")
                     out_amount = result.get("out_amount", 0)
                     
-                    # 从缓存获取 decimals（避免额外 RPC 调用）
+                    # 从缓存获取 decimals，如果没有则调用一次获取
                     cached = jupiter._balance_cache.get(mint)
-                    decimals = cached.get("decimals", 9) if cached else 9
+                    if cached:
+                        decimals = cached.get("decimals", 6)
+                        logger.debug(f"[策略2] decimals 从缓存获取: {decimals}")
+                    else:
+                        token_info = jupiter.get_token_balance(mint)
+                        decimals = token_info.get("decimals", 6)
+                        logger.debug(f"[策略2] decimals 从 API 获取: {decimals}")
                     
                     # 计算实际买入代币数量
                     try:
