@@ -52,6 +52,7 @@
         <input class="form-check-input" type="checkbox" id="showDealerToggle" onchange="toggleShowDealer()">
         <label class="form-check-label" for="showDealerToggle">显示庄家</label>
       </div>
+      <a href="javascript:void(0)" onclick="toggleStrategyPanel()" style="text-decoration:none; font-size:18px; color:#666; margin-left:8px;" id="strategyPanelToggle" title="折叠/展开策略面板">▼</a>
     </div>
 
     <!-- 策略控制区域 -->
@@ -437,6 +438,28 @@ async function toggleStrategy() {
 // 显示策略面板（在 startMonitor 成功后调用）
 function showStrategyPanel() {
   document.getElementById('strategyPanel').style.display = 'flex';
+  // 重置折叠状态
+  document.getElementById('strategyPanel').dataset.collapsed = 'false';
+  document.getElementById('strategyPanelToggle').textContent = '▼';
+}
+
+// 折叠/展开策略面板
+function toggleStrategyPanel() {
+  const panel = document.getElementById('strategyPanel');
+  const toggle = document.getElementById('strategyPanelToggle');
+  const isCollapsed = panel.dataset.collapsed === 'true';
+  
+  if (isCollapsed) {
+    // 展开
+    panel.style.display = 'flex';
+    panel.dataset.collapsed = 'false';
+    toggle.textContent = '▼';
+  } else {
+    // 折叠
+    panel.style.display = 'none';
+    panel.dataset.collapsed = 'true';
+    toggle.textContent = '▲';
+  }
 }
 
 window.addEventListener('DOMContentLoaded', () => { fetchMetrics(); });
