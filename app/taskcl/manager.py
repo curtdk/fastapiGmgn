@@ -44,13 +44,14 @@ class StrategyManager:
         """获取可用的策略列表"""
         return list(STRATEGY_MAP.keys())
     
-    def select(self, name: str, mint: str = "") -> bool:
+    def select(self, name: str, mint: str = "", params: dict = None) -> bool:
         """
         选择策略
         
         Args:
             name: 策略名称（如 "策略1"）
             mint: 代币 Mint 地址
+            params: 策略参数（dict）
         
         Returns:
             是否选择成功
@@ -68,6 +69,10 @@ class StrategyManager:
             # 创建策略实例
             strategy = StrategyClass(mint=mint)
             
+            # 设置策略参数
+            if params:
+                strategy.set_params(params)
+            
             # 如果已存在同名的策略，先清除
             if name in self._strategies:
                 old_strategy = self._strategies[name]
@@ -80,7 +85,7 @@ class StrategyManager:
             self._current_strategy = strategy
             self._mint = mint
             
-            logger.info(f"[策略管理器] 已选择策略: {name}")
+            logger.info(f"[策略管理器] 已选择策略: {name}, 参数: {params}")
             return True
             
         except Exception as e:

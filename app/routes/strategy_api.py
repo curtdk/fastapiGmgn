@@ -4,10 +4,23 @@
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 import logging
+from typing import List
 
 router = APIRouter(prefix="/api/strategy", tags=["策略"])
 
 logger = logging.getLogger(__name__)
+
+# 策略日志存储
+_strategy_logs: List[str] = []
+
+
+def add_strategy_log(message: str):
+    """添加策略日志"""
+    global _strategy_logs
+    _strategy_logs.append(message)
+    # 只保留最近100条日志
+    if len(_strategy_logs) > 100:
+        _strategy_logs = _strategy_logs[-100:]
 
 
 @router.post("/select")
@@ -20,6 +33,7 @@ async def select_strategy(request: Request):
         strategy_name = body.get("strategy", "")
         mint = body.get("mint", "")
         enabled = body.get("enabled", True)
+        params = body.get("params", {})
         
         from app.taskcl.manager import get_strategy_manager
         from app.taskcl.consumer import start_strategy_consumer
@@ -27,9 +41,10 @@ async def select_strategy(request: Request):
         manager = get_strategy_manager()
         
         if enabled:
-            if manager.select(strategy_name, mint):
+            if manager.select(strategy_name, mint, params):
                 manager.enable()
                 await start_strategy_consumer()
+                add_strategy_log(f"✅ 策略已启用: {strategy_name}, 参数: {params}")
                 return JSONResponse({
                     "success": True,
                     "message": f"策略 {strategy_name} 已启用",
@@ -43,6 +58,7 @@ async def select_strategy(request: Request):
                 })
         else:
             manager.disable()
+            add_strategy_log("❌ 策略已禁用")
             return JSONResponse({
                 "success": True,
                 "message": "策略已禁用",
@@ -99,3 +115,12 @@ async def get_strategy_status(request: Request):
             "success": False,
             "error": str(e)
         }, status_code=500)
+
+
+@router.get("/logs")
+async def get_strategy_logs():
+    """获取策略日志"""
+    return JSONResponse({
+        "success": True,
+        "logs": _strategy_logs.copy()
+    })

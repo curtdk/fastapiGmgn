@@ -58,12 +58,40 @@
     <!-- 策略控制区域 -->
     <div id="strategyPanel" class="monitor-header" style="display:none;">
       <label class="form-label" style="margin:0; white-space:nowrap;">策略:</label>
-      <input type="text" id="strategyInput" class="form-control" placeholder="输入策略名称，如: 策略1" style="width:180px; font-size:13px;" />
+      <select id="strategySelect" class="form-select" style="width:120px; font-size:13px;" onchange="onStrategyChange()">
+        <option value="">请选择策略</option>
+        <option value="策略1">策略1</option>
+        <option value="策略2">策略2</option>
+      </select>
       <div class="form-check form-switch">
         <input class="form-check-input" type="checkbox" id="strategyToggle" onchange="toggleStrategy()">
         <label class="form-check-label" for="strategyToggle">启用</label>
       </div>
       <span id="strategyStatus" style="font-size:12px; color:#666;"></span>
+      <a href="javascript:void(0)" onclick="toggleParamsPanel()" style="text-decoration:none; font-size:18px; color:#666; margin-left:8px;" id="paramsPanelToggle" title="展开/收起参数">▼</a>
+    </div>
+
+    <!-- 策略参数面板 -->
+    <div id="paramsPanel" class="monitor-header" style="display:none; flex-direction:column; align-items:stretch;">
+      <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
+        <label class="form-label" style="margin:0; white-space:nowrap;">策略参数:</label>
+        <small style="color:#999;">JSON格式</small>
+      </div>
+      <textarea id="strategyParams" class="form-control" rows="3" style="font-family:monospace; font-size:12px;" placeholder='{"maxSellSol":1,"waitTime":1,"waitbuyer":2,"waitSeller":1,"buy":0.02,"buyNum":3,"lirun":10,"sell":100,"sellNum":5,"xunHuan":1}'></textarea>
+      <small style="color:#666; margin-top:5px; line-height:1.4;">
+        <b>参数说明:</b><br>
+        maxSellSol:有人卖X sol 触发购买 | waitTime:等待x秒在开始操作<br>
+        waitbuyer:等满足1个买家 | waitSeller:等满足1个卖家<br>
+        buy:购买x sol | buyNum:买入失败则重复x次<br>
+        lirun:利润 x% 卖出 | sell:卖出 x% | sellNum:卖出失败则重复执行x次<br>
+        xunHuan:1代表完成卖出后继续循环 0只执行一次
+      </small>
+      <div style="margin-top:10px; padding:10px; background:#f8f9fa; border-radius:5px;">
+        <label class="form-label" style="margin:0; white-space:nowrap;">策略日志:</label>
+        <div id="strategyLog" style="max-height:150px; overflow-y:auto; font-family:monospace; font-size:11px; color:#333; background:#fff; padding:8px; border-radius:4px; border:1px solid #dee2e6;">
+        </div>
+        <button class="btn btn-sm btn-outline-secondary mt-2" onclick="clearStrategyLog()">清空日志</button>
+      </div>
     </div>
 
     <div class="metrics-row">
@@ -387,17 +415,31 @@ async function stopMonitor() {
 // 策略控制
 async function toggleStrategy() {
   const enabled = document.getElementById('strategyToggle').checked;
-  const strategyName = document.getElementById('strategyInput').value.trim();
+  const strategyName = document.getElementById('strategySelect').value;
   const statusEl = document.getElementById('strategyStatus');
   
   if (enabled && !strategyName) {
-    statusEl.textContent = '请输入策略名称';
+    statusEl.textContent = '请选择策略';
     statusEl.style.color = '#d63939';
     document.getElementById('strategyToggle').checked = false;
     return;
   }
   
   if (enabled) {
+    // 解析策略参数
+    let params = {};
+    const paramsText = document.getElementById('strategyParams').value.trim();
+    if (paramsText) {
+      try {
+        params = JSON.parse(paramsText);
+      } catch (e) {
+        statusEl.textContent = '参数格式错误，请检查JSON';
+        statusEl.style.color = '#d63939';
+        document.getElementById('strategyToggle').checked = false;
+        return;
+      }
+    }
+    
     // 启用策略
     try {
       const resp = await fetch('/api/strategy/select', {
@@ -406,13 +448,18 @@ async function toggleStrategy() {
         body: JSON.stringify({ 
           strategy: strategyName,
           mint: currentMint,
-          enabled: true
+          enabled: true,
+          params: params
         })
       });
       const data = await resp.json();
       if (data.success) {
         statusEl.textContent = '已启用: ' + strategyName;
         statusEl.style.color = '#2fb344';
+        addStrategyLog('✅ 策略已启用: ' + strategyName);
+        if (Object.keys(params).length > 0) {
+          addStrategyLog('📋 参数: ' + JSON.stringify(params));
+        }
       } else {
         statusEl.textContent = '启用失败: ' + (data.error || '未知错误');
         statusEl.style.color = '#d63939';
@@ -429,9 +476,78 @@ async function toggleStrategy() {
       await fetch('/api/strategy/disable', { method: 'POST' });
       statusEl.textContent = '已禁用';
       statusEl.style.color = '#666';
+      addStrategyLog('❌ 策略已禁用');
     } catch (e) {
       console.error('禁用策略失败:', e);
     }
+  }
+}
+
+// 策略选择变化时加载默认参数
+function onStrategyChange() {
+  const strategyName = document.getElementById('strategySelect').value;
+  const paramsTextarea = document.getElementById('strategyParams');
+  
+  if (strategyName === '策略2') {
+    paramsTextarea.value = '{"maxSellSol":1,"waitTime":1,"waitbuyer":2,"waitSeller":1,"buy":0.02,"buyNum":3,"lirun":10,"sell":100,"sellNum":5,"xunHuan":1}';
+  } else if (strategyName === '策略1') {
+    paramsTextarea.value = '{"profit_threshold":10,"sell_threshold":2,"buy_amount":0.1}';
+  } else {
+    paramsTextarea.value = '';
+  }
+}
+
+// 折叠/展开参数面板
+function toggleParamsPanel() {
+  const panel = document.getElementById('paramsPanel');
+  const toggle = document.getElementById('paramsPanelToggle');
+  
+  if (panel.style.display === 'none' || panel.style.display === '') {
+    panel.style.display = 'flex';
+    toggle.textContent = '▲';
+  } else {
+    panel.style.display = 'none';
+    toggle.textContent = '▼';
+  }
+}
+
+// 添加策略日志
+function addStrategyLog(message) {
+  const logEl = document.getElementById('strategyLog');
+  const time = new Date().toLocaleTimeString();
+  const logEntry = document.createElement('div');
+  logEntry.style.marginBottom = '4px';
+  logEntry.style.borderBottom = '1px solid #eee';
+  logEntry.style.paddingBottom = '4px';
+  logEntry.innerHTML = '<span style="color:#999">[' + time + ']</span> ' + message;
+  logEl.appendChild(logEntry);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+// 清空策略日志
+function clearStrategyLog() {
+  document.getElementById('strategyLog').innerHTML = '';
+}
+
+// 定期轮询策略日志
+let strategyLogInterval = null;
+function startStrategyLogPolling() {
+  if (strategyLogInterval) clearInterval(strategyLogInterval);
+  strategyLogInterval = setInterval(async () => {
+    try {
+      const resp = await fetch('/api/strategy/logs');
+      const data = await resp.json();
+      if (data.logs && data.logs.length > 0) {
+        data.logs.forEach(log => addStrategyLog(log));
+      }
+    } catch (e) { /* ignore */ }
+  }, 2000);
+}
+
+function stopStrategyLogPolling() {
+  if (strategyLogInterval) {
+    clearInterval(strategyLogInterval);
+    strategyLogInterval = null;
   }
 }
 

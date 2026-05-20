@@ -117,6 +117,17 @@ class BaseStrategy(ABC):
         """获取配置参数"""
         return self.config.get(key, default)
     
+    def set_params(self, params: Dict[str, Any]):
+        """
+        设置策略参数（子类可覆盖）
+        
+        Args:
+            params: 参数字典，如 {"maxSellSol": 1, "waitTime": 1, ...}
+        """
+        # 将参数合并到 config
+        self.config.update(params)
+        logger.info(f"[策略] {self.name} 参数已更新: {params}")
+    
     def enable(self):
         """启用策略"""
         self.enabled = True
