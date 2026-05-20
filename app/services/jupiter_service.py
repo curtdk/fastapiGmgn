@@ -34,6 +34,9 @@ class JupiterService:
         self._initialized = False
         self._busy = False  # 交易中锁
         self._priority = self._load_priority()  # 从数据库读取
+        self._buy_slippage = self._load_slippage("buy")   # 买入滑点
+        self._sell_slippage = self._load_slippage("sell")  # 卖出滑点
+        self._balance_cache: Dict[str, Dict[str, Any]] = {}  # 余额缓存: {mint: balance_info}
     
     def _load_priority(self):
         """从数据库加载 priority 设置"""
@@ -44,6 +47,18 @@ class JupiterService:
             return get_setting(db, "jupiter_priority") or "Medium"
         except Exception:
             return "Medium"
+    
+    def _load_slippage(self, side: str) -> int:
+        """从数据库加载滑点设置"""
+        try:
+            from app.utils.database import get_db
+            from app.services.settings_service import get_setting
+            db = next(get_db())
+            key = f"jupiter_{side}_slippage"
+            value = get_setting(db, key)
+            return int(value) if value else 500
+        except Exception:
+            return 500
     
     def _ensure_not_busy(self):
         """检查是否正在交易中"""
@@ -133,25 +148,40 @@ class JupiterService:
         return 0, None, 0
     
     def get_sol_balance(self) -> float:
-        """获取 SOL 余额（返回 SOL 单位）"""
+        """获取 SOL 余额（返回 SOL 单位），同时缓存到内存"""
         self._ensure_initialized()
         try:
             result = self._rpc_call("getBalance", [self.wallet_address])
             if 'result' in result:
-                return result['result']['value'] / 1e9  # lamports to SOL
+                sol_balance = result['result']['value'] / 1e9  # lamports to SOL
+                # 存入缓存
+                self._balance_cache[self.SOL_MINT] = {
+                    "balance": int(sol_balance * 1e9),
+                    "balance_sol": sol_balance,
+                    "token_account": None,
+                    "decimals": 9,
+                    "mint_yuer": self.wallet_address
+                }
+                logger.debug(f"[jupiter_service] SOL 余额已缓存: {sol_balance}")
+                return sol_balance
         except Exception as e:
             logger.error(f"获取 SOL 余额失败: {e}")
         return 0.0
     
     def get_token_balance(self, mint: str) -> Dict[str, Any]:
-        """获取代币余额信息"""
+        """获取代币余额信息，同时缓存到内存"""
         balance, token_account, decimals = self._get_token_balance_via_rpc(mint)
-        return {
+        balance_info = {
             "balance": balance,
             "balance_sol": balance / (10 ** decimals) if decimals > 0 else balance,
             "token_account": token_account,
-            "decimals": decimals
+            "decimals": decimals,
+            "mint_yuer": self.wallet_address  # 缓存时记录钱包地址
         }
+        # 存入缓存
+        self._balance_cache[mint] = balance_info
+        logger.debug(f"[jupiter_service] 余额已缓存: mint={mint[:8]}..., mint_yuer={self.wallet_address[:8]}...")
+        return balance_info
     
     def _get_order(self, input_mint: str, output_mint: str, amount: int, slippage_bps: int = 500, priority: str = "Medium") -> Dict[str, Any]:
         """获取订单"""
@@ -246,14 +276,13 @@ class JupiterService:
         except Exception as e:
             return {"success": False, "error": str(e)}
     
-    def buy(self, mint: str, sol_amount: float, slippage_bps: int = 500) -> Dict[str, Any]:
+    def buy(self, mint: str, sol_amount: float) -> Dict[str, Any]:
         """
         买入代币
         
         Args:
             mint: 代币 Mint 地址
             sol_amount: 购买的 SOL 数量
-            slippage_bps: 滑点（默认 5% = 500 bps）
         
         Returns:
             交易结果，包含 success, signature, error 等
@@ -264,9 +293,14 @@ class JupiterService:
             
             logger.info(f"开始买入操作: mint={mint}, sol_amount={sol_amount}")
             
-            # 检查 SOL 余额
-            sol_balance = self.get_sol_balance()
-            logger.info(f"SOL 余额: {sol_balance}")
+            # 使用缓存的 SOL 余额
+            cached_sol = self._balance_cache.get(self.SOL_MINT)
+            if cached_sol:
+                sol_balance = cached_sol.get("balance_sol", 0)
+                logger.info(f"SOL 余额 (缓存): {sol_balance}")
+            else:
+                sol_balance = self.get_sol_balance()
+                logger.info(f"SOL 余额: {sol_balance}")
             
             if sol_balance < sol_amount:
                 return {
@@ -277,12 +311,12 @@ class JupiterService:
             # 转换为 lamports (SOL 有 9 位小数)
             amount_lamports = int(sol_amount * 1e9)
             
-            # 获取订单（使用缓存的 priority）
+            # 获取订单（使用缓存的 priority 和滑点）
             order_result = self._get_order(
                 input_mint=self.SOL_MINT,
                 output_mint=mint,
                 amount=amount_lamports,
-                slippage_bps=slippage_bps,
+                slippage_bps=self._buy_slippage,
                 priority=self._priority
             )
             
@@ -328,14 +362,13 @@ class JupiterService:
         finally:
             self._release_busy()
     
-    def sell(self, mint: str, percent: int = 100, slippage_bps: int = 500) -> Dict[str, Any]:
+    def sell(self, mint: str, percent: int = 100) -> Dict[str, Any]:
         """
         卖出代币
         
         Args:
             mint: 代币 Mint 地址
             percent: 卖出百分比 (1-100)，默认 100%
-            slippage_bps: 滑点（默认 5% = 500 bps）
         
         Returns:
             交易结果，包含 success, signature, error 等
@@ -346,17 +379,22 @@ class JupiterService:
             
             logger.info(f"开始卖出操作: mint={mint}, percent={percent}%")
             
-            # 获取代币余额
-            token_info = self.get_token_balance(mint)
-            total_balance = token_info["balance"]
+            # 使用缓存的代币余额
+            cached_token = self._balance_cache.get(mint)
+            if cached_token:
+                token_info = cached_token
+                total_balance = token_info.get("balance", 0)
+                logger.info(f"代币余额 (缓存): {token_info.get('balance_sol', 0)}")
+            else:
+                token_info = self.get_token_balance(mint)
+                total_balance = token_info.get("balance", 0)
+                logger.info(f"代币余额: {token_info.get('balance_sol', 0)}")
             
             if total_balance == 0:
                 return {
                     "success": False,
                     "error": "代币余额为 0，无法卖出"
                 }
-            
-            logger.info(f"代币余额: {token_info['balance_sol']}")
             
             # 计算卖出数量
             sell_amount = int(total_balance * percent / 100)
@@ -367,12 +405,12 @@ class JupiterService:
                     "error": "计算卖出数量为 0，请检查余额"
                 }
             
-            # 获取订单 (卖出代币换 SOL，使用缓存的 priority)
+            # 获取订单 (卖出代币换 SOL，使用缓存的 priority 和滑点)
             order_result = self._get_order(
                 input_mint=mint,
                 output_mint=self.SOL_MINT,
                 amount=sell_amount,
-                slippage_bps=slippage_bps,
+                slippage_bps=self._sell_slippage,
                 priority=self._priority
             )
             

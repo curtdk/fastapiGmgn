@@ -17,7 +17,6 @@ class BuyRequest(BaseModel):
     """买入请求"""
     mint: str = Field(..., description="代币 Mint 地址")
     sol_amount: float = Field(..., gt=0, description="购买的 SOL 数量")
-    slippage_bps: int = Field(default=500, ge=1, le=10000, description="滑点 (bps)")
 
 
 class SellRequest(BaseModel):
@@ -25,7 +24,6 @@ class SellRequest(BaseModel):
     mint: str = Field(..., description="代币 Mint 地址")
     token_amount: Optional[float] = Field(default=None, description="直接传代币数量")
     percent: Optional[int] = Field(default=None, ge=1, le=100, description="或传百分比 (1-100)")
-    slippage_bps: int = Field(default=500, ge=1, le=10000, description="滑点 (bps)")
 
 
 class BalanceResponse(BaseModel):
@@ -62,12 +60,11 @@ async def get_token_balance(mint: str):
 
 @router.post("/buy")
 async def buy_token(request: BuyRequest):
-    """买入代币
+    """买入代币（滑点从设置中读取）
     
     Args:
         mint: 代币 Mint 地址
         sol_amount: 购买的 SOL 数量
-        slippage_bps: 滑点 (默认 500 = 5%)
     
     Returns:
         交易结果，包含 signature 和链接
@@ -78,8 +75,7 @@ async def buy_token(request: BuyRequest):
         
         result = service.buy(
             mint=request.mint,
-            sol_amount=request.sol_amount,
-            slippage_bps=request.slippage_bps
+            sol_amount=request.sol_amount
         )
         
         if result["success"]:
@@ -107,13 +103,12 @@ async def buy_token(request: BuyRequest):
 
 @router.post("/sell")
 async def sell_token(request: SellRequest):
-    """卖出代币
+    """卖出代币（滑点从设置中读取）
     
     Args:
         mint: 代币 Mint 地址
         token_amount: 直接传代币数量（内部单位）
         percent: 或传百分比 (1-100)
-        slippage_bps: 滑点 (默认 500 = 5%)
     
     Returns:
         交易结果，包含 signature 和链接
@@ -121,10 +116,17 @@ async def sell_token(request: SellRequest):
     try:
         service = get_jupiter_service()
         
-        # 如果传入 token_amount，先获取余额计算百分比
+        # 如果传入 token_amount，先获取余额计算百分比（优先使用缓存）
         percent = request.percent
         if request.token_amount is not None:
-            token_info = service.get_token_balance(request.mint)
+            cached = service._balance_cache.get(request.mint)
+            if cached:
+                token_info = cached
+                logger.info(f"代币余额 (缓存): {token_info.get('balance_sol', 0)}")
+            else:
+                token_info = service.get_token_balance(request.mint)
+                logger.info(f"代币余额: {token_info.get('balance_sol', 0)}")
+            
             total_balance = token_info.get("balance", 0)
             if total_balance > 0:
                 percent = min(100, int(request.token_amount / total_balance * 100))
@@ -136,8 +138,7 @@ async def sell_token(request: SellRequest):
         
         result = service.sell(
             mint=request.mint,
-            percent=percent,
-            slippage_bps=request.slippage_bps
+            percent=percent
         )
         
         if result["success"]:
@@ -179,9 +180,16 @@ async def update_jupiter_settings():
         service._priority = priority
         logger.info(f"Jupiter priority 更新为: {priority}")
         
+        # 更新滑点设置
+        service._buy_slippage = service._load_slippage("buy")
+        service._sell_slippage = service._load_slippage("sell")
+        logger.info(f"Jupiter 滑点已更新: buy={service._buy_slippage}, sell={service._sell_slippage}")
+        
         return {
             "success": True,
-            "priority": priority
+            "priority": priority,
+            "buy_slippage": service._buy_slippage,
+            "sell_slippage": service._sell_slippage
         }
     except Exception as e:
         logger.error(f"更新 Jupiter 设置失败: {e}")
