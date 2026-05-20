@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 
 # 策略日志存储
 _strategy_logs: List[str] = []
+_current_state: str = "idle"
 
 
 def add_strategy_log(message: str):
@@ -21,6 +22,12 @@ def add_strategy_log(message: str):
     # 只保留最近100条日志
     if len(_strategy_logs) > 100:
         _strategy_logs = _strategy_logs[-100:]
+
+
+def update_strategy_state(state: str):
+    """更新策略执行状态"""
+    global _current_state
+    _current_state = state
 
 
 @router.post("/select")
@@ -122,5 +129,15 @@ async def get_strategy_logs():
     """获取策略日志"""
     return JSONResponse({
         "success": True,
-        "logs": _strategy_logs.copy()
+        "logs": _strategy_logs.copy(),
+        "state": _current_state
+    })
+
+
+@router.get("/state")
+async def get_strategy_state():
+    """获取策略执行状态"""
+    return JSONResponse({
+        "success": True,
+        "state": _current_state
     })
