@@ -664,3 +664,109 @@ class RedisApiView(BaseView):
             "message": f"已删除 {deleted} 个 key (前缀: {prefix})",
             "deleted": deleted
         })
+
+    # ========== 策略相关 API ==========
+
+    @expose("/admin/api/strategy/select", methods=["POST"])
+    async def api_strategy_select(self, request: Request):
+        """
+        选择并启用策略
+        
+        请求体：
+            {
+                "strategy": "策略1",
+                "mint": "xxx",
+                "enabled": true
+            }
+        """
+        try:
+            body = await request.json()
+            strategy_name = body.get("strategy", "")
+            mint = body.get("mint", "")
+            enabled = body.get("enabled", True)
+            
+            from app.taskcl.manager import get_strategy_manager
+            from app.taskcl.consumer import start_strategy_consumer
+            
+            manager = get_strategy_manager()
+            
+            if enabled:
+                # 选择并启用策略
+                if manager.select(strategy_name, mint):
+                    manager.enable()
+                    # 启动策略消费者
+                    await start_strategy_consumer()
+                    return JSONResponse({
+                        "success": True,
+                        "message": f"策略 {strategy_name} 已启用",
+                        "strategy": strategy_name,
+                        "enabled": True
+                    })
+                else:
+                    return JSONResponse({
+                        "success": False,
+                        "error": f"策略 {strategy_name} 不存在或加载失败"
+                    })
+            else:
+                # 禁用策略
+                manager.disable()
+                return JSONResponse({
+                    "success": True,
+                    "message": "策略已禁用",
+                    "enabled": False
+                })
+                
+        except Exception as e:
+            import logging
+            logging.error(f"[策略API] 选择策略失败: {e}", exc_info=True)
+            return JSONResponse({
+                "success": False,
+                "error": str(e)
+            }, status_code=500)
+
+    @expose("/admin/api/strategy/disable", methods=["POST"])
+    async def api_strategy_disable(self, request: Request):
+        """禁用策略"""
+        try:
+            from app.taskcl.manager import get_strategy_manager
+            from app.taskcl.consumer import stop_strategy_consumer, clear_strategy_queue
+            
+            manager = get_strategy_manager()
+            manager.disable()
+            
+            # 停止消费者
+            await stop_strategy_consumer()
+            
+            # 清空队列
+            await clear_strategy_queue()
+            
+            return JSONResponse({
+                "success": True,
+                "message": "策略已禁用"
+            })
+        except Exception as e:
+            import logging
+            logging.error(f"[策略API] 禁用策略失败: {e}", exc_info=True)
+            return JSONResponse({
+                "success": False,
+                "error": str(e)
+            }, status_code=500)
+
+    @expose("/admin/api/strategy/status", methods=["GET"])
+    async def api_strategy_status(self, request: Request):
+        """获取策略状态"""
+        try:
+            from app.taskcl.manager import get_strategy_manager
+            
+            manager = get_strategy_manager()
+            metrics = manager.get_metrics()
+            
+            return JSONResponse({
+                "success": True,
+                **metrics
+            })
+        except Exception as e:
+            return JSONResponse({
+                "success": False,
+                "error": str(e)
+            }, status_code=500)

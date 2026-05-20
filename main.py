@@ -91,6 +91,8 @@ from app.routes.trades import live_router
 app.include_router(live_router)
 app.include_router(cluster_api_router)  # 簇组 API 路由
 app.include_router(jupiter_api_router)  # Jupiter 交易 API
+from app.routes.strategy_api import router as strategy_router
+app.include_router(strategy_router)  # 策略 API
 
 # ========== Admin Model Views ==========
 class UserAdmin(ModelView, model=User):
@@ -313,6 +315,96 @@ class TradeMonitorView(BaseView):
         except Exception as e:
             logger.error(f"[SOL价格] 获取失败: {e}")
             return JSONResponse({"error": str(e)}, status_code=500)
+
+    # ========== 策略相关 API ==========
+
+    @expose("/api/strategy/select", methods=["POST"])
+    async def api_strategy_select(self, request: Request):
+        """
+        选择并启用策略
+        """
+        try:
+            body = await request.json()
+            strategy_name = body.get("strategy", "")
+            mint = body.get("mint", "")
+            enabled = body.get("enabled", True)
+            
+            from app.taskcl.manager import get_strategy_manager
+            from app.taskcl.consumer import start_strategy_consumer
+            
+            manager = get_strategy_manager()
+            
+            if enabled:
+                if manager.select(strategy_name, mint):
+                    manager.enable()
+                    await start_strategy_consumer()
+                    return JSONResponse({
+                        "success": True,
+                        "message": f"策略 {strategy_name} 已启用",
+                        "strategy": strategy_name,
+                        "enabled": True
+                    })
+                else:
+                    return JSONResponse({
+                        "success": False,
+                        "error": f"策略 {strategy_name} 不存在或加载失败"
+                    })
+            else:
+                manager.disable()
+                return JSONResponse({
+                    "success": True,
+                    "message": "策略已禁用",
+                    "enabled": False
+                })
+        except Exception as e:
+            logger.error(f"[策略API] 选择策略失败: {e}", exc_info=True)
+            return JSONResponse({
+                "success": False,
+                "error": str(e)
+            }, status_code=500)
+
+    @expose("/api/strategy/disable", methods=["POST"])
+    async def api_strategy_disable(self, request: Request):
+        """禁用策略"""
+        try:
+            from app.taskcl.manager import get_strategy_manager
+            from app.taskcl.consumer import stop_strategy_consumer, clear_strategy_queue
+            
+            manager = get_strategy_manager()
+            manager.disable()
+            
+            await stop_strategy_consumer()
+            await clear_strategy_queue()
+            
+            return JSONResponse({
+                "success": True,
+                "message": "策略已禁用"
+            })
+        except Exception as e:
+            logger.error(f"[策略API] 禁用策略失败: {e}", exc_info=True)
+            return JSONResponse({
+                "success": False,
+                "error": str(e)
+            }, status_code=500)
+
+    @expose("/api/strategy/status", methods=["GET"])
+    async def api_strategy_status(self, request: Request):
+        """获取策略状态"""
+        try:
+            from app.taskcl.manager import get_strategy_manager
+            
+            manager = get_strategy_manager()
+            metrics = manager.get_metrics()
+            
+            return JSONResponse({
+                "success": True,
+                **metrics
+            })
+        except Exception as e:
+            return JSONResponse({
+                "success": False,
+                "error": str(e)
+            }, status_code=500)
 
 
 class DealerSettingsMenu(BaseView):

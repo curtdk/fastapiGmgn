@@ -54,6 +54,17 @@
       </div>
     </div>
 
+    <!-- 策略控制区域 -->
+    <div id="strategyPanel" class="monitor-header" style="display:none;">
+      <label class="form-label" style="margin:0; white-space:nowrap;">策略:</label>
+      <input type="text" id="strategyInput" class="form-control" placeholder="输入策略名称，如: 策略1" style="width:180px; font-size:13px;" />
+      <div class="form-check form-switch">
+        <input class="form-check-input" type="checkbox" id="strategyToggle" onchange="toggleStrategy()">
+        <label class="form-check-label" for="strategyToggle">启用</label>
+      </div>
+      <span id="strategyStatus" style="font-size:12px; color:#666;"></span>
+    </div>
+
     <div class="metrics-row">
       <div class="metric-card">
         <div class="label">本轮下注 (SOL)</div>
@@ -353,6 +364,8 @@ async function startMonitor() {
     const data = await resp.json();
     console.log('启动响应:', data);
     connectWS();
+    // 显示策略面板
+    showStrategyPanel();
   } catch (e) { alert('启动失败: ' + e.message); document.getElementById('startBtn').disabled = false; }
 }
 
@@ -364,7 +377,66 @@ async function stopMonitor() {
     currentMint = '';
     document.getElementById('startBtn').disabled = false;
     updateStatus({ status: 'STOPPED', message: '已停止' });
+    // 关闭策略
+    document.getElementById('strategyPanel').style.display = 'none';
+    document.getElementById('strategyToggle').checked = false;
   } catch (e) { console.error('停止失败:', e); }
+}
+
+// 策略控制
+async function toggleStrategy() {
+  const enabled = document.getElementById('strategyToggle').checked;
+  const strategyName = document.getElementById('strategyInput').value.trim();
+  const statusEl = document.getElementById('strategyStatus');
+  
+  if (enabled && !strategyName) {
+    statusEl.textContent = '请输入策略名称';
+    statusEl.style.color = '#d63939';
+    document.getElementById('strategyToggle').checked = false;
+    return;
+  }
+  
+  if (enabled) {
+    // 启用策略
+    try {
+      const resp = await fetch('/api/strategy/select', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          strategy: strategyName,
+          mint: currentMint,
+          enabled: true
+        })
+      });
+      const data = await resp.json();
+      if (data.success) {
+        statusEl.textContent = '已启用: ' + strategyName;
+        statusEl.style.color = '#2fb344';
+      } else {
+        statusEl.textContent = '启用失败: ' + (data.error || '未知错误');
+        statusEl.style.color = '#d63939';
+        document.getElementById('strategyToggle').checked = false;
+      }
+    } catch (e) {
+      statusEl.textContent = '启用失败: ' + e.message;
+      statusEl.style.color = '#d63939';
+      document.getElementById('strategyToggle').checked = false;
+    }
+  } else {
+    // 禁用策略
+    try {
+      await fetch('/api/strategy/disable', { method: 'POST' });
+      statusEl.textContent = '已禁用';
+      statusEl.style.color = '#666';
+    } catch (e) {
+      console.error('禁用策略失败:', e);
+    }
+  }
+}
+
+// 显示策略面板（在 startMonitor 成功后调用）
+function showStrategyPanel() {
+  document.getElementById('strategyPanel').style.display = 'flex';
 }
 
 window.addEventListener('DOMContentLoaded', () => { fetchMetrics(); });
