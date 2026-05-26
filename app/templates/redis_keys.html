@@ -557,7 +557,7 @@ async function loadUnknownContracts() {
     document.getElementById('countUnknown').textContent = data.count || 0;
 
     let html = '<table class="data-table"><thead><tr>';
-    html += '<th>合约地址</th><th>首次发现</th><th>最近发现</th><th>出现次数</th><th>操作</th>';
+    html += '<th>合约地址</th><th>首次发现</th><th>最近发现</th><th>出现次数</th><th>涉及用户</th><th>操作</th>';
     html += '</tr></thead><tbody>';
     if (data.contracts && data.contracts.length > 0) {
       for (const c of data.contracts) {
@@ -566,11 +566,19 @@ async function loadUnknownContracts() {
         html += `<td>${c.first_seen || '-'}</td>`;
         html += `<td>${c.last_seen || '-'}</td>`;
         html += `<td>${c.count}</td>`;
+        html += '<td style="max-width:250px;">';
+        if (c.users && c.users.length > 0) {
+          html += c.users.slice(0, 5).map(u => '<span class="badge bg-secondary me-1" style="font-size:9px;" title="' + (u.sig || '') + '">' + u.address.slice(0,6) + '...' + u.address.slice(-4) + '</span>').join('');
+          if (c.users.length > 5) html += `<span class="text-muted" style="font-size:10px;">+${c.users.length - 5}</span>`;
+        } else {
+          html += '<span class="text-muted">-</span>';
+        }
+        html += '</td>';
         html += `<td><button class="btn btn-danger btn-xs" onclick="deleteUnknownContract('${c.address}')">删除</button></td>`;
         html += '</tr>';
       }
     } else {
-      html += '<tr><td colspan="5" class="empty-state">暂无未知合约记录</td></tr>';
+      html += '<tr><td colspan="6" class="empty-state">暂无未知合约记录</td></tr>';
     }
     html += '</tbody></table>';
     document.getElementById('keysTable').innerHTML = html;

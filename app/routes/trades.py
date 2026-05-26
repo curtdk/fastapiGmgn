@@ -157,6 +157,36 @@ def get_monitor_status(mint: str):
     )
 
 
+@router.get("/{mint}/wallet-analysis")
+async def wallet_analysis(
+    mint: str,
+    address: str,
+    db: Session = Depends(get_db),
+):
+    from app.services.trade_processor import _get_dealer_conditions_detail
+    from app.services.dealer_detector import _redis
+
+    if not _redis:
+        return JSONResponse({"error": "Redis 未连接"}, status_code=500)
+
+    user_data = await _redis.hgetall(f"user:{address}") or {}
+    conditions_detail = await _get_dealer_conditions_detail(_redis, address, {})
+
+    cluster_name = user_data.get("cluster_name", "")
+    cluster_type = user_data.get("cluster_type", "")
+
+    return JSONResponse({
+        "address": address,
+        "wallet_tag": user_data.get("status", "unknown"),
+        "conditions": conditions_detail.get("conditions", []),
+        "details": conditions_detail.get("details", {}),
+        "cluster_name": cluster_name,
+        "cluster_type": cluster_type,
+        "has_dealer_program": True,
+        "enabled": True,
+    })
+
+
 @router.post("/{mint}/start")
 async def start_monitor(mint: str, db: Session = Depends(get_db)):
     """启动监听（实时流 + 回填接力）"""

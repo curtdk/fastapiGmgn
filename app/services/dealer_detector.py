@@ -86,7 +86,7 @@ DEALER_PROGRAMS = {
 UNKNOWN_CONTRACTS_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "unknown_contracts.json")
 
 
-def _log_unknown_contract(program_id: str):
+def _log_unknown_contract(program_id: str, user_address: str = "", sig: str = ""):
     try:
         now = datetime.datetime.utcnow().isoformat()
         existing = {}
@@ -95,10 +95,19 @@ def _log_unknown_contract(program_id: str):
                 existing = json.load(f)
 
         if program_id not in existing:
-            existing[program_id] = {"first_seen": now, "count": 1}
+            existing[program_id] = {"first_seen": now, "count": 1, "users": []}
         else:
             existing[program_id]["count"] += 1
             existing[program_id]["last_seen"] = now
+            existing[program_id].setdefault("users", [])
+
+        if user_address:
+            existing[program_id]["users"].append({
+                "address": user_address,
+                "sig": sig,
+                "time": now,
+            })
+            existing[program_id]["users"] = existing[program_id]["users"][-20:]
 
         with open(UNKNOWN_CONTRACTS_FILE, "w") as f:
             json.dump(existing, f, indent=2, ensure_ascii=False)
@@ -417,9 +426,11 @@ def _check_local_dealer_conditions(tx_detail: dict, state: dict, db=None, mint: 
 
                 meaningful = [p for p in program_ids if p not in _c005_skip]
                 if meaningful:
+                    user_addr = tx_detail.get("from_address", "")
+                    tx_sig = tx_detail.get("sig", "")
                     for pid in meaningful:
                         if pid not in _c005_normal and pid not in _c005_dealer:
-                            _log_unknown_contract(pid)
+                            _log_unknown_contract(pid, user_addr, tx_sig)
 
                     dealer_matches = [p for p in meaningful if p in _c005_dealer]
                     if dealer_matches:
@@ -427,7 +438,7 @@ def _check_local_dealer_conditions(tx_detail: dict, state: dict, db=None, mint: 
                         for p in dealer_matches:
                             conditions.append(f"C005:{_c005_dealer_names.get(p, p[:12])}")
                         status = "dealer"
-                    elif all(p in _c005_normal for p in meaningful):
+                    elif any(p in _c005_normal for p in meaningful):
                         for p in meaningful:
                             conditions.append(f"C005:{_c005_normal_names.get(p, p[:12])}:retail")
                         status = "retail"

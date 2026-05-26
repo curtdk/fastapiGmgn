@@ -704,7 +704,7 @@ function showTxDetail(data) {
     '<div class="row"><div class="col-md-6">' +
     '<p class="mb-1"><strong>钱包地址:</strong> <code class="small">' + (data.from_address || '-') + '</code></p>' +
     '<p class="mb-1"><strong>用户标签:</strong> <span class="badge ' + (data.wallet_tag === 'dealer' ? 'bg-danger' : (data.wallet_tag === 'retail' ? 'bg-success' : 'bg-secondary')) + '">' + (data.wallet_tag || 'unknown') + '</span></p>' +
-    '<p class="mb-1"><strong>检测条件:</strong> ' + (data.conditions && data.conditions.length > 0 ? data.conditions.map(c => '<span class="badge bg-info me-1">' + c + '</span>').join('') : '<span class="text-muted">无</span>') + '</p></div>' +
+    '<p class="mb-1"><strong>检测条件:</strong> <span id="txConditionsDetail">' + (data.conditions && data.conditions.length > 0 ? data.conditions.map(c => '<span class="badge bg-info me-1">' + c + '</span>').join('') : '<span class="text-muted">加载中...</span>') + '</span></p></div>' +
     '<div class="col-md-6">' +
     '<p class="mb-1"><strong>簇组:</strong> ' + (data.cluster_name || '-') + '</p>' +
     '<p class="mb-1"><strong>簇组类型:</strong> <span class="badge ' + (data.cluster_type === 'dealer' ? 'bg-danger' : (data.cluster_type === 'retail' ? 'bg-success' : 'bg-secondary')) + '">' + getClusterTypeLabel(data.cluster_type) + '</span></p>' +
@@ -722,6 +722,37 @@ function showTxDetail(data) {
   const modalEl = document.getElementById('txDetailModal');
   const modal = new bootstrap.Modal(modalEl);
   modal.show();
+
+  if (data.from_address) {
+    loadConditionsDetail(data.from_address);
+  }
+}
+
+async function loadConditionsDetail(address) {
+  const el = document.getElementById('txConditionsDetail');
+  if (!el) return;
+  try {
+    const resp = await fetch(`/api/trades/${currentMint}/wallet-analysis?address=${address}`);
+    const detail = await resp.json();
+    if (!detail.details || Object.keys(detail.details).length === 0) {
+      el.innerHTML = '<span class="text-muted">无</span>';
+      return;
+    }
+    let html = '';
+    for (const [key, info] of Object.entries(detail.details)) {
+      const enabled = info.enabled ? '✅' : '⭕';
+      html += `<div class="mb-1" style="font-size:11px;">${enabled} <strong>${key}:</strong> ${info.name}`;
+      if (info.programs && info.programs.length > 0) {
+        html += ' <span class="badge ' + (info.is_retail ? 'bg-success' : 'bg-danger') + '">' + info.programs.join(', ') + '</span>';
+      }
+      if (info.value !== undefined) html += ` = ${info.value}`;
+      if (info.threshold) html += ` (阈值: ${info.threshold})`;
+      html += '</div>';
+    }
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = '<span class="text-muted">加载失败</span>';
+  }
 }
 
 function handleUserStatus(data) {

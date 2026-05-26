@@ -679,11 +679,14 @@ class RedisApiView(BaseView):
         for addr, raw in (data or {}).items():
             try:
                 info = json.loads(raw)
+                users = info.get("users", [])
                 contracts.append({
                     "address": addr,
                     "first_seen": info.get("first_seen", ""),
                     "last_seen": info.get("last_seen", ""),
                     "count": info.get("count", 0),
+                    "users": users,
+                    "user_count": len(users),
                 })
             except (json.JSONDecodeError, TypeError):
                 contracts.append({"address": addr, "first_seen": "", "last_seen": "", "count": 0})
