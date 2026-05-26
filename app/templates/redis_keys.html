@@ -110,6 +110,7 @@
         <button class="quick-btn" onclick="searchPrefix('stream:', this)">stream: <span class="count" id="countStream">-</span></button>
         <button class="quick-btn" onclick="searchPrefix('retry:', this)">retry: <span class="count" id="countRetry">-</span></button>
         <button class="quick-btn" onclick="searchPrefix('trader:', this)">trader: <span class="count" id="countTrader">-</span></button>
+        <button class="quick-btn" onclick="loadUnknownContracts()">未知合约 <span class="count" id="countUnknown">-</span></button>
       </div>
       
       <!-- 搜索框 -->
@@ -139,6 +140,7 @@
         <button class="btn btn-danger btn-xs" onclick="deletePrefix('stream:')">删stream</button>
         <button class="btn btn-danger btn-xs" onclick="deletePrefix('retry:')">删retry</button>
         <button class="btn btn-danger btn-xs" onclick="deletePrefix('trader:')">删trader</button>
+        <button class="btn btn-danger btn-xs" onclick="deleteUnknownContracts()">删未知合约</button>
         <button class="btn btn-warning btn-sm" onclick="deleteAll()">⚠️全部删除</button>
       </div>
     </div>
@@ -534,9 +536,70 @@ async function deleteAll() {
         body: JSON.stringify({ prefix: prefix })
       });
     }
+    await fetch('/admin/api/redis/unknown-contracts', { method: 'DELETE' });
     alert('已删除全部数据');
     loadKeys(1);
     loadPrefixCounts();
+  } catch (e) {
+    alert('删除失败: ' + e.message);
+  }
+}
+
+async function loadUnknownContracts() {
+  currentPrefix = 'unknown_contracts';
+  document.getElementById('prefixInput').value = '';
+  document.querySelectorAll('.quick-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('keysTable').innerHTML = '<div class="loading"><i class="fa-solid fa-spinner fa-spin"></i> 加载中...</div>';
+
+  try {
+    const resp = await fetch('/admin/api/redis/unknown-contracts');
+    const data = await resp.json();
+    document.getElementById('countUnknown').textContent = data.count || 0;
+
+    let html = '<table class="data-table"><thead><tr>';
+    html += '<th>合约地址</th><th>首次发现</th><th>最近发现</th><th>出现次数</th><th>操作</th>';
+    html += '</tr></thead><tbody>';
+    if (data.contracts && data.contracts.length > 0) {
+      for (const c of data.contracts) {
+        html += '<tr>';
+        html += `<td class="key-name" title="${c.address}">${c.address}</td>`;
+        html += `<td>${c.first_seen || '-'}</td>`;
+        html += `<td>${c.last_seen || '-'}</td>`;
+        html += `<td>${c.count}</td>`;
+        html += `<td><button class="btn btn-danger btn-xs" onclick="deleteUnknownContract('${c.address}')">删除</button></td>`;
+        html += '</tr>';
+      }
+    } else {
+      html += '<tr><td colspan="5" class="empty-state">暂无未知合约记录</td></tr>';
+    }
+    html += '</tbody></table>';
+    document.getElementById('keysTable').innerHTML = html;
+  } catch (e) {
+    document.getElementById('keysTable').innerHTML = `<p class="text-danger">加载失败: ${e.message}</p>`;
+  }
+}
+
+async function deleteUnknownContracts() {
+  if (!confirm('确定要清空所有未知合约记录吗？')) return;
+  try {
+    await fetch('/admin/api/redis/unknown-contracts', { method: 'DELETE' });
+    alert('已清空未知合约记录');
+    loadUnknownContracts();
+  } catch (e) {
+    alert('删除失败: ' + e.message);
+  }
+}
+
+async function deleteUnknownContract(address) {
+  if (!confirm(`确定要删除合约 ${address.slice(0,12)}... 吗？`)) return;
+  try {
+    await fetch('/admin/api/redis/unknown-contracts', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ address: address })
+    });
+    alert('已删除');
+    loadUnknownContracts();
   } catch (e) {
     alert('删除失败: ' + e.message);
   }

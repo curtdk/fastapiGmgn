@@ -319,14 +319,25 @@ async def _get_dealer_conditions_detail(redis, address: str, tx_detail: dict) ->
                     "value": tx_detail.get("cu_consumed", 0)
                 }
             
-            # C005: Risk Score
+            # C005: 交易程序类型判定
             if "C005" in conditions:
-                risk_min = get_int_setting(db, "dealer_risk_min", 0)
+                trigger_programs = []
+                is_retail = False
+                for c in conditions:
+                    if c.startswith("C005:"):
+                        parts = c[5:].rsplit(":", 1)
+                        if len(parts) == 2 and parts[1] == "retail":
+                            trigger_programs.append(parts[0])
+                            is_retail = True
+                        elif len(parts) == 1:
+                            trigger_programs.append(parts[0])
+                        else:
+                            trigger_programs.append(c[5:])
                 result["details"]["C005"] = {
-                    "name": "风险分大于阈值",
+                    "name": "交易程序类型判定",
                     "enabled": get_setting(db, "dealer_risk_enabled") == "true",
-                    "threshold": f"> {risk_min}",
-                    "value": tx_detail.get("risk_score", 0)
+                    "programs": trigger_programs,
+                    "is_retail": is_retail,
                 }
         finally:
             db.close()

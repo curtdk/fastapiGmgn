@@ -665,6 +665,53 @@ class RedisApiView(BaseView):
             "deleted": deleted
         })
 
+    # ========== 未知合约管理 API ==========
+
+    @expose("/api/redis/unknown-contracts", methods=["GET"])
+    async def api_get_unknown_contracts(self, request: Request):
+        from app.services.dealer_detector import _redis
+
+        if not _redis:
+            return JSONResponse({"error": "Redis 未连接"}, status_code=500)
+
+        data = await _redis.hgetall("unknown_contracts")
+        contracts = []
+        for addr, raw in (data or {}).items():
+            try:
+                info = json.loads(raw)
+                contracts.append({
+                    "address": addr,
+                    "first_seen": info.get("first_seen", ""),
+                    "last_seen": info.get("last_seen", ""),
+                    "count": info.get("count", 0),
+                })
+            except (json.JSONDecodeError, TypeError):
+                contracts.append({"address": addr, "first_seen": "", "last_seen": "", "count": 0})
+
+        contracts.sort(key=lambda x: x.get("count", 0), reverse=True)
+        return JSONResponse({"contracts": contracts, "count": len(contracts)})
+
+    @expose("/api/redis/unknown-contracts", methods=["DELETE"])
+    async def api_delete_unknown_contracts(self, request: Request):
+        from app.services.dealer_detector import _redis
+
+        address = ""
+        try:
+            body = await request.json()
+            address = body.get("address", "")
+        except (json.JSONDecodeError, TypeError, Exception):
+            pass
+
+        if not _redis:
+            return JSONResponse({"error": "Redis 未连接"}, status_code=500)
+
+        if address:
+            await _redis.hdel("unknown_contracts", address)
+            return JSONResponse({"message": f"已删除未知合约 {address[:12]}..."})
+        else:
+            await _redis.delete("unknown_contracts")
+            return JSONResponse({"message": "已清空未知合约记录"})
+
     # ========== 策略相关 API ==========
 
     @expose("/admin/api/strategy/select", methods=["POST"])

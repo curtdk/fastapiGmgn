@@ -19,10 +19,12 @@ Redis 数据结构（统一使用 user:{address}）：
   C002: uses_lookup_table == True（ALT 条件）
   C003: fee < 阈值
   C004: cu_consumed 在范围内
-  C005: risk_score > 阈值
+  C005: 交易程序类型判定（底层协议/自定义合约 → 庄家，聚合器 → 普通用户）
 """
 import asyncio
+import datetime
 import json
+import os
 
 from typing import Optional
 
@@ -44,6 +46,117 @@ _dealer_semaphore: Optional[asyncio.Semaphore] = None
 _dealer_consumer_task: Optional[asyncio.Task] = None
 _retry_queue: Optional[asyncio.Queue] = None
 _retry_consumer_task: Optional[asyncio.Task] = None
+
+SKIP_PROGRAMS = {
+    "ComputeBudget111111111111111111111111111111",
+    "11111111111111111111111111111111",
+    "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL",
+    "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+    "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+}
+
+NORMAL_USER_PROGRAMS = {
+    "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4": "Jupiter",
+    "4R3gBNrDeeVWQJZxVJf8BfT9FgL5X7E7QxLmYzNkL9a": "OKX DEX",
+    "GMgnVFR8Jb39LoXsEVzb3DvBy3ywCmdmJquHUy1Lrkqb": "GMGN Bot",
+}
+
+DEALER_PROGRAMS = {
+    "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P": "Pump.fun",
+    "pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA": "Pump.fun AMM",
+    "MoonCVVNZFSYkqNXP6bxHLPL6QQJiMagDL3qcqUQTrG": "Moonshot",
+    "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8": "Raydium",
+    "CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK": "Raydium CLMM",
+    "CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C": "Raydium CP",
+    "9W959DqEETiGZocYWCQPaJ6sBmUzgfxXfqGeTEdp3aQP": "Orca V2",
+    "DjVE6JNiYqPL2QXyCUUh8rNjHrbz9hXHNYt99MQ59qw1": "Orca V1",
+    "LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo": "Meteora DLMM",
+    "Eo7WjKq67rjJQSZxS6z3YkapzY3eMj6Xy8X5EQVn5UaB": "Meteora",
+    "whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc": "Whirlpool",
+    "opnb2LAfJYbRMAHHvqjCwQxanZn7ReEHp1k81EohpZb": "OpenBook V2",
+    "srmqPvymJeFKQ4zGQed1GFppgkRHL9kaELCbyksJtPX": "OpenBook",
+    "PhoeNiXZ8ByJGLkxNfZRnkUfjvmuYqLR89jjFHGqdXY": "Phoenix",
+    "stkitrT1Uoy18Dk1fTrgPw8W6MVzoCfYoAFT4MLsmhq": "Sanctum",
+    "5ocnV1qiCgaQR8Jb8xWnVbApfaygJ8tNoZfgPwsgx9kx": "Sanctum Infinity",
+    "SSwpkEEcbUqx4vtoEByFjSkhKdCT862DNVb52nZg1UZ": "Saber",
+    "2wT8Yq49kHgDzXuPxZSaeLaH1qbmGXtEyPy64bL7aD3c": "Lifinity V2",
+    "DEXYosS6oEGvk8uCDayvwEZz4qEyDJRf9nFgYCaqPMTm": "1DEX",
+}
+
+UNKNOWN_CONTRACTS_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "unknown_contracts.json")
+
+
+def _log_unknown_contract(program_id: str):
+    try:
+        now = datetime.datetime.utcnow().isoformat()
+        existing = {}
+        if os.path.exists(UNKNOWN_CONTRACTS_FILE):
+            with open(UNKNOWN_CONTRACTS_FILE, "r") as f:
+                existing = json.load(f)
+
+        if program_id not in existing:
+            existing[program_id] = {"first_seen": now, "count": 1}
+        else:
+            existing[program_id]["count"] += 1
+            existing[program_id]["last_seen"] = now
+
+        with open(UNKNOWN_CONTRACTS_FILE, "w") as f:
+            json.dump(existing, f, indent=2, ensure_ascii=False)
+
+        if _redis:
+            data = existing.get(program_id, {"count": 1})
+            entry = json.dumps(data, ensure_ascii=False)
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    asyncio.ensure_future(_redis.hset("unknown_contracts", program_id, entry))
+            except RuntimeError:
+                pass
+    except Exception:
+        pass
+
+_c005_skip = None
+_c005_normal = None
+_c005_dealer = None
+_c005_normal_names = {}
+_c005_dealer_names = {}
+
+
+def _ensure_c005_config(db):
+    global _c005_skip, _c005_normal, _c005_dealer, _c005_normal_names, _c005_dealer_names
+    if _c005_skip is not None:
+        return
+
+    from app.services.settings_service import get_setting as _gs
+
+    skip_json = _gs(db, "dealer_skip_programs")
+    normal_json = _gs(db, "dealer_normal_user_programs")
+    dealer_json = _gs(db, "dealer_dealer_programs")
+
+    try:
+        _c005_skip = set(json.loads(skip_json)) if skip_json else set()
+    except (json.JSONDecodeError, TypeError):
+        _c005_skip = set()
+    try:
+        _c005_normal_names = json.loads(normal_json) if normal_json else {}
+    except (json.JSONDecodeError, TypeError):
+        _c005_normal_names = {}
+    try:
+        _c005_dealer_names = json.loads(dealer_json) if dealer_json else {}
+    except (json.JSONDecodeError, TypeError):
+        _c005_dealer_names = {}
+
+    _c005_normal = set(_c005_normal_names.keys()) if _c005_normal_names else set()
+    _c005_dealer = set(_c005_dealer_names.keys()) if _c005_dealer_names else set()
+
+    if not _c005_skip:
+        _c005_skip = SKIP_PROGRAMS
+    if not _c005_normal:
+        _c005_normal = set(NORMAL_USER_PROGRAMS.keys())
+        _c005_normal_names = dict(NORMAL_USER_PROGRAMS)
+    if not _c005_dealer:
+        _c005_dealer = set(DEALER_PROGRAMS.keys())
+        _c005_dealer_names = dict(DEALER_PROGRAMS)
 
 
 async def init_dealer_detector():
@@ -290,15 +403,34 @@ def _check_local_dealer_conditions(tx_detail: dict, state: dict, db=None, mint: 
                     conditions.append("C004")
                     status = "dealer"
         
-        # ── 条件 C005：风险分大于阈值 ──
+        # ── 条件 C005：交易程序类型判定 ──
         if "C005" not in conditions and tx_detail:
             risk_enabled = get_setting(db, "dealer_risk_enabled")
             if risk_enabled == "true":
-                risk_min = get_int_setting(db, "dealer_risk_min", 0)
-                risk_score = tx_detail.get("risk_score", 0)
-                if risk_score > risk_min:
-                    conditions.append("C005")
-                    status = "dealer"
+                programs_json = tx_detail.get("program_ids", "[]")
+                try:
+                    program_ids = json.loads(programs_json) if isinstance(programs_json, str) else programs_json
+                except (json.JSONDecodeError, TypeError):
+                    program_ids = []
+
+                _ensure_c005_config(db)
+
+                meaningful = [p for p in program_ids if p not in _c005_skip]
+                if meaningful:
+                    for pid in meaningful:
+                        if pid not in _c005_normal and pid not in _c005_dealer:
+                            _log_unknown_contract(pid)
+
+                    dealer_matches = [p for p in meaningful if p in _c005_dealer]
+                    if dealer_matches:
+                        conditions.append("C005")
+                        for p in dealer_matches:
+                            conditions.append(f"C005:{_c005_dealer_names.get(p, p[:12])}")
+                        status = "dealer"
+                    elif all(p in _c005_normal for p in meaningful):
+                        for p in meaningful:
+                            conditions.append(f"C005:{_c005_normal_names.get(p, p[:12])}:retail")
+                        status = "retail"
     except Exception as e:
         logger.error(f"[庄家判定] 本地条件检测异常: {e}", exc_info=True)
     finally:

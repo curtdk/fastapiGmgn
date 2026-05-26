@@ -75,12 +75,14 @@ const conditions = [
   },
   {
     id: "C005",
-    name: "风险分条件",
-    desc: "风险分大于指定阈值",
+    name: "交易程序类型判定",
+    desc: "根据交易调用的程序判断用户身份（普通用户 / 庄家）",
     hasEnabled: true,
     enabledKey: "dealer_risk_enabled",
     fields: [
-      { key: "dealer_risk_min", label: "最小值", type: "text" }
+      { key: "dealer_skip_programs", label: "跳过程序 (SKIP)", type: "textarea", rows: 4 },
+      { key: "dealer_normal_user_programs", label: "普通用户程序", type: "textarea", rows: 4 },
+      { key: "dealer_dealer_programs", label: "庄家程序", type: "textarea", rows: 8 }
     ]
   }
 ];
@@ -100,11 +102,26 @@ function renderConditions() {
   let html = '';
   
   for (const cond of conditions) {
-    html += `<div class="condition-item">`;
+    const hasTextarea = cond.fields.some(f => f.type === 'textarea');
+    html += `<div class="condition-item" style="flex-wrap: wrap;">`;
     html += `<div class="condition-id">${cond.id}</div>`;
     html += `<div class="condition-desc">`;
     html += `<div><strong>${cond.name}</strong></div>`;
     html += `<div style="font-size: 12px; color: #868e96;">${cond.desc}</div>`;
+
+    if (hasTextarea) {
+      html += `<div style="margin-top: 10px; width: 100%;">`;
+      for (const field of cond.fields) {
+        let value = settingsData[field.key] || '';
+        try { value = JSON.stringify(JSON.parse(value), null, 2); } catch(e) {}
+        html += `<div style="margin-bottom: 8px;">`;
+        html += `<label style="font-size: 12px; font-weight: 600; display: block; margin-bottom: 4px;">${field.label}:</label>`;
+        html += `<textarea id="setting_${field.key}" rows="${field.rows}" class="form-control" style="width: 100%; font-family: monospace; font-size: 11px;">${value}</textarea>`;
+        html += `</div>`;
+      }
+      html += `</div>`;
+    }
+
     html += `</div>`;
     html += `<div class="condition-controls">`;
     
@@ -116,6 +133,7 @@ function renderConditions() {
     }
     
     for (const field of cond.fields) {
+      if (field.type === 'textarea') continue;
       const value = settingsData[field.key] || '';
       html += `<label>${field.label}: <input type="${field.type}" id="setting_${field.key}" value="${value}" class="form-control form-control-sm" style="width: 100px;" /></label>`;
     }
@@ -158,11 +176,12 @@ async function saveAll() {
     for (const field of cond.fields) {
       total++;
       const input = document.getElementById(`setting_${field.key}`);
+      const value = input.tagName === 'TEXTAREA' ? input.value : input.value;
       try {
         await fetch(`/admin/api/settings`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ key: field.key, value: input.value }),
+          body: JSON.stringify({ key: field.key, value: value }),
         });
         success++;
       } catch (e) {

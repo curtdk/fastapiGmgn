@@ -1,4 +1,6 @@
 """设置服务 - 读写系统设置"""
+import json
+
 from sqlalchemy.orm import Session
 from app.models.trade import Setting
 from app.schemas.trade import SettingResponse
@@ -8,6 +10,19 @@ import logging
 logger = logging.getLogger(__name__)
 
 # 默认设置
+# 从 dealer_detector 常量生成 JSON 默认值
+def _default_skip_programs_json():
+    from app.services.dealer_detector import SKIP_PROGRAMS
+    return json.dumps(sorted(SKIP_PROGRAMS), ensure_ascii=False)
+
+def _default_normal_user_programs_json():
+    from app.services.dealer_detector import NORMAL_USER_PROGRAMS
+    return json.dumps(NORMAL_USER_PROGRAMS, ensure_ascii=False)
+
+def _default_dealer_programs_json():
+    from app.services.dealer_detector import DEALER_PROGRAMS
+    return json.dumps(DEALER_PROGRAMS, ensure_ascii=False)
+
 DEFAULT_SETTINGS = {
     "batch_size": "100",           # parseTransactions 每批数量
     "concurrent_requests": "3",    # 并发请求数
@@ -24,8 +39,11 @@ DEFAULT_SETTINGS = {
     "dealer_cu_enabled": "false",  # CU 条件启用
     "dealer_cu_min": "0",         # CU 最小值
     "dealer_cu_max": "200000",     # CU 最大值
-    "dealer_risk_enabled": "false", # 风险分条件启用
-    "dealer_risk_min": "0",        # 风险分最小值
+    "dealer_risk_enabled": "false", # 风险分条件启用 → C005 程序类型判定
+    "dealer_risk_min": "0",        # 风险分最小值（C005 改造后保留兼容）
+    "dealer_skip_programs": "",    # C005 SKIP 程序列表（JSON 数组，空则用硬编码默认值）
+    "dealer_normal_user_programs": "", # C005 普通用户程序（JSON 对象，空则用硬编码默认值）
+    "dealer_dealer_programs": "",  # C005 庄家程序（JSON 对象，空则用硬编码默认值）
     # 簇组（C006）设置
     "cluster_enabled": "false",              # 簇组功能总开关
     "cluster_match_cu_enabled": "false",     # CU 匹配条件
@@ -53,7 +71,14 @@ def init_default_settings(db: Session):
     for key, value in DEFAULT_SETTINGS.items():
         existing = db.query(Setting).filter(Setting.key == key).first()
         if not existing:
-            db.add(Setting(key=key, value=value, description=f"默认设置: {key}"))
+            actual_value = value
+            if key == "dealer_skip_programs":
+                actual_value = _default_skip_programs_json()
+            elif key == "dealer_normal_user_programs":
+                actual_value = _default_normal_user_programs_json()
+            elif key == "dealer_dealer_programs":
+                actual_value = _default_dealer_programs_json()
+            db.add(Setting(key=key, value=actual_value, description=f"默认设置: {key}"))
     db.commit()
     logger.info("默认设置初始化完成")
 
@@ -61,15 +86,35 @@ def init_default_settings(db: Session):
 def get_setting(db: Session, key: str) -> Optional[str]:
     """获取单个设置值"""
     setting = db.query(Setting).filter(Setting.key == key).first()
-    return setting.value if setting else DEFAULT_SETTINGS.get(key)
+    value = setting.value if setting else DEFAULT_SETTINGS.get(key)
+
+    _json_defaults = {
+        "dealer_skip_programs": _default_skip_programs_json,
+        "dealer_normal_user_programs": _default_normal_user_programs_json,
+        "dealer_dealer_programs": _default_dealer_programs_json,
+    }
+    if key in _json_defaults and not value:
+        value = _json_defaults[key]()
+
+    return value
 
 
 def get_all_settings(db: Session) -> dict:
     """获取所有设置（含默认值）"""
     settings = db.query(Setting).all()
-    result = dict(DEFAULT_SETTINGS)  # 先填充默认值
+    result = dict(DEFAULT_SETTINGS)
     for s in settings:
         result[s.key] = s.value
+
+    for key in ("dealer_skip_programs", "dealer_normal_user_programs", "dealer_dealer_programs"):
+        if not result.get(key):
+            if key == "dealer_skip_programs":
+                result[key] = _default_skip_programs_json()
+            elif key == "dealer_normal_user_programs":
+                result[key] = _default_normal_user_programs_json()
+            elif key == "dealer_dealer_programs":
+                result[key] = _default_dealer_programs_json()
+
     return result
 
 
