@@ -83,33 +83,32 @@ DEALER_PROGRAMS = {
 }
 
 def _log_unknown_contract(program_id: str, user_address: str = "", sig: str = ""):
+    if not _redis:
+        logger.warning(f"[未知合约] Redis 未初始化，跳过记录: {program_id}")
+        return
     try:
-        now = datetime.datetime.utcnow().isoformat()
-
-        existing = {"first_seen": now, "count": 1, "users": []}
-        if _redis:
-            try:
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    async def _update():
-                        raw = await _redis.hget("unknown_contracts", program_id)
-                        if raw:
-                            try:
-                                existing = json.loads(raw)
-                            except (json.JSONDecodeError, TypeError):
-                                existing = {"first_seen": now, "count": 0, "users": []}
-                        existing["count"] = existing.get("count", 0) + 1
-                        existing["last_seen"] = now
-                        existing.setdefault("users", [])
-                        if user_address:
-                            existing["users"].append({"address": user_address, "sig": sig, "time": now})
-                            existing["users"] = existing["users"][-20:]
-                        await _redis.hset("unknown_contracts", program_id, json.dumps(existing, ensure_ascii=False))
-                    asyncio.ensure_future(_update())
-            except RuntimeError:
-                pass
-    except Exception:
-        pass
+        async def _update():
+            now = datetime.datetime.utcnow().isoformat()
+            raw = await _redis.hget("unknown_contracts", program_id)
+            if raw:
+                try:
+                    existing = json.loads(raw)
+                except (json.JSONDecodeError, TypeError):
+                    existing = {"first_seen": now, "count": 0, "users": []}
+            else:
+                existing = {"first_seen": now, "count": 0, "users": []}
+            existing["count"] = existing.get("count", 0) + 1
+            existing["last_seen"] = now
+            existing.setdefault("users", [])
+            if user_address:
+                existing["users"].append({"address": user_address, "sig": sig, "time": now})
+                existing["users"] = existing["users"][-20:]
+            await _redis.hset("unknown_contracts", program_id, json.dumps(existing, ensure_ascii=False))
+        asyncio.ensure_future(_update())
+    except RuntimeError as e:
+        logger.warning(f"[未知合约] 事件循环未运行: {e}")
+    except Exception as e:
+        logger.error(f"[未知合约] 记录异常: {e}", exc_info=True)
 
 _c005_skip = None
 _c005_normal = None
@@ -399,19 +398,33 @@ def _check_local_dealer_conditions(tx_detail: dict, state: dict, db=None, mint: 
                     conditions.append("C004")
                     status = "dealer"
         
-        # ── 条件 C005：交易程序类型判定 ──
+        # ── 条件 C005：交易程序类型判定（主指令） ──
         if "C005" not in conditions and tx_detail:
             risk_enabled = get_setting(db, "dealer_risk_enabled")
             if risk_enabled == "true":
-                programs_json = tx_detail.get("program_ids", "[]")
+                main_raw = tx_detail.get("main_instructions", "[]")
+                inner_raw = tx_detail.get("inner_instructions", "[]")
                 try:
-                    program_ids = json.loads(programs_json) if isinstance(programs_json, str) else programs_json
+                    main_list = json.loads(main_raw) if isinstance(main_raw, str) else main_raw
+                    inner_list = json.loads(inner_raw) if isinstance(inner_raw, str) else inner_raw
                 except (json.JSONDecodeError, TypeError):
-                    program_ids = []
+                    main_list, inner_list = [], []
+
+                inner_map = {}
+                for ii in inner_list:
+                    inner_map.setdefault(ii.get("group_index", -1), []).append(ii.get("program_id", ""))
+
+                main_pids = []
+                seen = set()
+                for mi in main_list:
+                    pid = mi.get("program_id", "")
+                    if pid and pid not in seen:
+                        main_pids.append(pid)
+                        seen.add(pid)
 
                 _ensure_c005_config(db)
 
-                meaningful = [p for p in program_ids if p not in _c005_skip]
+                meaningful = [p for p in main_pids if p not in _c005_skip]
                 if meaningful:
                     user_addr = tx_detail.get("from_address", "")
                     tx_sig = tx_detail.get("sig", "")
