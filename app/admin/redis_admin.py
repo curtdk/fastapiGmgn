@@ -715,6 +715,43 @@ class RedisApiView(BaseView):
             await _redis.delete("unknown_contracts")
             return JSONResponse({"message": "已清空未知合约记录"})
 
+    @expose("/api/redis/unknown-contract-detail", methods=["GET"])
+    async def api_get_unknown_contract_detail(self, request: Request):
+        from app.services.dealer_detector import _redis
+
+        address = request.query_params.get("address", "")
+        if not _redis:
+            return JSONResponse({"error": "Redis 未连接"}, status_code=500)
+        if not address:
+            return JSONResponse({"error": "缺少地址"}, status_code=400)
+
+        raw = await _redis.hget("unknown_contracts", address)
+        if raw is None:
+            return JSONResponse({"error": "合约不存在"}, status_code=404)
+
+        try:
+            detail = json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            detail = {"raw": raw}
+        return JSONResponse({"address": address, "value": detail})
+
+    @expose("/api/redis/unknown-contract-detail", methods=["PUT"])
+    async def api_update_unknown_contract(self, request: Request):
+        from app.services.dealer_detector import _redis
+
+        if not _redis:
+            return JSONResponse({"error": "Redis 未连接"}, status_code=500)
+
+        body = await request.json()
+        address = body.get("address", "")
+        value = body.get("value", {})
+        if not address:
+            return JSONResponse({"error": "缺少地址"}, status_code=400)
+
+        raw = json.dumps(value, ensure_ascii=False)
+        await _redis.hset("unknown_contracts", address, raw)
+        return JSONResponse({"message": "更新成功"})
+
     # ========== 策略相关 API ==========
 
     @expose("/admin/api/strategy/select", methods=["POST"])

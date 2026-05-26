@@ -232,6 +232,20 @@
   </div>
 </div>
 
+<div class="modal" id="unknownContractModal">
+  <div class="modal-content" style="max-width:700px;">
+    <div class="modal-header">
+      <h3 id="unknownContractTitle">合约详情</h3>
+      <span class="modal-close" onclick="closeUnknownContractModal()">&times;</span>
+    </div>
+    <div id="unknownContractContent"></div>
+    <div class="modal-buttons" id="unknownContractButtons">
+      <button class="btn btn-secondary" onclick="closeUnknownContractModal()">关闭</button>
+      <button class="btn btn-primary" id="unknownContractSaveBtn" style="display:none;" onclick="saveUnknownContract()">保存</button>
+    </div>
+  </div>
+</div>
+
 <script>
 let currentPage = 1;
 let currentKey = '';
@@ -574,7 +588,11 @@ async function loadUnknownContracts() {
           html += '<span class="text-muted">-</span>';
         }
         html += '</td>';
-        html += `<td><button class="btn btn-danger btn-xs" onclick="deleteUnknownContract('${c.address}')">删除</button></td>`;
+        html += '<td style="white-space:nowrap;">';
+        html += `<button class="btn btn-info btn-xs me-1" onclick="showUnknownContractDetail('${c.address}')">详细</button>`;
+        html += `<button class="btn btn-warning btn-xs me-1" onclick="showUnknownContractEdit('${c.address}')">编辑</button>`;
+        html += `<button class="btn btn-danger btn-xs" onclick="deleteUnknownContract('${c.address}')">删除</button>`;
+        html += '</td>';
         html += '</tr>';
       }
     } else {
@@ -611,6 +629,58 @@ async function deleteUnknownContract(address) {
   } catch (e) {
     alert('删除失败: ' + e.message);
   }
+}
+
+let unknownContractEditAddress = '';
+
+async function showUnknownContractDetail(address) {
+  unknownContractEditAddress = '';
+  await openUnknownContractModal(address, false);
+}
+
+async function showUnknownContractEdit(address) {
+  unknownContractEditAddress = address;
+  await openUnknownContractModal(address, true);
+}
+
+async function openUnknownContractModal(address, editable) {
+  document.getElementById('unknownContractTitle').textContent = editable ? '编辑合约 - ' + address.slice(0,12) + '...' : '合约详情 - ' + address.slice(0,12) + '...';
+  document.getElementById('unknownContractSaveBtn').style.display = editable ? '' : 'none';
+  document.getElementById('unknownContractContent').innerHTML = '<p style="text-align:center;">加载中...</p>';
+  document.getElementById('unknownContractModal').classList.add('show');
+
+  try {
+    const resp = await fetch('/admin/api/redis/unknown-contract-detail?address=' + address);
+    const data = await resp.json();
+    const pretty = JSON.stringify(data.value, null, 2);
+    document.getElementById('unknownContractContent').innerHTML = `
+      <p><strong>合约:</strong> <code>${address}</code></p>
+      <textarea id="unknownContractValue" class="edit-textarea" style="height:400px;font-family:monospace;font-size:12px;" ${editable ? '' : 'readonly'}>${pretty}</textarea>
+    `;
+  } catch (e) {
+    document.getElementById('unknownContractContent').innerHTML = `<p class="text-danger">加载失败: ${e.message}</p>`;
+  }
+}
+
+async function saveUnknownContract() {
+  const rawText = document.getElementById('unknownContractValue').value;
+  try {
+    const value = JSON.parse(rawText);
+    await fetch('/admin/api/redis/unknown-contract-detail', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ address: unknownContractEditAddress, value: value })
+    });
+    closeUnknownContractModal();
+    loadUnknownContracts();
+  } catch (e) {
+    alert('保存失败: ' + e.message);
+  }
+}
+
+function closeUnknownContractModal() {
+  document.getElementById('unknownContractModal').classList.remove('show');
+  unknownContractEditAddress = '';
 }
 
 function closeConfirm() {
