@@ -322,13 +322,11 @@ async def _get_dealer_conditions_detail(redis, address: str, tx_detail: dict) ->
             # C005: 交易程序类型判定
             if "C005" in conditions:
                 trigger_programs = []
-                is_retail = False
                 for c in conditions:
                     if c.startswith("C005:"):
                         parts = c[5:].rsplit(":", 1)
                         if len(parts) == 2 and parts[1] == "retail":
                             trigger_programs.append(parts[0])
-                            is_retail = True
                         elif len(parts) == 1:
                             trigger_programs.append(parts[0])
                         else:
@@ -337,7 +335,7 @@ async def _get_dealer_conditions_detail(redis, address: str, tx_detail: dict) ->
                     "name": "交易程序类型判定",
                     "enabled": get_setting(db, "dealer_risk_enabled") == "true",
                     "programs": trigger_programs,
-                    "is_retail": is_retail,
+                    "is_retail": state.get("status") == "retail",
                 }
         finally:
             db.close()

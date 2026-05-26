@@ -24,7 +24,6 @@ Redis 数据结构（统一使用 user:{address}）：
 import asyncio
 import datetime
 import json
-import os
 
 from typing import Optional
 
@@ -83,42 +82,30 @@ DEALER_PROGRAMS = {
     "DEXYosS6oEGvk8uCDayvwEZz4qEyDJRf9nFgYCaqPMTm": "1DEX",
 }
 
-UNKNOWN_CONTRACTS_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "unknown_contracts.json")
-
-
 def _log_unknown_contract(program_id: str, user_address: str = "", sig: str = ""):
     try:
         now = datetime.datetime.utcnow().isoformat()
-        existing = {}
-        if os.path.exists(UNKNOWN_CONTRACTS_FILE):
-            with open(UNKNOWN_CONTRACTS_FILE, "r") as f:
-                existing = json.load(f)
 
-        if program_id not in existing:
-            existing[program_id] = {"first_seen": now, "count": 1, "users": []}
-        else:
-            existing[program_id]["count"] += 1
-            existing[program_id]["last_seen"] = now
-            existing[program_id].setdefault("users", [])
-
-        if user_address:
-            existing[program_id]["users"].append({
-                "address": user_address,
-                "sig": sig,
-                "time": now,
-            })
-            existing[program_id]["users"] = existing[program_id]["users"][-20:]
-
-        with open(UNKNOWN_CONTRACTS_FILE, "w") as f:
-            json.dump(existing, f, indent=2, ensure_ascii=False)
-
+        existing = {"first_seen": now, "count": 1, "users": []}
         if _redis:
-            data = existing.get(program_id, {"count": 1})
-            entry = json.dumps(data, ensure_ascii=False)
             try:
                 loop = asyncio.get_event_loop()
                 if loop.is_running():
-                    asyncio.ensure_future(_redis.hset("unknown_contracts", program_id, entry))
+                    async def _update():
+                        raw = await _redis.hget("unknown_contracts", program_id)
+                        if raw:
+                            try:
+                                existing = json.loads(raw)
+                            except (json.JSONDecodeError, TypeError):
+                                existing = {"first_seen": now, "count": 0, "users": []}
+                        existing["count"] = existing.get("count", 0) + 1
+                        existing["last_seen"] = now
+                        existing.setdefault("users", [])
+                        if user_address:
+                            existing["users"].append({"address": user_address, "sig": sig, "time": now})
+                            existing["users"] = existing["users"][-20:]
+                        await _redis.hset("unknown_contracts", program_id, json.dumps(existing, ensure_ascii=False))
+                    asyncio.ensure_future(_update())
             except RuntimeError:
                 pass
     except Exception:
