@@ -58,20 +58,23 @@ class TradeBackfill:
             skip_ws_wait = get_int_setting(self.db, "backfill_skip_ws_wait", 0)
             
             if skip_ws_wait:
-                # 测试模式：直接获取全部历史数据，不等待 sync_point
-                logger.info("[回填] 测试模式：跳过 sync_point 等待")
-                try:
-                    await ws_manager.broadcast(self.mint, {
-                        "type": "status",
-                        "data": {
-                            "mint": self.mint,
-                            "status": "FILLING",
-                            "message": "测试模式：直接获取全部历史数据...",
-                        }
-                    })
-                except Exception as e:
-                    logger.warning(f"[回填] 广播状态失败: {e}")
-                self.total_fetched = await self._fetch_all_transactions_no_limit()
+                if skip_ws_wait == 2:
+                    logger.info("[回填] 模式2：从 Redis 读取已有交易，不调 API")
+                    self.total_fetched = await self._count_existing_from_redis()
+                else:
+                    logger.info("[回填] 测试模式：跳过 sync_point 等待")
+                    try:
+                        await ws_manager.broadcast(self.mint, {
+                            "type": "status",
+                            "data": {
+                                "mint": self.mint,
+                                "status": "FILLING",
+                                "message": "测试模式：直接获取全部历史数据...",
+                            }
+                        })
+                    except Exception as e:
+                        logger.warning(f"[回填] 广播状态失败: {e}")
+                    self.total_fetched = await self._fetch_all_transactions_no_limit()
             else:
                 # 正常模式：等待 sync_point
                 try:
@@ -285,6 +288,27 @@ class TradeBackfill:
             logger.error(f"[回填] 获取交易异常: {e}", exc_info=True)
 
         return total_saved
+
+    async def _count_existing_from_redis(self) -> int:
+        """模式2：统计 Redis 中已有交易数量（不调 API），然后走广播 + 全量计算"""
+        rpc_count = await tx_redis.get_tx_count(self.mint, "rpc_fill")
+        ws_count = await tx_redis.get_tx_count(self.mint, "ws")
+        total = rpc_count + ws_count
+
+        try:
+            await ws_manager.broadcast(self.mint, {
+                "type": "status",
+                "data": {
+                    "mint": self.mint,
+                    "status": "FILLING",
+                    "message": f"Redis 已有 {total} 条交易（rpc_fill: {rpc_count}, ws: {ws_count}），开始计算...",
+                    "total_trades": total,
+                }
+            })
+        except Exception as e:
+            logger.warning(f"[回填] 广播进度失败: {e}")
+
+        return total
 
     async def _fetch_all_transactions_no_limit(self) -> int:
         """
