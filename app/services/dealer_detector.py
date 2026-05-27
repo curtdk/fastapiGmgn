@@ -433,15 +433,17 @@ def _check_local_dealer_conditions(tx_detail: dict, state: dict, db=None, mint: 
                             _log_unknown_contract(pid, user_addr, tx_sig)
 
                     dealer_matches = [p for p in meaningful if p in _c005_dealer]
-                    if dealer_matches:
+                    normal_matches = [p for p in meaningful if p in _c005_normal]
+                    if normal_matches:
+                        conditions.append("C005")
+                        for p in normal_matches:
+                            conditions.append(f"C005:{_c005_normal_names.get(p, p[:12])}:retail")
+                        status = "retail"
+                    elif dealer_matches:
                         conditions.append("C005")
                         for p in dealer_matches:
                             conditions.append(f"C005:{_c005_dealer_names.get(p, p[:12])}")
                         status = "dealer"
-                    elif any(p in _c005_normal for p in meaningful):
-                        for p in meaningful:
-                            conditions.append(f"C005:{_c005_normal_names.get(p, p[:12])}:retail")
-                        status = "retail"
     except Exception as e:
         logger.error(f"[庄家判定] 本地条件检测异常: {e}", exc_info=True)
     finally:
