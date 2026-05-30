@@ -16,7 +16,9 @@ load_dotenv()
 
 JUPITER_API_KEY = os.getenv('JUPITER_API_KEY', '')
 MY_PRIVATE_KEY = os.getenv('MY_PRIVATE_KEY', '')
-RPC_URL = os.getenv('RPC_URL', 'https://api.mainnet-beta.solana.com')
+# RPC_URL = os.getenv('RPC_URL', 'https://api.mainnet-beta.solana.com')
+RPC_URL = os.getenv('RPC_URL', 'https://distinguished-bitter-diamond.solana-mainnet.quiknode.pro/e9baae79c6ab9108c89519fd001a701bb762c3c1/')
+
 
 # 设置代理
 PROXY_HTTP = os.getenv('http_proxy', '')
