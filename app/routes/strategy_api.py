@@ -51,6 +51,8 @@ async def select_strategy(request: Request):
             if manager.select(strategy_name, mint, params):
                 manager.enable()
                 await start_strategy_consumer()
+                from app.taskcl.consumer import set_strategy_params
+                set_strategy_params(params)
                 add_strategy_log(f"✅ 策略已启用: {strategy_name}, 参数: {params}")
                 return JSONResponse({
                     "success": True,
@@ -65,6 +67,8 @@ async def select_strategy(request: Request):
                 })
         else:
             manager.disable()
+            from app.taskcl.consumer import set_strategy_params
+            set_strategy_params({})
             add_strategy_log("❌ 策略已禁用")
             return JSONResponse({
                 "success": True,
@@ -84,13 +88,14 @@ async def disable_strategy(request: Request):
     """禁用策略"""
     try:
         from app.taskcl.manager import get_strategy_manager
-        from app.taskcl.consumer import stop_strategy_consumer, clear_strategy_queue
+        from app.taskcl.consumer import stop_strategy_consumer, clear_strategy_queue, set_strategy_params
         
         manager = get_strategy_manager()
         manager.disable()
         
         await stop_strategy_consumer()
         await clear_strategy_queue()
+        set_strategy_params({})
         
         return JSONResponse({
             "success": True,

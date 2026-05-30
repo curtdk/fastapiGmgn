@@ -13,7 +13,6 @@ import websockets
 from app.services.trade_processor import enqueue_trade
 from app.services import tx_redis
 from app.websocket.manager import ws_manager
-from app.taskcl.consumer import enqueue_trade_for_strategy
 
 logger = logging.getLogger(__name__)
 
@@ -194,9 +193,6 @@ class TradeStream:
 
                 # 加入处理队列（指数计算）
                 await enqueue_trade(tx_detail)
-                
-                # 加入策略队列（策略执行）
-                await enqueue_trade_for_strategy(tx_detail)
             except Exception as e:
                 logger.error(f"[实时流] Redis 写入失败 sig={sig[:8]}...: {e}", exc_info=True)
 

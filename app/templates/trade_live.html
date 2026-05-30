@@ -77,14 +77,14 @@
         <label class="form-label" style="margin:0; white-space:nowrap;">策略参数:</label>
         <small style="color:#999;">JSON格式</small>
       </div>
-      <textarea id="strategyParams" class="form-control" rows="3" style="font-family:monospace; font-size:12px;" placeholder='{"maxSellSol":1,"waitTime":1,"waitbuyer":2,"waitSeller":1,"buy":0.02,"buyNum":3,"lirun":10,"sell":100,"sellNum":5,"xunHuan":1}'></textarea>
+      <textarea id="strategyParams" class="form-control" rows="3" style="font-family:monospace; font-size:12px;" placeholder='{"maxSellSol":1,"waitTime":1,"waitbuyer":2,"waitSeller":1,"buy":0.02,"buyNum":3,"lirun":10,"sell":100,"sellNum":5,"xunHuan":1,"ifNeedDealer":0}'></textarea>
       <small style="color:#666; margin-top:5px; line-height:1.4;">
         <b>参数说明:</b><br>
         maxSellSol:有人卖X sol 触发购买 | waitTime:等待x秒在开始操作<br>
         waitbuyer:等满足1个买家 | waitSeller:等满足1个卖家<br>
         buy:购买x sol | buyNum:买入失败则重复x次<br>
         lirun:利润 x% 卖出 | sell:卖出 x% | sellNum:卖出失败则重复执行x次<br>
-        xunHuan:1代表完成卖出后继续循环 0只执行一次
+        xunHuan:1代表完成卖出后继续循环 0只执行一次 | ifNeedDealer:1=需要庄家数据 0=不需要
       </small>
       <div style="margin-top:10px; padding:10px; background:#f8f9fa; border-radius:5px;">
         <label class="form-label" style="margin:0; white-space:nowrap;">策略日志:</label>
@@ -526,10 +526,10 @@ function onStrategyChange() {
   const strategy2Rules = document.getElementById('strategy2Rules');
   
   if (strategyName === '策略2') {
-    paramsTextarea.value = '{"maxSellSol":1,"waitTime":1,"waitbuyer":2,"waitSeller":1,"buy":0.02,"buyNum":3,"lirun":10,"sell":100,"sellNum":5,"xunHuan":1}';
+    paramsTextarea.value = '{"maxSellSol":1,"waitTime":1,"waitbuyer":2,"waitSeller":1,"buy":0.02,"buyNum":3,"lirun":10,"sell":100,"sellNum":5,"xunHuan":1,"ifNeedDealer":0}';
     strategy2Rules.style.display = 'block';
   } else if (strategyName === '策略1') {
-    paramsTextarea.value = '{"profit_threshold":10,"sell_threshold":2,"buy_amount":0.1}';
+    paramsTextarea.value = '{"profit_threshold":10,"sell_threshold":2,"buy_amount":0.1,"ifNeedDealer":0}';
     strategy2Rules.style.display = 'none';
   } else {
     paramsTextarea.value = '';

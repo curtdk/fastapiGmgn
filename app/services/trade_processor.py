@@ -492,7 +492,17 @@ async def _calculate_index(tx_detail: Dict[str, Any], mint: str) -> Dict[str, An
         # 3. 最后广播新簇组创建
         if new_cluster_broadcast:
             await ws_manager.broadcast(mint, new_cluster_broadcast)
-        
+
+        # ── 策略入队（根据 ifNeedDealer 过滤庄家） ──
+        from app.taskcl.consumer import enqueue_trade_for_strategy, get_strategy_params
+
+        params = get_strategy_params()
+        if_need_dealer = str(params.get("ifNeedDealer", "1"))
+        is_dealer = state.get("status") == "dealer"
+
+        if not is_dealer or if_need_dealer == "1":
+            await enqueue_trade_for_strategy(tx_detail)
+
         return {
             "holdingQty": holding_qty,
             "holdingCost": holding_cost,

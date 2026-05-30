@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 # 模块级变量
 _strategy_queue: Optional[asyncio.Queue] = None
 _consumer_task: Optional[asyncio.Task] = None
+_strategy_params: dict = {}
 
 
 def get_strategy_queue() -> asyncio.Queue:
@@ -26,11 +27,22 @@ def get_strategy_queue() -> asyncio.Queue:
     return _strategy_queue
 
 
+def get_strategy_params() -> dict:
+    """获取策略参数缓存（trade_processor 用）"""
+    global _strategy_params
+    return _strategy_params
+
+
+def set_strategy_params(params: dict):
+    """设置策略参数缓存（策略启动/关闭时调用）"""
+    global _strategy_params
+    _strategy_params = params or {}
+    logger.info(f"[策略缓存] 参数已更新: {_strategy_params}")
+
+
 async def enqueue_trade_for_strategy(tx_detail: dict):
     """
-    WS 消息到达时调用 - 数据进入策略队列
-    
-    注意：这个函数在 trade_stream.py 的 _handle_message 中调用
+    数据进入策略队列（由 trade_processor 按需调用，受 ifNeedDealer 控制）
     """
     queue = get_strategy_queue()
     await queue.put(tx_detail)

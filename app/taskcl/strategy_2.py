@@ -87,6 +87,7 @@ class Strategy2(BaseStrategy):
             "sell": 100,           # 卖出 x%
             "sellNum": 5,           # 卖出失败则重复执行x次
             "xunHuan": 1,          # 1=完成后继续循环 0=只执行一次
+            "ifNeedDealer": 0,     # 1=需要庄家数据 0=不需要
         }
         
         # 状态跟踪
