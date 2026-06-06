@@ -141,6 +141,16 @@ async def get_trader_state_with_sig(redis, mint: str, address: str, sig: str) ->
                 conditions = []
             state["status"] = status
             state["conditions"] = conditions
+
+            # 从 Redis 恢复 cluster_info（已存入的用户）
+            stored_cluster_name = state.get("cluster_name", "")
+            if stored_cluster_name:
+                cluster_info = {
+                    "address": address,
+                    "sig": sig,
+                    "cluster_name": stored_cluster_name,
+                    "cluster_type": state.get("cluster_type", "unknown"),
+                }
             
             # 如果是 unknown 且有 sig，自动入队检测
             # if status == "unknown":
@@ -183,6 +193,8 @@ async def save_trader_state(redis, mint: str, address: str, state: dict):
         save_data = {
             "status": state.get("status", "unknown"),
             "conditions": json.dumps(state.get("conditions", [])),
+            "cluster_name": state.get("cluster_name", ""),
+            "cluster_type": state.get("cluster_type", "unknown"),
             f"{mint}_holdingQty": str(state.get("holdingQty", 0)),
             f"{mint}_holdingCost": str(state.get("holdingCost", 0)),
             f"{mint}_avgPrice": str(state.get("avgPrice", 0)),
@@ -444,6 +456,8 @@ async def _calculate_index(tx_detail: Dict[str, Any], mint: str) -> Dict[str, An
         await save_trader_state(redis, mint, address, {
             "status": state["status"],
             "conditions": state["conditions"],
+            "cluster_name": cluster_info.get("cluster_name", "") if cluster_info else "",
+            "cluster_type": cluster_info.get("cluster_type", "unknown") if cluster_info else "unknown",
             "holdingQty": holding_qty,
             "holdingCost": holding_cost,
             "avgPrice": avg_price,
