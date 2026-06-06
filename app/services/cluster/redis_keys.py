@@ -110,6 +110,7 @@ class ClusterData:
         base_main_offset: int = 0,
         base_inner_instruction_count: int = 0,
         base_inner_offset: int = 0,
+        base_transaction_type: str = "",
         base_programs: List[str] = None,
         base_main_instructions: List[Dict] = None,
         base_inner_instructions: List[Dict] = None,
@@ -132,6 +133,7 @@ class ClusterData:
         self.base_main_offset = base_main_offset
         self.base_inner_instruction_count = base_inner_instruction_count
         self.base_inner_offset = base_inner_offset
+        self.base_transaction_type = base_transaction_type
         self.base_programs = base_programs or []
         self.base_main_instructions = base_main_instructions or []
         self.base_inner_instructions = base_inner_instructions or []
@@ -157,6 +159,7 @@ class ClusterData:
             "base_main_offset": str(self.base_main_offset),
             "base_inner_instruction_count": str(self.base_inner_instruction_count),
             "base_inner_offset": str(self.base_inner_offset),
+            "base_transaction_type": self.base_transaction_type,
             "base_programs": json.dumps(self.base_programs),
             "base_main_instructions": json.dumps(self.base_main_instructions),
             "base_inner_instructions": json.dumps(self.base_inner_instructions),
@@ -184,6 +187,7 @@ class ClusterData:
             base_main_offset=int(data.get("base_main_offset", "0")),
             base_inner_instruction_count=int(data.get("base_inner_instruction_count", "0")),
             base_inner_offset=int(data.get("base_inner_offset", "0")),
+            base_transaction_type=data.get("base_transaction_type", ""),
             base_programs=json.loads(data.get("base_programs", "[]")),
             base_main_instructions=json.loads(data.get("base_main_instructions", "[]")),
             base_inner_instructions=json.loads(data.get("base_inner_instructions", "[]")),

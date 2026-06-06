@@ -31,6 +31,7 @@ class TxFeatures:
         program_count: int,
         main_instruction_count: int,
         inner_instruction_count: int,
+        transaction_type: str = "",
         programs: List[str] = None,
         main_instructions: List[Dict] = None,
         inner_instructions: List[Dict] = None,
@@ -41,6 +42,7 @@ class TxFeatures:
         self.program_count = program_count
         self.main_instruction_count = main_instruction_count
         self.inner_instruction_count = inner_instruction_count
+        self.transaction_type = transaction_type
         self.programs = programs or []
         self.main_instructions = main_instructions or []
         self.inner_instructions = inner_instructions or []
@@ -90,6 +92,8 @@ def extract_features_from_tx_detail(tx_detail: Dict[str, Any]) -> TxFeatures:
     inner_instructions_json = tx_detail.get("inner_instructions", "[]")
     inner_instructions = json.loads(inner_instructions_json) if inner_instructions_json else []
     
+    transaction_type = tx_detail.get("transaction_type", "")
+    
     return TxFeatures(
         sig=sig,
         user_address=user_address,
@@ -97,6 +101,7 @@ def extract_features_from_tx_detail(tx_detail: Dict[str, Any]) -> TxFeatures:
         program_count=program_count,
         main_instruction_count=main_instruction_count,
         inner_instruction_count=inner_instruction_count,
+        transaction_type=transaction_type,
         programs=programs,
         main_instructions=main_instructions,
         inner_instructions=inner_instructions,
@@ -158,6 +163,27 @@ class ClusterMatcher:
                 conditions_passed.append(f"内部指令: {features.inner_instruction_count} 在 [{inner_min}, {inner_max}]")
             else:
                 conditions_failed.append(f"内部指令: {features.inner_instruction_count} 不在 [{inner_min}, {inner_max}]")
+        
+        # ── 条件 5：精确内容匹配（transaction_type + 程序ID + 指令必须完全相同） ──
+        if self.settings.match_exact_content_enabled:
+            tx_type_match = cluster.base_transaction_type == features.transaction_type
+            programs_match = sorted(cluster.base_programs) == sorted(features.programs)
+            main_match = cluster.base_main_instructions == features.main_instructions
+            inner_match = cluster.base_inner_instructions == features.inner_instructions
+            
+            if tx_type_match and programs_match and main_match and inner_match:
+                conditions_passed.append("精确内容: 交易类型+程序+指令完全匹配")
+            else:
+                failed_parts = []
+                if not tx_type_match:
+                    failed_parts.append("交易类型不同")
+                if not programs_match:
+                    failed_parts.append("程序ID不同")
+                if not main_match:
+                    failed_parts.append("主指令不同")
+                if not inner_match:
+                    failed_parts.append("内部指令不同")
+                conditions_failed.append(f"精确内容: {'; '.join(failed_parts)}")
         
         # 所有开启的条件都必须满足
         if conditions_failed:

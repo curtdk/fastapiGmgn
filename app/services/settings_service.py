@@ -50,6 +50,7 @@ DEFAULT_SETTINGS = {
     "cluster_match_program_enabled": "false", # 程序ID数量匹配
     "cluster_match_main_instruction_enabled": "false", # 主指令数量匹配
     "cluster_match_inner_instruction_enabled": "false", # 内部指令数量匹配
+    "cluster_match_exact_content_enabled": "false", # 精确内容匹配（类型+程序+指令完全相同）
     "cluster_cu_offset": "0",                # CU 偏移量
     "cluster_program_offset": "0",          # 程序ID数量偏移量
     "cluster_main_instruction_offset": "0", # 主指令数量偏移量

@@ -140,8 +140,8 @@ def run_cluster_detection(
             )
     
     # 无匹配 → 创建新簇组
-    # 新簇组名称：使用钱包地址
-    new_cluster_name = user_address
+    # 新簇组名称：钱包地址 + 交易类型
+    new_cluster_name = f"{user_address}_{features.transaction_type}"
     
     new_cluster = manager.create_cluster(
         name=new_cluster_name,

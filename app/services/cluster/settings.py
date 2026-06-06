@@ -50,6 +50,11 @@ class ClusterSettings:
         """内部指令数量匹配条件是否启用"""
         return get_setting(self.db, "cluster_match_inner_instruction_enabled") == "true"
     
+    @property
+    def match_exact_content_enabled(self) -> bool:
+        """精确内容匹配条件是否启用（交易类型+程序ID+指令完全相同）"""
+        return get_setting(self.db, "cluster_match_exact_content_enabled") == "true"
+    
     # ── 匹配偏移量设置 ──
     
     @property
@@ -92,6 +97,7 @@ class ClusterSettings:
             "match_program_enabled": self.match_program_enabled,
             "match_main_instruction_enabled": self.match_main_instruction_enabled,
             "match_inner_instruction_enabled": self.match_inner_instruction_enabled,
+            "match_exact_content_enabled": self.match_exact_content_enabled,
             "cu_offset": self.cu_offset,
             "program_offset": self.program_offset,
             "main_instruction_offset": self.main_instruction_offset,

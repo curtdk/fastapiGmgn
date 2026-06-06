@@ -76,6 +76,13 @@
         </div>
         <input type="checkbox" id="cluster_match_inner_instruction_enabled" />
       </div>
+      <div class="setting-item">
+        <div>
+          <label>精确内容匹配</label>
+          <div class="desc">交易类型+程序ID+主指令+内部指令必须完全相同</div>
+        </div>
+        <input type="checkbox" id="cluster_match_exact_content_enabled" />
+      </div>
     </div>
   </div>
 
@@ -154,6 +161,7 @@ const SETTINGS_KEYS = [
   'cluster_match_program_enabled',
   'cluster_match_main_instruction_enabled',
   'cluster_match_inner_instruction_enabled',
+  'cluster_match_exact_content_enabled',
   'cluster_cu_offset',
   'cluster_program_offset',
   'cluster_main_instruction_offset',
@@ -167,7 +175,8 @@ const CHECKBOX_KEYS = [
   'cluster_match_cu_enabled',
   'cluster_match_program_enabled',
   'cluster_match_main_instruction_enabled',
-  'cluster_match_inner_instruction_enabled'
+  'cluster_match_inner_instruction_enabled',
+  'cluster_match_exact_content_enabled'
 ];
 
 async function loadSettings() {

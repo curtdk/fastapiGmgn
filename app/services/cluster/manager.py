@@ -69,6 +69,7 @@ class ClusterManager:
             base_main_offset=self.settings.main_instruction_offset,
             base_inner_instruction_count=features.inner_instruction_count,
             base_inner_offset=self.settings.inner_instruction_offset,
+            base_transaction_type=features.transaction_type,
             base_programs=features.programs,
             base_main_instructions=features.main_instructions,
             base_inner_instructions=features.inner_instructions,

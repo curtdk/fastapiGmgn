@@ -76,6 +76,7 @@
       <thead>
         <tr>
           <th>簇组名称</th>
+          <th>交易类型</th>
           <th>类型</th>
           <th>判定来源</th>
           <th>文件夹</th>
@@ -90,7 +91,7 @@
         </tr>
       </thead>
       <tbody id="clusterTable">
-        <tr><td colspan="12" style="text-align: center;">加载中...</td></tr>
+        <tr><td colspan="13" style="text-align: center;">加载中...</td></tr>
       </tbody>
     </table>
   </div>
@@ -153,7 +154,7 @@ function renderTable() {
   });
   
   if (filtered.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="12" style="text-align: center;">暂无数据</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="13" style="text-align: center;">暂无数据</td></tr>';
     return;
   }
   
@@ -166,6 +167,7 @@ function renderTable() {
     
     html += `<tr>
       <td><span class="cluster-name">${c.name.substring(0, 16)}...</span></td>
+      <td>${c.base_transaction_type || '-'}</td>
       <td><span class="cluster-type ${typeClass}">${typeText}</span></td>
       <td><span class="judgment-type">${judgmentText}</span></td>
       <td>${c.folder || '-'}</td>
@@ -201,6 +203,7 @@ function showDetail(name) {
   const html = `
     <table style="width: 100%;">
       <tr><td style="width: 150px;"><strong>簇组名称</strong></td><td style="font-family: monospace;">${c.name}</td></tr>
+      <tr><td><strong>交易类型</strong></td><td>${c.base_transaction_type || '-'}</td></tr>
       <tr><td><strong>类型</strong></td><td>${c.cluster_type}</td></tr>
       <tr><td><strong>判定来源</strong></td><td>${c.judgment_type}</td></tr>
       <tr><td><strong>文件夹</strong></td><td>${c.folder || '-'}</td></tr>
