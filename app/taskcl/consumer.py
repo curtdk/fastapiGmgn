@@ -122,6 +122,8 @@ async def _consumer_loop():
                     continue
                 
                 # 调用策略的 on_trade
+                from app.services.trade_tracer import trace
+                trace(strategy.mint, sig, "⑦ 策略处理", f"策略={strategy.name}, state={strategy.get_current_state()}")
                 await strategy.on_trade(tx_detail)
                 
                 logger.debug(f"[策略消费者] 处理完成 sig={sig[:8]}...")

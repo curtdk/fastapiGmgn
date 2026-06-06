@@ -53,6 +53,8 @@ async def select_strategy(request: Request):
                 await start_strategy_consumer()
                 from app.taskcl.consumer import set_strategy_params
                 set_strategy_params(params)
+                from app.services.trade_tracer import set_strategy_state
+                set_strategy_state(mint, strategy_name, True)
                 add_strategy_log(f"✅ 策略已启用: {strategy_name}, 参数: {params}")
                 return JSONResponse({
                     "success": True,
@@ -66,9 +68,13 @@ async def select_strategy(request: Request):
                     "error": f"策略 {strategy_name} 不存在或加载失败"
                 })
         else:
+            # 获取当前策略的 mint
+            current_mint = manager._mint if hasattr(manager, '_mint') else ""
             manager.disable()
             from app.taskcl.consumer import set_strategy_params
             set_strategy_params({})
+            from app.services.trade_tracer import set_strategy_state
+            set_strategy_state(current_mint, "", False)
             add_strategy_log("❌ 策略已禁用")
             return JSONResponse({
                 "success": True,
@@ -91,11 +97,14 @@ async def disable_strategy(request: Request):
         from app.taskcl.consumer import stop_strategy_consumer, clear_strategy_queue, set_strategy_params
         
         manager = get_strategy_manager()
+        current_mint = manager._mint if hasattr(manager, '_mint') else ""
         manager.disable()
         
         await stop_strategy_consumer()
         await clear_strategy_queue()
         set_strategy_params({})
+        from app.services.trade_tracer import set_strategy_state
+        set_strategy_state(current_mint, "", False)
         
         return JSONResponse({
             "success": True,
@@ -146,3 +155,26 @@ async def get_strategy_state():
         "success": True,
         "state": _current_state
     })
+
+
+@router.get("/trace/{mint}/download")
+async def download_trace_report(mint: str):
+    """下载交易流水追踪报告（Markdown 文件）"""
+    from fastapi.responses import Response
+    from app.services.trade_tracer import get_trace_report
+
+    report = get_trace_report(mint)
+    filename = f"trace_{mint[:12]}.md"
+    return Response(
+        content=report,
+        media_type="text/markdown; charset=utf-8",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
+
+
+@router.get("/trace/{mint}/json")
+async def get_trace_json(mint: str):
+    """获取交易流水追踪数据（JSON）"""
+    from app.services.trade_tracer import get_trace_json
+
+    return JSONResponse(get_trace_json(mint))

@@ -174,18 +174,26 @@ class TradeStream:
             if not tx_detail:
                 return
 
+            from app.services.trade_tracer import trace
+
             # 写入 Redis（去重）
             sig = tx_detail.get("sig", "")
             try:
                 # 检查是否已存在
                 existing = await tx_redis.get_tx(sig)
                 if existing:
+                    trace(self.mint, sig, "① WS收到→已存在", f"跳过重复交易")
                     return
+
+                addr = tx_detail.get("from_address", "")
+                tx_type = tx_detail.get("transaction_type", "")
+                trace(self.mint, sig, "① WS收到", f"from={addr[:8]}..., type={tx_type}")
 
                 # 保存到 Redis
                 await tx_redis.save_tx(tx_detail)
                 # 添加到有序集合（ws 数据源）
                 await tx_redis.add_tx_to_list(self.mint, sig, "ws")
+                trace(self.mint, sig, "② Redis保存", f"txlist:{self.mint[:8]}...")
 
                 if self.sync_point is None:
                     self.sync_point = sig
@@ -193,6 +201,7 @@ class TradeStream:
 
                 # 加入处理队列（指数计算）
                 await enqueue_trade(tx_detail)
+                trace(self.mint, sig, "③ 入队指数计算", "→ _calculate_index()")
             except Exception as e:
                 logger.error(f"[实时流] Redis 写入失败 sig={sig[:8]}...: {e}", exc_info=True)
 

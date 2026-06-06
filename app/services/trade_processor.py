@@ -143,8 +143,8 @@ async def get_trader_state_with_sig(redis, mint: str, address: str, sig: str) ->
             state["conditions"] = conditions
             
             # 如果是 unknown 且有 sig，自动入队检测
-            if status == "unknown":
-                await _enqueue_dealer_check(address, mint, sig)
+            # if status == "unknown":
+            #     await _enqueue_dealer_check(address, mint, sig)
         
         return {"state": state, "broadcasts": broadcasts, "cluster_info": cluster_info, "new_cluster_broadcast": new_cluster_broadcast}
     except Exception as e:
@@ -386,6 +386,11 @@ async def _calculate_index(tx_detail: Dict[str, Any], mint: str) -> Dict[str, An
         broadcasts = result.get("broadcasts", [])
         cluster_info = result.get("cluster_info")
         new_cluster_broadcast = result.get("new_cluster_broadcast")
+
+        from app.services.trade_tracer import trace
+        trader_status = state.get("status", "unknown")
+        tracer_conditions = state.get("conditions", [])
+        trace(mint, sig, "④ 庄家判定", f"结果={trader_status}, 条件={tracer_conditions}")
         
         # 从 Redis 读取当前持仓数据（统一用 {mint}_xxx key）
         holding_qty = float(state.get(f"{mint}_holdingQty", "0"))
@@ -459,6 +464,7 @@ async def _calculate_index(tx_detail: Dict[str, Any], mint: str) -> Dict[str, An
         # ── 排除庄家数据 ──
         if state.get("status") == "dealer":
             await exclude_dealer(mint, address)
+            trace(mint, sig, "⑤ 庄家排除", f"address={address[:8]}..., delta_bet={delta_bet}, delta_profit={delta_profit}")
             logger.info(f"[庄家排除] {address[:8]}... delta_bet={delta_bet}, delta_profit={delta_profit}")
             # 注释：庄家也广播到前端，由前端开关控制是否显示
             # return {"status": "dealer", "cluster_info": cluster_info}
@@ -502,6 +508,9 @@ async def _calculate_index(tx_detail: Dict[str, Any], mint: str) -> Dict[str, An
 
         if not is_dealer or if_need_dealer == "1":
             await enqueue_trade_for_strategy(tx_detail)
+            trace(mint, sig, "⑥ 策略入队", f"ifNeedDealer={if_need_dealer}, is_dealer={is_dealer} → 已入队策略队列")
+        else:
+            trace(mint, sig, "⑥ 策略入队→跳过", f"ifNeedDealer={if_need_dealer}, is_dealer={is_dealer} → 庄家不入队")
 
         return {
             "holdingQty": holding_qty,

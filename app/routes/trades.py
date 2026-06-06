@@ -195,6 +195,8 @@ async def start_monitor(mint: str, db: Session = Depends(get_db)):
         await stop_monitor(mint)
 
     from app.services.settings_service import get_setting
+    from app.services.trade_tracer import start_session
+    start_session(mint)
     api_key = get_setting(db, "helius_api_key") or ""
 
     stream = TradeStream(mint=mint, api_key=api_key)
@@ -237,6 +239,8 @@ async def stop_monitor(mint: str):
     if stream:
         await stream.stop()
 
+    from app.services.trade_tracer import end_session
+    end_session(mint)
     del active_monitors[mint]
     return {"message": f"已停止监听 {mint}"}
 
