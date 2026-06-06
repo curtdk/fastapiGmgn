@@ -388,6 +388,7 @@ function connectWS() {
       else if (msg.type === 'error') alert('错误: ' + (msg.data.message || '未知'));
       else if (msg.type === 'user_status') handleUserStatus(msg.data);
       else if (msg.type === 'cluster_matched') handleClusterMatched(msg.data);
+      else if (msg.type === 'cluster_created') handleClusterMatched(msg.data);
     } catch (e) { console.error('WS 消息解析失败:', e); }
   };
   ws.onclose = () => { console.log('WS 已断开'); if (currentMint) setTimeout(() => { if (currentMint) connectWS(); }, 3000); };
