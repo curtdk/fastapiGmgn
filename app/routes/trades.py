@@ -297,3 +297,78 @@ live_router = APIRouter(tags=["实时交易"])
 async def trade_live_page(request: Request):
     """独立实时交易页面（无后台菜单）"""
     return templates.TemplateResponse(request, "trade_live.html")
+
+
+# ===== 用户列表路由 =====
+users_router = APIRouter(prefix="/admin/api", tags=["用户列表"])
+
+
+@users_router.get("/users")
+async def api_get_users(mint: str = ""):
+    """获取当前 mint 所有用户状态列表"""
+    if not mint:
+        return JSONResponse({"users": [], "total": 0})
+    
+    from app.services.trade_processor import _get_redis
+    from app.services.cluster.redis_keys import get_cluster_sync
+    
+    redis = await _get_redis()
+    if not redis:
+        return JSONResponse({"users": [], "total": 0})
+    
+    try:
+        users_list = []
+        # 扫描所有 user:{address} key
+        cursor = 0
+        while True:
+            cursor, keys = await redis.scan(cursor, match="user:*", count=100)
+            for key in keys:
+                key_str = key.decode() if isinstance(key, bytes) else key
+                data = await redis.hgetall(key_str)
+                if not data:
+                    continue
+                
+                # 解码 bytes key
+                decoded = {}
+                for k, v in data.items():
+                    k_str = k.decode() if isinstance(k, bytes) else k
+                    v_str = v.decode() if isinstance(v, bytes) else v
+                    decoded[k_str] = v_str
+                
+                # 只返回有当前 mint 持仓记录的用户
+                has_mint = any(k.startswith(f"{mint}_") for k in decoded.keys())
+                if not has_mint:
+                    continue
+                
+                address = key_str.replace("user:", "")
+                cluster_name = decoded.get("cluster_name", "")
+                cluster_type = "unknown"
+                if cluster_name:
+                    latest = get_cluster_sync(cluster_name)
+                    if latest:
+                        cluster_type = latest.cluster_type
+                
+                conditions = []
+                try:
+                    conditions = json.loads(decoded.get("conditions", "[]"))
+                except:
+                    pass
+                
+                users_list.append({
+                    "address": address,
+                    "status": decoded.get("status", "unknown"),
+                    "status_source": decoded.get("status_source", "system"),
+                    "conditions": conditions,
+                    "cluster_name": cluster_name,
+                    "cluster_type": cluster_type,
+                    "holding_qty": float(decoded.get(f"{mint}_holdingQty", "0")),
+                    "holding_cost": float(decoded.get(f"{mint}_holdingCost", "0")),
+                })
+            
+            if cursor == 0:
+                break
+        
+        return JSONResponse({"users": users_list, "total": len(users_list)})
+    except Exception as e:
+        logger.error(f"[用户列表] 查询失败: {e}")
+        return JSONResponse({"users": [], "total": 0, "error": str(e)})

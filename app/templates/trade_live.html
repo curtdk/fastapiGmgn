@@ -168,6 +168,56 @@
     </div>
   </div>
 
+  <!-- 用户列表 -->
+  <div class="card mt-4">
+    <div class="card-header">👥 当前 Mint 用户列表 (<span id="userCount">0</span>)</div>
+    <div class="table-responsive" style="max-height: 500px; overflow-y: auto;">
+      <table class="table table-sm table-striped mb-0" id="userTable">
+        <thead class="table-dark" style="position: sticky; top: 0; z-index: 1;">
+          <tr>
+            <th class="sortable" onclick="sortUsers('address')" style="cursor:pointer">地址 <span id="sort-address"></span></th>
+            <th class="sortable" onclick="sortUsers('status')" style="cursor:pointer">状态 <span id="sort-status"></span></th>
+            <th class="sortable" onclick="sortUsers('status_source')" style="cursor:pointer">来源 <span id="sort-status_source"></span></th>
+            <th class="sortable" onclick="sortUsers('cluster_name')" style="cursor:pointer">簇组 <span id="sort-cluster_name"></span></th>
+            <th class="sortable" onclick="sortUsers('cluster_type')" style="cursor:pointer">簇组类型 <span id="sort-cluster_type"></span></th>
+            <th>条件</th>
+            <th class="sortable" onclick="sortUsers('holding_qty')" style="cursor:pointer">持仓数量 <span id="sort-holding_qty"></span></th>
+            <th class="sortable" onclick="sortUsers('holding_cost')" style="cursor:pointer">持仓成本 <span id="sort-holding_cost"></span></th>
+          </tr>
+        </thead>
+        <tbody id="userBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 手动修改用户状态弹窗 -->
+  <div id="userStatusModal" class="modal fade" tabindex="-1">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">修改用户状态</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <p>用户地址：<span id="userStatusAddress" style="font-family: monospace; font-size: 11px;"></span></p>
+          <p>
+            状态：
+            <select id="userStatusSelect" class="form-select">
+              <option value="unknown">未定义</option>
+              <option value="retail">散户</option>
+              <option value="dealer">庄家</option>
+            </select>
+          </p>
+          <p style="font-size: 12px; color: #dc3545;">注意：手动修改后将标记为 manual，系统不再自动覆盖</p>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-success" onclick="saveUserStatus()">保存</button>
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- 交易详情弹窗 -->
   <div id="txDetailModal" class="modal fade" tabindex="-1">
     <div class="modal-dialog modal-lg">
@@ -219,6 +269,10 @@ let currencyMode = 'SOL';
 let solPrice = 0;
 let currentClusterName = '';
 let showDealer = false;  // 是否显示庄家交易
+let currentUserAddress = '';  // 手动修改用户状态时的地址
+let userSortBy = '';
+let userSortAsc = true;
+let userData = {};  // address → user dict
 
 function toggleShowDealer() {
   showDealer = document.getElementById('showDealerToggle').checked;
@@ -428,6 +482,7 @@ async function startMonitor() {
     const data = await resp.json();
     console.log('启动响应:', data);
     connectWS();
+    fetchUsers();
     // 显示策略面板
     showStrategyPanel();
   } catch (e) { alert('启动失败: ' + e.message); document.getElementById('startBtn').disabled = false; }
@@ -838,7 +893,9 @@ function handleUserStatus(data) {
       tagCell.style.color = '#2f9e44';
     }
   });
-  fetchMetrics();
+  
+  // 更新用户列表
+  upsertUserRow(data);
 }
 
 function handleClusterMatched(data) {
@@ -887,6 +944,122 @@ async function saveClusterType() {
     const modal = bootstrap.Modal.getInstance(modalEl);
     modal.hide();
     alert('簇组类型已更新为: ' + (type === 'dealer' ? '庄家' : type === 'retail' ? '散户' : '未定义'));
+  } catch (e) { alert('更新失败: ' + e); }
+}
+
+// ===== 用户列表 =====
+
+function getStatusBadge(status) {
+  if (status === 'dealer') return '<span class="badge bg-danger">庄家</span>';
+  if (status === 'retail') return '<span class="badge bg-success">散户</span>';
+  return '<span class="badge bg-secondary">未定义</span>';
+}
+
+function getClusterTypeBadge(type) {
+  if (type === 'dealer') return '<span class="badge bg-danger">庄家</span>';
+  if (type === 'retail') return '<span class="badge bg-success">散户</span>';
+  return '<span class="badge bg-secondary">未定义</span>';
+}
+
+async function fetchUsers() {
+  if (!currentMint) return;
+  try {
+    const resp = await fetch('/admin/api/users?mint=' + encodeURIComponent(currentMint));
+    const data = await resp.json();
+    userData = {};
+    const users = data.users || [];
+    users.forEach(function(u) { userData[u.address] = u; });
+    renderUserTable();
+  } catch (e) { console.error('获取用户列表失败:', e); }
+}
+
+function upsertUserRow(data) {
+  if (!data || !data.address) return;
+  userData[data.address] = data;
+  renderUserTable();
+}
+
+function renderUserTable() {
+  var users = [];
+  for (var addr in userData) {
+    if (userData.hasOwnProperty(addr)) users.push(userData[addr]);
+  }
+  
+  // 排序
+  if (userSortBy) {
+    var asc = userSortAsc;
+    users.sort(function(a, b) {
+      var va = a[userSortBy], vb = b[userSortBy];
+      if (typeof va === 'number' && typeof vb === 'number') return asc ? va - vb : vb - va;
+      va = String(va || ''); vb = String(vb || '');
+      return asc ? va.localeCompare(vb) : vb.localeCompare(va);
+    });
+  }
+  
+  document.getElementById('userCount').textContent = users.length;
+  var tbody = document.getElementById('userBody');
+  var html = '';
+  users.forEach(function(u) {
+    var addrShort = u.address ? u.address.substring(0, 4) : '-';
+    var conditionsStr = (u.conditions && u.conditions.length > 0) ? u.conditions.join(',') : '-';
+    html += '<tr>' +
+      '<td><a href="javascript:void(0)" onclick="editUserStatus(\'' + (u.address || '') + '\', \'' + (u.status || 'unknown') + '\')" style="font-family: monospace; font-size: 11px;" title="' + (u.address || '') + '">' + addrShort + '...</a></td>' +
+      '<td>' + getStatusBadge(u.status) + '</td>' +
+      '<td>' + (u.status_source === 'manual' ? '<span class="badge bg-warning text-dark">手动</span>' : '<span class="badge bg-info">系统</span>') + '</td>' +
+      '<td style="font-size: 11px;">' + (u.cluster_name ? u.cluster_name.substring(0, 12) + '...' : '-') + '</td>' +
+      '<td>' + getClusterTypeBadge(u.cluster_type) + '</td>' +
+      '<td style="font-size: 11px;">' + conditionsStr + '</td>' +
+      '<td>' + (u.holding_qty != null ? Number(u.holding_qty).toFixed(4) : '0') + '</td>' +
+      '<td>' + (u.holding_cost != null ? Number(u.holding_cost).toFixed(6) : '0') + '</td>' +
+      '</tr>';
+  });
+  tbody.innerHTML = html || '<tr><td colspan="8" class="text-center text-muted">暂无用户</td></tr>';
+}
+
+function sortUsers(field) {
+  if (userSortBy === field) {
+    userSortAsc = !userSortAsc;
+  } else {
+    userSortBy = field;
+    userSortAsc = true;
+  }
+  // 更新排序图标
+  for (var i in {address:1,status:1,status_source:1,cluster_name:1,cluster_type:1,holding_qty:1,holding_cost:1}) {
+    var el = document.getElementById('sort-' + i);
+    if (el) el.textContent = '';
+  }
+  var arrow = document.getElementById('sort-' + field);
+  if (arrow) arrow.textContent = userSortAsc ? '▲' : '▼';
+  renderUserTable();
+}
+
+function editUserStatus(address, currentStatus) {
+  currentUserAddress = address;
+  document.getElementById('userStatusAddress').textContent = address;
+  document.getElementById('userStatusSelect').value = currentStatus || 'unknown';
+  var modal = new bootstrap.Modal(document.getElementById('userStatusModal'));
+  modal.show();
+}
+
+async function saveUserStatus() {
+  if (!currentUserAddress) return;
+  var status = document.getElementById('userStatusSelect').value;
+  try {
+    var resp = await fetch('/admin/api/users/' + encodeURIComponent(currentUserAddress) + '/status', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: status })
+    });
+    if (!resp.ok) { var err = await resp.json(); alert('修改失败: ' + (err.error || resp.status)); return; }
+    var modalEl = document.getElementById('userStatusModal');
+    bootstrap.Modal.getInstance(modalEl).hide();
+    // 前端立即更新
+    if (userData[currentUserAddress]) {
+      userData[currentUserAddress].status = status;
+      userData[currentUserAddress].status_source = 'manual';
+      renderUserTable();
+    }
+    alert('用户状态已更新为: ' + (status === 'dealer' ? '庄家' : status === 'retail' ? '散户' : '未定义'));
   } catch (e) { alert('更新失败: ' + e); }
 }
   </script>

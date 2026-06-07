@@ -11,7 +11,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from sqladmin import Admin, ModelView, BaseView, expose
 from sqladmin.authentication import AuthenticationBackend
 from app.routes import users, auth
-from app.routes.trades import router as trades_router, settings_router, active_monitors
+from app.routes.trades import router as trades_router, settings_router, active_monitors, live_router, users_router
 from app.routes.cluster_api import router as cluster_api_router
 from app.routes.jupiter_api import router as jupiter_api_router
 from app.utils.database import engine, Base, SessionLocal
@@ -87,8 +87,8 @@ app.include_router(auth.router, prefix="/api/auth", tags=["认证"])
 app.include_router(users.router, prefix="/api/users", tags=["用户"])
 app.include_router(trades_router)
 app.include_router(settings_router)
-from app.routes.trades import live_router
 app.include_router(live_router)
+app.include_router(users_router)
 app.include_router(cluster_api_router)  # 簇组 API 路由
 app.include_router(jupiter_api_router)  # Jupiter 交易 API
 from app.routes.strategy_api import router as strategy_router

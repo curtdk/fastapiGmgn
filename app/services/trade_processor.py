@@ -531,6 +531,21 @@ async def _calculate_index(tx_detail: Dict[str, Any], mint: str) -> Dict[str, An
         if new_cluster_broadcast:
             await ws_manager.broadcast(mint, new_cluster_broadcast)
 
+        # 4. 广播 user_status 更新前端用户列表
+        await ws_manager.broadcast(mint, {
+            "type": "user_status",
+            "data": {
+                "address": address,
+                "status": state["status"],
+                "status_source": state.get("status_source", "system"),
+                "conditions": state.get("conditions", []),
+                "cluster_name": state.get("cluster_name", ""),
+                "cluster_type": cluster_info.get("cluster_type", "unknown") if cluster_info else "unknown",
+                "holding_qty": holding_qty,
+                "holding_cost": holding_cost,
+            }
+        })
+
         # ── 策略入队（根据 ifNeedDealer 过滤庄家） ──
         from app.taskcl.consumer import enqueue_trade_for_strategy, get_strategy_params
 
