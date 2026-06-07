@@ -349,7 +349,8 @@ function addTradeRow(data, isNew) {
     '<td>' + (data.wallet_tag ? '<span class="wallet-tag">' + data.wallet_tag + '</span>' : '-') + '</td>';
 
   tr.style.cursor = 'pointer';
-  tr.addEventListener('click', () => showTxDetail(data));
+  tr._tradeData = data;
+  tr.addEventListener('click', function() { showTxDetail(this); });
 
   if (tbody.children.length >= MAX_ROWS) tbody.removeChild(tbody.lastChild);
   tbody.insertBefore(tr, tbody.firstChild);
@@ -671,11 +672,25 @@ function downloadTrace() {
   window.open(url, '_blank');
 }
 
-function showTxDetail(data) {
+function showTxDetail(row) {
+  const data = row._tradeData || {};
   const content = document.getElementById('txDetailContent');
   const riskScore = data.risk_score || 0;
   const riskLabel = riskScore >= 60 ? '⚠️ 高风险' : (riskScore >= 30 ? '⚡ 中等风险' : '✅ 低风险');
   const riskColor = riskScore >= 60 ? 'text-danger' : (riskScore >= 30 ? 'text-warning' : 'text-success');
+  
+  // 从 DOM 簇组列读取簇名（已被 handleClusterMatched 更新）
+  var clusterName = '';
+  var clusterType = data.cluster_type || 'unknown';
+  if (row.cells[7]) {
+    var tag = row.cells[7].querySelector('.cluster-tag');
+    if (tag) {
+      clusterName = tag.getAttribute('title') || '';
+      // 从 title 或 class 推断类型
+      if (tag.classList.contains('dealer')) clusterType = 'dealer';
+      else if (tag.classList.contains('retail')) clusterType = 'retail';
+    }
+  }
   
   let indicatorsHtml = '<p class="text-muted">无</p>';
   if (data.risk_indicators) {
@@ -715,9 +730,11 @@ function showTxDetail(data) {
     '<p class="mb-1"><strong>用户标签:</strong> <span class="badge ' + (data.wallet_tag === 'dealer' ? 'bg-danger' : (data.wallet_tag === 'retail' ? 'bg-success' : 'bg-secondary')) + '">' + (data.wallet_tag || 'unknown') + '</span></p>' +
     '<p class="mb-1"><strong>检测条件:</strong> <span id="txConditionsDetail">' + (data.conditions && data.conditions.length > 0 ? data.conditions.map(c => '<span class="badge bg-info me-1">' + c + '</span>').join('') : '<span class="text-muted">加载中...</span>') + '</span></p></div>' +
     '<div class="col-md-6">' +
-    '<p class="mb-1"><strong>簇组:</strong> ' + (data.cluster_name || '-') + '</p>' +
-    '<p class="mb-1"><strong>簇组类型:</strong> <span class="badge ' + (data.cluster_type === 'dealer' ? 'bg-danger' : (data.cluster_type === 'retail' ? 'bg-success' : 'bg-secondary')) + '">' + getClusterTypeLabel(data.cluster_type) + '</span></p>' +
+    '<p class="mb-1"><strong>簇组:</strong> ' + (clusterName || '-') + '</p>' +
+    '<p class="mb-1"><strong>簇组类型:</strong> <span class="badge ' + (clusterType === 'dealer' ? 'bg-danger' : (clusterType === 'retail' ? 'bg-success' : 'bg-secondary')) + '">' + getClusterTypeLabel(clusterType) + '</span></p>' +
     '<p class="mb-1"><strong>来源:</strong> ' + (data.source || '-') + '</p></div></div></div>' +
+    '<div class="row mb-3" id="clusterDetailSection" style="display:none;"><div class="col-12"><h6 class="border-bottom pb-2 mb-2">🔗 簇组详情</h6>' +
+    '<div id="clusterDetailInner"><p class="text-muted">加载中...</p></div></div></div>' +
     '<div class="row"><div class="col-12"><h6 class="border-bottom pb-2 mb-2">💰 持仓信息</h6>' +
     '<div class="row small"><div class="col-md-3">' +
     '<p class="mb-1"><strong>持仓数量:</strong> ' + fmtNum(data.holdingQty || 0, 4) + '</p></div>' +
@@ -734,6 +751,40 @@ function showTxDetail(data) {
 
   if (data.from_address) {
     loadConditionsDetail(data.from_address);
+  }
+
+  // 异步加载簇组完整详情
+  if (clusterName) {
+    loadClusterDetail(clusterName);
+  }
+}
+
+async function loadClusterDetail(clusterName) {
+  const section = document.getElementById('clusterDetailSection');
+  const inner = document.getElementById('clusterDetailInner');
+  if (!section || !inner) return;
+  try {
+    const resp = await fetch('/admin/api/clusters/' + encodeURIComponent(clusterName));
+    if (!resp.ok) { inner.innerHTML = '<p class="text-muted">簇组信息获取失败</p>'; section.style.display = ''; return; }
+    const c = await resp.json();
+    var programs = [];
+    try { programs = typeof c.base_programs === 'string' ? JSON.parse(c.base_programs) : (c.base_programs || []); } catch(e) {}
+    inner.innerHTML =
+      '<div class="row"><div class="col-md-6">' +
+      '<p class="mb-1"><strong>簇组名称:</strong> <code style="font-size:10px;">' + (c.name || '-') + '</code></p>' +
+      '<p class="mb-1"><strong>交易类型:</strong> ' + (c.base_transaction_type || '-') + '</p>' +
+      '<p class="mb-1"><strong>类型:</strong> <span class="badge ' + (c.cluster_type === 'dealer' ? 'bg-danger' : (c.cluster_type === 'retail' ? 'bg-success' : 'bg-secondary')) + '">' + getClusterTypeLabel(c.cluster_type) + '</span></p>' +
+      '<p class="mb-1"><strong>判定来源:</strong> ' + (c.judgment_type || '-') + '</p></div>' +
+      '<div class="col-md-6">' +
+      '<p class="mb-1"><strong>基准CU:</strong> ' + (c.base_cu || 0) + ' ± ' + (c.base_cu_offset || 0) + '</p>' +
+      '<p class="mb-1"><strong>基准程序数:</strong> ' + (c.base_program_count || 0) + '</p>' +
+      '<p class="mb-1"><strong>主指令数:</strong> ' + (c.base_main_instruction_count || 0) + ' ± ' + (c.base_main_offset || 0) + '</p>' +
+      '<p class="mb-1"><strong>内部指令数:</strong> ' + (c.base_inner_instruction_count || 0) + ' ± ' + (c.base_inner_offset || 0) + '</p></div></div>' +
+      '<div class="mt-2"><strong>程序列表:</strong><pre style="font-size:10px;overflow:auto;max-height:120px;background:#f8f9fa;padding:4px;">' + (programs.length > 0 ? programs.map(function(p, i) { return '[' + (i+1) + '] ' + p; }).join('\n') : '-') + '</pre></div>';
+    section.style.display = '';
+  } catch (e) {
+    inner.innerHTML = '<p class="text-muted">加载失败</p>';
+    section.style.display = '';
   }
 }
 

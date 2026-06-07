@@ -129,6 +129,18 @@ async def api_update_cluster_enabled(name: str, request: Request):
         db.close()
 
 
+@router.get("/api/clusters/{name}")
+async def api_get_cluster_detail(name: str):
+    """获取单个簇组完整详情"""
+    from app.services.cluster.redis_keys import get_cluster
+    from urllib.parse import unquote
+    name = unquote(name)
+    cluster = await get_cluster(name)
+    if not cluster:
+        return JSONResponse({"error": "簇组不存在"}, status_code=404)
+    return JSONResponse(cluster.to_dict())
+
+
 @router.put("/api/clusters/{name}/folder")
 async def api_update_cluster_folder(name: str, request: Request):
     """修改簇组文件夹"""
