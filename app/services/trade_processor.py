@@ -532,6 +532,17 @@ async def _calculate_index(tx_detail: Dict[str, Any], mint: str) -> Dict[str, An
             await ws_manager.broadcast(mint, new_cluster_broadcast)
 
         # 4. 广播 user_status 更新前端用户列表
+        cluster_name = state.get("cluster_name", "")
+        cluster_type = cluster_info.get("cluster_type", "unknown") if cluster_info else "unknown"
+        cluster_tx_count = 0
+        cluster_user_count = 0
+        if cluster_name:
+            from app.services.cluster.redis_keys import get_cluster_sync
+            c = get_cluster_sync(cluster_name)
+            if c:
+                cluster_tx_count = c.tx_count
+                cluster_user_count = c.user_count
+        
         await ws_manager.broadcast(mint, {
             "type": "user_status",
             "data": {
@@ -539,8 +550,10 @@ async def _calculate_index(tx_detail: Dict[str, Any], mint: str) -> Dict[str, An
                 "status": state["status"],
                 "status_source": state.get("status_source", "system"),
                 "conditions": state.get("conditions", []),
-                "cluster_name": state.get("cluster_name", ""),
-                "cluster_type": cluster_info.get("cluster_type", "unknown") if cluster_info else "unknown",
+                "cluster_name": cluster_name,
+                "cluster_type": cluster_type,
+                "cluster_tx_count": cluster_tx_count,
+                "cluster_user_count": cluster_user_count,
                 "holding_qty": holding_qty,
                 "holding_cost": holding_cost,
             }

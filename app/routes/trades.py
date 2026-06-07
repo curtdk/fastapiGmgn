@@ -343,10 +343,14 @@ async def api_get_users(mint: str = ""):
                 address = key_str.replace("user:", "")
                 cluster_name = decoded.get("cluster_name", "")
                 cluster_type = "unknown"
+                cluster_tx_count = 0
+                cluster_user_count = 0
                 if cluster_name:
                     latest = get_cluster_sync(cluster_name)
                     if latest:
                         cluster_type = latest.cluster_type
+                        cluster_tx_count = latest.tx_count
+                        cluster_user_count = latest.user_count
                 
                 conditions = []
                 try:
@@ -361,6 +365,8 @@ async def api_get_users(mint: str = ""):
                     "conditions": conditions,
                     "cluster_name": cluster_name,
                     "cluster_type": cluster_type,
+                    "cluster_tx_count": cluster_tx_count,
+                    "cluster_user_count": cluster_user_count,
                     "holding_qty": float(decoded.get(f"{mint}_holdingQty", "0")),
                     "holding_cost": float(decoded.get(f"{mint}_holdingCost", "0")),
                 })

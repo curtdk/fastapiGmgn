@@ -190,6 +190,51 @@
     </div>
   </div>
 
+  <!-- 簇组详情弹窗（类型修改+用户统计+用户列表） -->
+  <div id="clusterDetailModal" class="modal fade" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">簇组详情</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <p><strong>簇组名称：</strong><span id="cdmClusterName" style="font-family: monospace; font-size: 11px;"></span></p>
+          <div class="row mb-2">
+            <div class="col-md-4">
+              <label>类型：</label>
+              <select id="cdmClusterTypeSelect" class="form-select form-select-sm">
+                <option value="undefined">未定义</option>
+                <option value="retail">散户</option>
+                <option value="dealer">庄家</option>
+              </select>
+            </div>
+            <div class="col-md-3 d-flex align-items-end">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="cdmClusterSystemJudgment">
+                <label class="form-check-label" for="cdmClusterSystemJudgment">改为系统判定</label>
+              </div>
+            </div>
+            <div class="col-md-5 d-flex align-items-end">
+              <button class="btn btn-sm btn-success" onclick="saveClusterDetailType()">保存类型</button>
+            </div>
+          </div>
+          <hr>
+          <p id="cdmClusterStats" class="mb-2">📊 加载统计中...</p>
+          <div class="table-responsive" style="max-height: 300px; overflow-y: auto;">
+            <table class="table table-sm table-striped mb-0">
+              <thead class="table-dark"><tr><th>地址</th><th>状态</th><th>来源</th><th>操作</th></tr></thead>
+              <tbody id="cdmUserBody"><tr><td colspan="4" class="text-center text-muted">加载中...</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- 手动修改用户状态弹窗 -->
   <div id="userStatusModal" class="modal fade" tabindex="-1">
     <div class="modal-dialog">
@@ -208,7 +253,11 @@
               <option value="dealer">庄家</option>
             </select>
           </p>
-          <p style="font-size: 12px; color: #dc3545;">注意：手动修改后将标记为 manual，系统不再自动覆盖</p>
+          <div class="form-check mb-2">
+            <input class="form-check-input" type="checkbox" id="userStatusSystemCheck">
+            <label class="form-check-label" for="userStatusSystemCheck">改为系统判定（允许系统自动覆盖）</label>
+          </div>
+          <p style="font-size: 12px; color: #dc3545;">不勾选：手动锁定，系统不再自动覆盖<br>勾选：恢复为系统判定，后续可被自动覆盖</p>
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-success" onclick="saveUserStatus()">保存</button>
@@ -1006,7 +1055,7 @@ function renderUserTable() {
       '<td><a href="javascript:void(0)" onclick="editUserStatus(\'' + (u.address || '') + '\', \'' + (u.status || 'unknown') + '\')" style="font-family: monospace; font-size: 11px;" title="' + (u.address || '') + '">' + addrShort + '...</a></td>' +
       '<td>' + getStatusBadge(u.status) + '</td>' +
       '<td>' + (u.status_source === 'manual' ? '<span class="badge bg-warning text-dark">手动</span>' : '<span class="badge bg-info">系统</span>') + '</td>' +
-      '<td style="font-size: 11px;">' + (u.cluster_name ? u.cluster_name.substring(0, 12) + '...' : '-') + '</td>' +
+      '<td style="font-size: 11px;">' + (u.cluster_name ? '<a href="javascript:void(0)" onclick="openClusterDetailModal(\'' + (u.cluster_name || '') + '\')">' + u.cluster_name.substring(0, 12) + '...</a><br><small class="text-muted">' + (u.cluster_tx_count || 0) + 'tx / ' + (u.cluster_user_count || 0) + '人</small>' : '-') + '</td>' +
       '<td>' + getClusterTypeBadge(u.cluster_type) + '</td>' +
       '<td style="font-size: 11px;">' + conditionsStr + '</td>' +
       '<td>' + (u.holding_qty != null ? Number(u.holding_qty).toFixed(4) : '0') + '</td>' +
@@ -1044,11 +1093,13 @@ function editUserStatus(address, currentStatus) {
 async function saveUserStatus() {
   if (!currentUserAddress) return;
   var status = document.getElementById('userStatusSelect').value;
+  var isSystem = document.getElementById('userStatusSystemCheck').checked;
+  var statusSource = isSystem ? 'system' : 'manual';
   try {
     var resp = await fetch('/admin/api/users/' + encodeURIComponent(currentUserAddress) + '/status', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: status })
+      body: JSON.stringify({ status: status, status_source: statusSource })
     });
     if (!resp.ok) { var err = await resp.json(); alert('修改失败: ' + (err.error || resp.status)); return; }
     var modalEl = document.getElementById('userStatusModal');
@@ -1056,10 +1107,89 @@ async function saveUserStatus() {
     // 前端立即更新
     if (userData[currentUserAddress]) {
       userData[currentUserAddress].status = status;
-      userData[currentUserAddress].status_source = 'manual';
+      userData[currentUserAddress].status_source = statusSource;
       renderUserTable();
     }
-    alert('用户状态已更新为: ' + (status === 'dealer' ? '庄家' : status === 'retail' ? '散户' : '未定义'));
+    alert('用户状态已更新为: ' + (status === 'dealer' ? '庄家' : status === 'retail' ? '散户' : '未定义') + ' (' + (isSystem ? '系统判定' : '手动锁定') + ')');
+  } catch (e) { alert('更新失败: ' + e); }
+}
+
+// ===== 簇组详情弹窗 =====
+
+var currentCdmClusterName = '';
+
+async function openClusterDetailModal(clusterName) {
+  currentCdmClusterName = clusterName;
+  document.getElementById('cdmClusterName').textContent = clusterName;
+  document.getElementById('cdmClusterSystemJudgment').checked = false;
+  
+  var modal = new bootstrap.Modal(document.getElementById('clusterDetailModal'));
+  modal.show();
+  
+  // 异步加载簇组详细用户信息
+  try {
+    var resp = await fetch('/admin/api/clusters/' + encodeURIComponent(clusterName) + '/users-detail');
+    if (!resp.ok) { document.getElementById('cdmUserBody').innerHTML = '<tr><td colspan="4" class="text-center text-muted">加载失败</td></tr>'; return; }
+    var detail = await resp.json();
+    
+    // 更新类型下拉
+    document.getElementById('cdmClusterTypeSelect').value = detail.cluster_type || 'undefined';
+    
+    // 统计
+    document.getElementById('cdmClusterStats').innerHTML =
+      '📊 统计：庄家 <b>' + (detail.dealer_count || 0) + '</b> | 散户 <b>' + (detail.retail_count || 0) + '</b> | 未定义 <b>' + (detail.unknown_count || 0) + '</b> | 总Tx <b>' + (detail.tx_count || 0) + '</b> | 总用户 <b>' + (detail.user_count || 0) + '</b>';
+    
+    // 渲染用户列表
+    var allUsers = [];
+    (detail.dealer_users || []).forEach(function(u) { u._group = 'dealer'; allUsers.push(u); });
+    (detail.retail_users || []).forEach(function(u) { u._group = 'retail'; allUsers.push(u); });
+    (detail.unknown_users || []).forEach(function(u) { u._group = 'unknown'; allUsers.push(u); });
+    
+    var html = '';
+    allUsers.forEach(function(u) {
+      var addrShort = u.address ? u.address.substring(0, 4) : '-';
+      html += '<tr>' +
+        '<td><a href="javascript:void(0)" onclick="editUserStatusFromCluster(\'' + (u.address || '') + '\', \'' + (u.status || 'unknown') + '\')" style="font-family: monospace; font-size: 10px;" title="' + (u.address || '') + '">' + addrShort + '...</a></td>' +
+        '<td>' + getStatusBadge(u.status) + '</td>' +
+        '<td>' + (u.status_source === 'manual' ? '<span class="badge bg-warning text-dark">手动</span>' : '<span class="badge bg-info">系统</span>') + '</td>' +
+        '<td><button class="btn btn-sm btn-outline-primary" onclick="editUserStatusFromCluster(\'' + (u.address || '') + '\', \'' + (u.status || 'unknown') + '\')">改状态</button></td>' +
+        '</tr>';
+    });
+    document.getElementById('cdmUserBody').innerHTML = html || '<tr><td colspan="4" class="text-center text-muted">无用户</td></tr>';
+  } catch (e) {
+    document.getElementById('cdmUserBody').innerHTML = '<tr><td colspan="4" class="text-center text-muted">加载失败</td></tr>';
+  }
+}
+
+function editUserStatusFromCluster(address, currentStatus) {
+  // 隐藏簇组弹窗，打开用户状态弹窗
+  var cdmModal = bootstrap.Modal.getInstance(document.getElementById('clusterDetailModal'));
+  cdmModal.hide();
+  editUserStatus(address, currentStatus);
+}
+
+async function saveClusterDetailType() {
+  if (!currentCdmClusterName) return;
+  var type = document.getElementById('cdmClusterTypeSelect').value;
+  var isSystem = document.getElementById('cdmClusterSystemJudgment').checked;
+  var judgmentType = isSystem ? 'system' : 'manual';
+  
+  try {
+    var resp = await fetch('/admin/api/clusters/' + encodeURIComponent(currentCdmClusterName) + '/type', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cluster_type: type, judgment_type: judgmentType })
+    });
+    if (!resp.ok) { var err = await resp.json(); alert('修改失败: ' + (err.error || resp.status)); return; }
+    
+    // 更新 userData 中所有同簇组用户的 cluster_type
+    for (var addr in userData) {
+      if (userData.hasOwnProperty(addr) && userData[addr].cluster_name === currentCdmClusterName) {
+        userData[addr].cluster_type = type;
+      }
+    }
+    renderUserTable();
+    alert('簇组类型已更新为: ' + (type === 'dealer' ? '庄家' : type === 'retail' ? '散户' : '未定义') + ' (' + (isSystem ? '系统判定' : '手动锁定') + ')');
   } catch (e) { alert('更新失败: ' + e); }
 }
   </script>

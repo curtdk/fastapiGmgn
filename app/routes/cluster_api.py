@@ -1,6 +1,7 @@
 """簇组管理 API 路由"""
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
+import json
 import logging
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/admin", tags=["簇组管理"])
@@ -129,6 +130,75 @@ async def api_update_cluster_enabled(name: str, request: Request):
         db.close()
 
 
+@router.get("/api/clusters/{name}/users-detail")
+async def api_get_cluster_users_detail(name: str):
+    """获取簇组用户详情（按状态分组）"""
+    from app.services.cluster.redis_keys import get_cluster
+    from app.services.trade_processor import user_key, _get_redis
+    from urllib.parse import unquote
+    
+    name = unquote(name)
+    cluster = await get_cluster(name)
+    if not cluster:
+        return JSONResponse({"error": "簇组不存在"}, status_code=404)
+    
+    redis = await _get_redis()
+    
+    dealer_users = []
+    retail_users = []
+    unknown_users = []
+    
+    if redis and cluster.users:
+        for addr in cluster.users:
+            key = user_key(addr)
+            state = await redis.hgetall(key)
+            if not state:
+                unknown_users.append(addr)
+                continue
+            
+            # 解码
+            decoded = {}
+            for k, v in state.items():
+                k_str = k.decode() if isinstance(k, bytes) else k
+                v_str = v.decode() if isinstance(v, bytes) else v
+                decoded[k_str] = v_str
+            
+            status = decoded.get("status", "unknown")
+            conditions = []
+            try:
+                conditions = json.loads(decoded.get("conditions", "[]"))
+            except:
+                pass
+            
+            user_info = {
+                "address": addr,
+                "status": status,
+                "status_source": decoded.get("status_source", "system"),
+                "conditions": conditions,
+            }
+            
+            if status == "dealer":
+                dealer_users.append(user_info)
+            elif status == "retail":
+                retail_users.append(user_info)
+            else:
+                unknown_users.append(user_info)
+    
+    return JSONResponse({
+        "cluster_name": cluster.name,
+        "cluster_type": cluster.cluster_type,
+        "judgment_type": cluster.judgment_type,
+        "tx_count": cluster.tx_count,
+        "user_count": cluster.user_count,
+        "dealer_users": dealer_users,
+        "dealer_count": len(dealer_users),
+        "retail_users": retail_users,
+        "retail_count": len(retail_users),
+        "unknown_users": unknown_users,
+        "unknown_count": len(unknown_users),
+    })
+
+
 @router.put("/api/users/{address}/status")
 async def api_set_user_status(address: str, request: Request):
     """手动修改用户状态（标记为 manual，不受簇组自动覆盖）"""
@@ -140,6 +210,7 @@ async def api_set_user_status(address: str, request: Request):
     address = unquote(address)
     body = await request.json()
     new_status = body.get("status", "")
+    new_status_source = body.get("status_source", "manual")  # 默认手动锁定
     
     if new_status not in ("dealer", "retail", "unknown"):
         return JSONResponse({"error": "无效状态，可选: dealer/retail/unknown"}, status_code=400)
@@ -149,17 +220,17 @@ async def api_set_user_status(address: str, request: Request):
     state = await redis.hgetall(key) or {}
     
     state["status"] = new_status
-    state["status_source"] = "manual"
+    state["status_source"] = new_status_source
     state["conditions"] = state.get("conditions", "[]")
     
     await redis.hset(key, mapping={
         "status": new_status,
-        "status_source": "manual",
+        "status_source": new_status_source,
         "conditions": state.get("conditions", "[]"),
     })
     
-    logger.info(f"[用户状态] {address[:8]}... 手动修改为 {new_status}")
-    return JSONResponse({"message": "已更新", "address": address, "status": new_status, "status_source": "manual"})
+    logger.info(f"[用户状态] {address[:8]}... 修改为 {new_status} (source={new_status_source})")
+    return JSONResponse({"message": "已更新", "address": address, "status": new_status, "status_source": new_status_source})
 
 
 @router.get("/api/clusters/{name}")
