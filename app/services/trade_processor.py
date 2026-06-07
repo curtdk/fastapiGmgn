@@ -119,6 +119,7 @@ async def get_trader_state_with_sig(redis, mint: str, address: str, sig: str) ->
                     detected_status, conditions, cluster_info, new_cluster_broadcast = _check_local_dealer_conditions(tx_detail, state, db, mint)
                     state["conditions"] = conditions
                     state["status"] = detected_status
+                    state["status_source"] = "system"
                     
                     if detected_status == "dealer":
                         await save_trader_state(redis, mint, address, state)
@@ -135,22 +136,38 @@ async def get_trader_state_with_sig(redis, mint: str, address: str, sig: str) ->
         else:
             # 读取 status 和 conditions
             status = state.get("status", "unknown")
+            status_source = state.get("status_source", "system")
             try:
                 conditions = json.loads(state.get("conditions", "[]"))
             except:
                 conditions = []
             state["status"] = status
+            state["status_source"] = status_source
             state["conditions"] = conditions
 
             # 从 Redis 恢复 cluster_info（已存入的用户）
             stored_cluster_name = state.get("cluster_name", "")
             if stored_cluster_name:
+                # 从簇组 Redis 读取最新 cluster_type（单一数据源）
+                stored_cluster_type = "unknown"
+                from app.services.cluster.redis_keys import add_tx_to_cluster_sync, get_cluster_sync
+                latest = get_cluster_sync(stored_cluster_name)
+                if latest:
+                    stored_cluster_type = latest.cluster_type
+                
                 cluster_info = {
                     "address": address,
                     "sig": sig,
                     "cluster_name": stored_cluster_name,
-                    "cluster_type": state.get("cluster_type", "unknown"),
+                    "cluster_type": stored_cluster_type,
                 }
+                # 追加当前 sig 到簇组（已有用户的每笔新交易）
+                add_tx_to_cluster_sync(stored_cluster_name, sig, address)
+
+                # 簇组类型变更 → 同步到用户状态（非手动修改才允许覆盖）
+                if status_source != "manual" and stored_cluster_type != "unknown" and status != stored_cluster_type:
+                    state["status"] = stored_cluster_type
+                    logger.info(f"[簇组同步] {address[:8]}... 用户状态 {status} → {stored_cluster_type}（簇组自动同步）")
             
             # 如果是 unknown 且有 sig，自动入队检测
             # if status == "unknown":
@@ -178,6 +195,7 @@ def _default_trader_state() -> dict:
     return {
         "status": "unknown",
         "conditions": [],
+        "status_source": "system",
     }
 
 
@@ -193,8 +211,8 @@ async def save_trader_state(redis, mint: str, address: str, state: dict):
         save_data = {
             "status": state.get("status", "unknown"),
             "conditions": json.dumps(state.get("conditions", [])),
+            "status_source": state.get("status_source", "system"),
             "cluster_name": state.get("cluster_name", ""),
-            "cluster_type": state.get("cluster_type", "unknown"),
             f"{mint}_holdingQty": str(state.get("holdingQty", 0)),
             f"{mint}_holdingCost": str(state.get("holdingCost", 0)),
             f"{mint}_avgPrice": str(state.get("avgPrice", 0)),
@@ -456,8 +474,8 @@ async def _calculate_index(tx_detail: Dict[str, Any], mint: str) -> Dict[str, An
         await save_trader_state(redis, mint, address, {
             "status": state["status"],
             "conditions": state["conditions"],
+            "status_source": state.get("status_source", "system"),
             "cluster_name": cluster_info.get("cluster_name", "") if cluster_info else "",
-            "cluster_type": cluster_info.get("cluster_type", "unknown") if cluster_info else "unknown",
             "holdingQty": holding_qty,
             "holdingCost": holding_cost,
             "avgPrice": avg_price,

@@ -129,6 +129,39 @@ async def api_update_cluster_enabled(name: str, request: Request):
         db.close()
 
 
+@router.put("/api/users/{address}/status")
+async def api_set_user_status(address: str, request: Request):
+    """手动修改用户状态（标记为 manual，不受簇组自动覆盖）"""
+    from app.services.trade_processor import save_trader_state, user_key
+    from app.services.cluster.redis_keys import _get_redis
+    from urllib.parse import unquote
+    import json
+    
+    address = unquote(address)
+    body = await request.json()
+    new_status = body.get("status", "")
+    
+    if new_status not in ("dealer", "retail", "unknown"):
+        return JSONResponse({"error": "无效状态，可选: dealer/retail/unknown"}, status_code=400)
+    
+    redis = await _get_redis()
+    key = user_key(address)
+    state = await redis.hgetall(key) or {}
+    
+    state["status"] = new_status
+    state["status_source"] = "manual"
+    state["conditions"] = state.get("conditions", "[]")
+    
+    await redis.hset(key, mapping={
+        "status": new_status,
+        "status_source": "manual",
+        "conditions": state.get("conditions", "[]"),
+    })
+    
+    logger.info(f"[用户状态] {address[:8]}... 手动修改为 {new_status}")
+    return JSONResponse({"message": "已更新", "address": address, "status": new_status, "status_source": "manual"})
+
+
 @router.get("/api/clusters/{name}")
 async def api_get_cluster_detail(name: str):
     """获取单个簇组完整详情"""
