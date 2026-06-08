@@ -371,6 +371,36 @@ def _check_local_dealer_conditions(tx_detail: dict, state: dict, db=None, mint: 
             except Exception as e:
                 logger.warning(f"[庄家判定] 簇组检测失败: {e}")
         
+        # ── 条件 C008：簇组持仓占比判定（user_count > 阈值 且持仓占比 > 阈值）──
+        c008_enabled = get_setting(db, "dealer_c008_enabled")
+        if c008_enabled == "true" and "C008" not in conditions and cluster_info and cluster_info.get("cluster_name"):
+            from app.services.cluster.redis_keys import get_cluster_sync, set_cluster_type_sync, _get_sync_redis
+            
+            c008_cluster = get_cluster_sync(cluster_info["cluster_name"])
+            c008_user_threshold = get_cluster_settings(db).c008_user_threshold
+            c008_holding_ratio = get_cluster_settings(db).c008_holding_ratio
+            
+            if (c008_cluster 
+                and c008_cluster.user_count > c008_user_threshold
+                and c008_cluster.cluster_type != "dealer"
+                and c008_cluster.judgment_type == "system"):
+                
+                r = _get_sync_redis()
+                total_qty = float((r.hget(f"metrics:{mint}", "total_holdingQty") or "0"))
+                
+                if total_qty > 0:
+                    cluster_holdings = 0.0
+                    for addr in c008_cluster.users:
+                        ustate = r.hgetall(f"user:{addr}")
+                        cluster_holdings += float(ustate.get(f"{mint}_holdingQty", "0"))
+                    
+                    if cluster_holdings / total_qty > c008_holding_ratio:
+                        set_cluster_type_sync(c008_cluster.name, "dealer", "system")
+                        conditions.append("C008")
+                        status = "dealer"
+                        cluster_info["cluster_type"] = "dealer"
+                        logger.info(f"[C008] 簇组 {c008_cluster.name[:8]}... 持仓占比 {cluster_holdings/total_qty:.1%} > {c008_holding_ratio:.0%}, user_count={c008_cluster.user_count}, 自动标记为庄家")
+        
         # ── 条件 C007：Dev 自动识别（第一个 BUY 用户 = dev）──
         if "C007" not in conditions and tx_detail:
             c007_enabled = get_setting(db, "dealer_c007_enabled")

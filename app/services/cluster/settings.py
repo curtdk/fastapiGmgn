@@ -10,7 +10,7 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
-from app.services.settings_service import get_setting, get_int_setting
+from app.services.settings_service import get_setting, get_int_setting, get_float_setting
 
 logger = logging.getLogger(__name__)
 
@@ -88,6 +88,18 @@ class ClusterSettings:
     def user_threshold(self) -> int:
         """用户数阈值（默认 > 50）"""
         return get_int_setting(self.db, "cluster_user_threshold", 50)
+    
+    # ── C008 庄家持仓占比判定 ──
+    
+    @property
+    def c008_user_threshold(self) -> int:
+        """C008 用户数阈值（默认 20）"""
+        return get_int_setting(self.db, "cluster_c008_user_threshold", 20)
+    
+    @property
+    def c008_holding_ratio(self) -> float:
+        """C008 持仓占比阈值（默认 0.30 = 30%）"""
+        return get_float_setting(self.db, "cluster_c008_holding_ratio", 0.30)
     
     def to_dict(self) -> dict:
         """转换为字典（用于前端展示）"""

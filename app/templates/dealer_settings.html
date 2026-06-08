@@ -92,6 +92,17 @@ const conditions = [
     hasEnabled: true,
     enabledKey: "dealer_c007_enabled",
     fields: []
+  },
+  {
+    id: "C008",
+    name: "簇组持仓占比判定",
+    desc: "簇组用户数 > 阈值 且 簇组持仓占全局 > 阈值 → 自动标记为庄家",
+    hasEnabled: true,
+    enabledKey: "dealer_c008_enabled",
+    fields: [
+      { key: "cluster_c008_user_threshold", label: "用户数阈值", type: "text" },
+      { key: "cluster_c008_holding_ratio", label: "持仓占比阈值", type: "text" }
+    ]
   }
 ];
 

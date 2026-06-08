@@ -231,7 +231,8 @@ async def get_metrics(redis, mint: str) -> dict:
         return {
             "total_bet": 0.0,
             "realized_profit": 0.0,
-            "dealer_count": 0
+            "dealer_count": 0,
+            "total_holdingQty": 0.0,
         }
     
     try:
@@ -242,10 +243,11 @@ async def get_metrics(redis, mint: str) -> dict:
             metrics = {
                 "total_bet": 0.0,
                 "realized_profit": 0.0,
-                "dealer_count": 0
+                "dealer_count": 0,
+                "total_holdingQty": 0.0,
             }
         else:
-            for k in ["total_bet", "realized_profit", "dealer_count"]:
+            for k in ["total_bet", "realized_profit", "dealer_count", "total_holdingQty"]:
                 metrics[k] = float(metrics.get(k, "0"))
         
         return metrics
@@ -254,7 +256,8 @@ async def get_metrics(redis, mint: str) -> dict:
         return {
             "total_bet": 0.0,
             "realized_profit": 0.0,
-            "dealer_count": 0
+            "dealer_count": 0,
+            "total_holdingQty": 0.0,
         }
 
 
@@ -492,6 +495,13 @@ async def _calculate_index(tx_detail: Dict[str, Any], mint: str) -> Dict[str, An
         delta_profit = new_realized - old_realized
         
         await update_metrics_delta(redis, mint, delta_bet, delta_profit)
+        
+        # C008: 更新全局总持仓数量（含庄家，不分排除）
+        metrics_key = await _get_metrics_key(mint)
+        if tx_type == "BUY":
+            await redis.hincrbyfloat(metrics_key, "total_holdingQty", buy_qty)
+        elif tx_type == "SELL":
+            await redis.hincrbyfloat(metrics_key, "total_holdingQty", -sell_qty)
         
         # ── 排除庄家数据 ──
         if state.get("status") == "dealer":

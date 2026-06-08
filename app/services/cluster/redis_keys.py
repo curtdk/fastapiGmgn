@@ -424,3 +424,19 @@ def add_tx_to_cluster_sync(cluster_name: str, sig: str, user_address: str) -> bo
     except Exception as e:
         logger.warning(f"[cluster:redis:sync] 添加交易到簇组失败: {e}")
         return False
+
+
+def set_cluster_type_sync(cluster_name: str, cluster_type: str, judgment_type: str = "system") -> bool:
+    """同步版本：设置簇组类型（用于同步上下文）"""
+    try:
+        r = _get_sync_redis()
+        key = cluster_data_key(cluster_name)
+        r.hset(key, mapping={
+            "cluster_type": cluster_type,
+            "judgment_type": judgment_type,
+        })
+        logger.info(f"[cluster:redis:sync] 簇组 {cluster_name[:8]}... 类型更新为 {cluster_type}")
+        return True
+    except Exception as e:
+        logger.warning(f"[cluster:redis:sync] 设置簇组类型失败: {e}")
+        return False
