@@ -766,6 +766,10 @@ async def reset_processor(mint: str, db: Session):
         _consumer_task = None
         _mint = ""
 
+        # 6. 清理 C007 dev 缓存
+        from app.services.dealer_detector import _c007_dev_cache
+        _c007_dev_cache.pop(mint, None)
+
         logger.info(f"[重置] 清理完成 mint={mint}")
     except Exception as e:
         logger.error(f"[重置] 清理异常 mint={mint[:8]}...: {e}", exc_info=True)

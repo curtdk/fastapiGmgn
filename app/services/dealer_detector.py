@@ -41,6 +41,7 @@ HELIUS_RPC_URL = "https://mainnet.helius-rpc.com"
 # 模块级变量
 _redis: Optional[aioredis.Redis] = None
 _dealer_check_queue: Optional[asyncio.Queue] = None
+_c007_dev_cache: dict = {}  # C007: mint → dev_address
 _dealer_semaphore: Optional[asyncio.Semaphore] = None
 _dealer_consumer_task: Optional[asyncio.Task] = None
 _retry_queue: Optional[asyncio.Queue] = None
@@ -369,6 +370,20 @@ def _check_local_dealer_conditions(tx_detail: dict, state: dict, db=None, mint: 
                     }
             except Exception as e:
                 logger.warning(f"[庄家判定] 簇组检测失败: {e}")
+        
+        # ── 条件 C007：Dev 自动识别（第一个 BUY 用户 = dev）──
+        if "C007" not in conditions and tx_detail:
+            c007_enabled = get_setting(db, "dealer_c007_enabled")
+            if c007_enabled == "true":
+                global _c007_dev_cache
+                from_address = tx_detail.get("from_address", "")
+                tx_type = tx_detail.get("transaction_type", "")
+                if mint and mint not in _c007_dev_cache and tx_type == "BUY":
+                    _c007_dev_cache[mint] = from_address
+                    logger.info(f"[C007] mint={mint[:8]}... 第一个BUY用户 {from_address[:8]}... 标记为dev")
+                if _c007_dev_cache.get(mint) == from_address:
+                    conditions.append("C007")
+                    status = "dealer"
         
         # ── 条件 C002：使用 ALT（地址查找表） ──
         if "C002" not in conditions and tx_detail:
