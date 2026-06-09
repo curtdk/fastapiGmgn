@@ -36,6 +36,30 @@
     .cluster-tag.unknown { background: #e9ecef; color: #495057; }
     .cluster-tag.undefined { background: #e9ecef; color: #495057; }
     .cluster-tag:hover { opacity: 0.8; }
+    
+    /* 簇组概览 */
+    .cluster-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px; }
+    .cluster-summary-card { background: #fff; border-radius: 8px; padding: 14px 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); cursor: pointer; transition: box-shadow 0.2s; }
+    .cluster-summary-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.15); }
+    .cluster-summary-card .cs-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+    .cluster-summary-card .cs-title { font-size: 14px; font-weight: 700; }
+    .cluster-summary-card .cs-count { font-size: 12px; color: #666; }
+    .cluster-summary-card .cs-items { font-size: 11px; color: #333; line-height: 1.6; }
+    .cluster-summary-card .cs-empty { font-size: 11px; color: #999; }
+    .cluster-summary-card.dealer { border-left: 3px solid #d63939; }
+    .cluster-summary-card.dealer .cs-title { color: #d63939; }
+    .cluster-summary-card.retail { border-left: 3px solid #2fb344; }
+    .cluster-summary-card.retail .cs-title { color: #2fb344; }
+    .cluster-summary-card.undefined { border-left: 3px solid #adb5bd; }
+    .cluster-summary-card.undefined .cs-title { color: #6c757d; }
+    
+    /* 簇组详情弹窗 */
+    .cluster-detail-modal .cd-tabs { display: flex; gap: 4px; margin-bottom: 12px; border-bottom: 1px solid #dee2e6; }
+    .cluster-detail-modal .cd-tab { padding: 6px 16px; border: none; background: none; font-size: 13px; cursor: pointer; border-bottom: 2px solid transparent; }
+    .cluster-detail-modal .cd-tab.active { border-bottom-color: #206bc4; font-weight: 600; color: #206bc4; }
+    .cluster-detail-modal .cd-table-wrap { max-height: 400px; overflow-y: auto; }
+    .cluster-detail-modal .cd-table { font-size: 12px; }
+    .cluster-detail-modal .cd-table th { position: sticky; top: 0; background: #f8f9fa; z-index: 1; }
   </style>
 </head>
 <body>
@@ -168,6 +192,31 @@
     </div>
   </div>
 
+  <!-- 簇组概览 -->
+  <div class="cluster-summary" id="clusterSummary" style="display:none;">
+    <div class="cluster-summary-card dealer" onclick="openClusterSummaryModal()" title="点击查看详情">
+      <div class="cs-header">
+        <span class="cs-title">庄簇</span>
+        <span class="cs-count" id="csDealerCount">0簇 / 0人</span>
+      </div>
+      <div class="cs-items" id="csDealerItems"><span class="cs-empty">暂无</span></div>
+    </div>
+    <div class="cluster-summary-card retail" onclick="openClusterSummaryModal()" title="点击查看详情">
+      <div class="cs-header">
+        <span class="cs-title">散户簇</span>
+        <span class="cs-count" id="csRetailCount">0簇 / 0人</span>
+      </div>
+      <div class="cs-items" id="csRetailItems"><span class="cs-empty">暂无</span></div>
+    </div>
+    <div class="cluster-summary-card undefined" onclick="openClusterSummaryModal()" title="点击查看详情">
+      <div class="cs-header">
+        <span class="cs-title">未定义簇</span>
+        <span class="cs-count" id="csUndefinedCount">0簇 / 0人</span>
+      </div>
+      <div class="cs-items" id="csUndefinedItems"><span class="cs-empty">暂无</span></div>
+    </div>
+  </div>
+
   <!-- 用户列表 -->
   <div class="card mt-4">
     <div class="card-header">👥 当前 Mint 用户列表 (<span id="userCount">0</span>)</div>
@@ -187,6 +236,34 @@
         </thead>
         <tbody id="userBody"></tbody>
       </table>
+    </div>
+  </div>
+
+  <!-- 簇组总览弹窗（按类型分 tab） -->
+  <div id="clusterSummaryModal" class="modal fade cluster-detail-modal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">簇组详情</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="cd-tabs">
+            <button class="cd-tab active" onclick="switchClusterSummaryTab('dealer', this)">庄簇 (<span id="cdTabDealerCount">0</span>)</button>
+            <button class="cd-tab" onclick="switchClusterSummaryTab('retail', this)">散户簇 (<span id="cdTabRetailCount">0</span>)</button>
+            <button class="cd-tab" onclick="switchClusterSummaryTab('undefined', this)">未定义 (<span id="cdTabUndefinedCount">0</span>)</button>
+          </div>
+          <div class="cd-table-wrap">
+            <table class="table table-sm table-striped cd-table mb-0">
+              <thead><tr><th>簇组名</th><th>用户数</th><th>Tx数</th><th>占比</th><th>判定</th><th>操作</th></tr></thead>
+              <tbody id="cdSummaryTableBody"><tr><td colspan="6" class="text-center text-muted">加载中...</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -532,6 +609,7 @@ async function startMonitor() {
     console.log('启动响应:', data);
     connectWS();
     fetchUsers();
+    document.getElementById('clusterSummary').style.display = 'grid';
     // 显示策略面板
     showStrategyPanel();
   } catch (e) { alert('启动失败: ' + e.message); document.getElementById('startBtn').disabled = false; }
@@ -545,6 +623,7 @@ async function stopMonitor() {
     currentMint = '';
     document.getElementById('startBtn').disabled = false;
     updateStatus({ status: 'STOPPED', message: '已停止' });
+    document.getElementById('clusterSummary').style.display = 'none';
     // 禁用策略但保持面板显示，允许修改参数后重新启用
     document.getElementById('strategyToggle').checked = false;
     document.getElementById('strategyStatus').textContent = '已停止，可修改参数';
@@ -1063,6 +1142,9 @@ function renderUserTable() {
       '</tr>';
   });
   tbody.innerHTML = html || '<tr><td colspan="8" class="text-center text-muted">暂无用户</td></tr>';
+  
+  // WS 事件驱动：每次用户列表渲染后更新簇组概览
+  computeClusterSummary();
 }
 
 function sortUsers(field) {
@@ -1191,6 +1273,140 @@ async function saveClusterDetailType() {
     renderUserTable();
     alert('簇组类型已更新为: ' + (type === 'dealer' ? '庄家' : type === 'retail' ? '散户' : '未定义') + ' (' + (isSystem ? '系统判定' : '手动锁定') + ')');
   } catch (e) { alert('更新失败: ' + e); }
+}
+
+// ===== 簇组概览（从 userData 实时计算，WS 事件驱动） =====
+
+var _currentSummaryTab = 'dealer';
+
+function computeClusterSummary() {
+  // 从 userData 按 cluster_name 分组
+  var clusters = {};  // { clusterName: { type, users: [addr], tx_count, user_count } }
+  var emptyCluster = 0;
+  for (var addr in userData) {
+    if (!userData.hasOwnProperty(addr)) continue;
+    var u = userData[addr];
+    var cname = u.cluster_name || '';
+    if (!cname) { emptyCluster++; continue; }
+    if (!clusters[cname]) {
+      clusters[cname] = { type: u.cluster_type || 'undefined', users: [], tx_count: u.cluster_tx_count || 0, user_count: u.cluster_user_count || 0 };
+    }
+    if (clusters[cname].users.indexOf(addr) === -1) clusters[cname].users.push(addr);
+    // 取最新的 tx_count / user_count
+    if (u.cluster_tx_count) clusters[cname].tx_count = u.cluster_tx_count;
+    if (u.cluster_user_count) clusters[cname].user_count = u.cluster_user_count;
+  }
+  
+  // 按类型分组
+  var groups = { dealer: [], retail: [], undefined: [] };
+  for (var cn in clusters) {
+    if (!clusters.hasOwnProperty(cn)) continue;
+    var c = clusters[cn];
+    var ct = c.type;
+    if (!groups[ct]) ct = 'undefined';
+    groups[ct].push({ name: cn, user_count: c.users.length, tx_count: c.tx_count });
+  }
+  
+  // 排序
+  for (var k in groups) { groups[k].sort(function(a, b) { return b.user_count - a.user_count; }); }
+  
+  // 渲染 3 张卡片
+  var types = [
+    { key: 'dealer', countId: 'csDealerCount', itemsId: 'csDealerItems' },
+    { key: 'retail', countId: 'csRetailCount', itemsId: 'csRetailItems' },
+    { key: 'undefined', countId: 'csUndefinedCount', itemsId: 'csUndefinedItems' },
+  ];
+  
+  for (var i = 0; i < types.length; i++) {
+    var t = types[i];
+    var items = groups[t.key];
+    var totalUsers = 0;
+    for (var j = 0; j < items.length; j++) { totalUsers += items[j].user_count; }
+    
+    document.getElementById(t.countId).textContent = items.length + '簇 / ' + totalUsers + '人';
+    
+    if (items.length === 0) {
+      document.getElementById(t.itemsId).innerHTML = '<span class="cs-empty">暂无</span>';
+    } else {
+      var top3 = items.slice(0, 3);
+      var html = '';
+      for (var j = 0; j < top3.length; j++) {
+        var c = top3[j];
+        var ratio = totalUsers > 0 ? (c.user_count / totalUsers * 100).toFixed(0) : 0;
+        html += '<div>' + shortCluster(c.name) + ' (' + c.user_count + '人 ' + ratio + '%)</div>';
+      }
+      if (items.length > 3) html += '<div style="color:#999;">...共 ' + items.length + ' 个簇组</div>';
+      document.getElementById(t.itemsId).innerHTML = html;
+    }
+  }
+}
+
+async function openClusterSummaryModal() {
+  var modal = new bootstrap.Modal(document.getElementById('clusterSummaryModal'));
+  modal.show();
+  
+  // 加载后端数据（per-mint 过滤）
+  document.getElementById('cdSummaryTableBody').innerHTML = '<tr><td colspan="6" class="text-center text-muted">加载中...</td></tr>';
+  
+  try {
+    var resp = await fetch('/admin/api/clusters/summary' + (currentMint ? '?mint=' + encodeURIComponent(currentMint) : ''));
+    var _summaryData = await resp.json();
+    
+    // 更新 tab 计数
+    document.getElementById('cdTabDealerCount').textContent = (_summaryData.dealer || {}).count || 0;
+    document.getElementById('cdTabRetailCount').textContent = (_summaryData.retail || {}).count || 0;
+    document.getElementById('cdTabUndefinedCount').textContent = (_summaryData.undefined || {}).count || 0;
+    
+    // 默认选中 dealer tab
+    renderSummaryTab('dealer', _summaryData);
+  } catch (e) {
+    document.getElementById('cdSummaryTableBody').innerHTML = '<tr><td colspan="6" class="text-center text-muted">加载失败: ' + e.message + '</td></tr>';
+  }
+}
+
+function switchClusterSummaryTab(tabType, tabEl) {
+  // 更新 tab 样式
+  var tabs = document.querySelectorAll('#clusterSummaryModal .cd-tab');
+  for (var i = 0; i < tabs.length; i++) { tabs[i].classList.remove('active'); }
+  if (tabEl) tabEl.classList.add('active');
+  
+  // 重新获取数据渲染
+  fetch('/admin/api/clusters/summary' + (currentMint ? '?mint=' + encodeURIComponent(currentMint) : ''))
+    .then(function(r) { return r.json(); })
+    .then(function(d) { renderSummaryTab(tabType, d); })
+    .catch(function(e) { document.getElementById('cdSummaryTableBody').innerHTML = '<tr><td colspan="6" class="text-center text-muted">加载失败</td></tr>'; });
+}
+
+function renderSummaryTab(tabType, summaryData) {
+  var data = summaryData[tabType] || { count: 0, total_users: 0, clusters: [] };
+  var totalUsers = data.total_users || 0;
+  var html = '';
+  
+  if (data.clusters.length === 0) {
+    html = '<tr><td colspan="6" class="text-center text-muted">暂无数据</td></tr>';
+  } else {
+    for (var j = 0; j < data.clusters.length; j++) {
+      var c = data.clusters[j];
+      var ratio = totalUsers > 0 ? (c.user_count / totalUsers * 100).toFixed(0) : 0;
+      var judgeLabel = c.judgment_type === 'manual' ? '<span class="badge bg-warning text-dark">手动</span>' : '<span class="badge bg-info">系统</span>';
+      html += '<tr>' +
+        '<td style="font-family: monospace; font-size: 11px;" title="' + c.name + '">' + c.name.slice(0, 30) + (c.name.length > 30 ? '...' : '') + '</td>' +
+        '<td>' + c.user_count + '</td>' +
+        '<td>' + c.tx_count + '</td>' +
+        '<td>' + ratio + '%</td>' +
+        '<td>' + judgeLabel + '</td>' +
+        '<td><button class="btn btn-sm btn-outline-primary" onclick="openClusterDetailFromSummary(this)" data-cluster="' + c.name.replace(/'/g, '&#39;') + '">查看</button></td>' +
+        '</tr>';
+    }
+  }
+  document.getElementById('cdSummaryTableBody').innerHTML = html;
+}
+
+function openClusterDetailFromSummary(btn) {
+  var clusterName = btn.getAttribute('data-cluster').replace(/&#39;/g, "'");
+  var summaryModal = bootstrap.Modal.getInstance(document.getElementById('clusterSummaryModal'));
+  summaryModal.hide();
+  setTimeout(function() { openClusterDetailModal(clusterName); }, 300);
 }
   </script>
 </body>

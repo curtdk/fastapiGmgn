@@ -7,6 +7,68 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/admin", tags=["簇组管理"])
 
 
+@router.get("/api/clusters/summary")
+async def api_get_clusters_summary(mint: str = ""):
+    """获取当前 mint 的簇组摘要（按庄家/散户/未定义分组）"""
+    from app.services.cluster.manager import create_manager
+    from app.utils.database import SessionLocal
+    from app.services.trade_processor import user_key
+    from app.services.cluster.redis_keys import _get_sync_redis
+    
+    db = SessionLocal()
+    try:
+        manager = create_manager(db)
+        clusters = await manager.get_all_clusters()
+        r = _get_sync_redis()
+        
+        groups = {"dealer": [], "retail": [], "undefined": []}
+        for c in clusters:
+            ct = c.cluster_type
+            if ct not in groups:
+                ct = "undefined"
+            
+            # per-mint 过滤：统计当前 mint 的活跃用户数
+            active_count = 0
+            active_tx = 0
+            if mint and c.users:
+                for addr in c.users:
+                    key = user_key(addr)
+                    ustate = r.hgetall(key)
+                    if not ustate:
+                        continue
+                    holding_qty = float(ustate.get(f"{mint}_holdingQty", "0"))
+                    if holding_qty > 0:
+                        active_count += 1
+                if active_count == 0:
+                    continue  # 该簇组在当前 mint 无活跃用户，跳过
+            else:
+                active_count = c.user_count
+                active_tx = c.tx_count
+            
+            groups[ct].append({
+                "name": c.name,
+                "user_count": active_count,
+                "tx_count": c.tx_count,
+                "cluster_type": c.cluster_type,
+                "judgment_type": c.judgment_type,
+            })
+        
+        result = {}
+        for key in ("dealer", "retail", "undefined"):
+            items = groups[key]
+            total_users = sum(item["user_count"] for item in items)
+            items.sort(key=lambda x: x["user_count"], reverse=True)
+            result[key] = {
+                "count": len(items),
+                "total_users": total_users,
+                "clusters": items,
+            }
+        
+        return JSONResponse(result)
+    finally:
+        db.close()
+
+
 @router.get("/api/clusters")
 async def api_get_clusters(
     request: Request,

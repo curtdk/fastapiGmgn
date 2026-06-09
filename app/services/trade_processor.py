@@ -425,7 +425,10 @@ async def _calculate_index(tx_detail: Dict[str, Any], mint: str) -> Dict[str, An
         tracer_conditions = state.get("conditions", [])
         trace(mint, sig, "④ 庄家判定", f"结果={trader_status}, 条件={tracer_conditions}")
         
-        # 从 Redis 读取当前持仓数据（统一用 {mint}_xxx key）
+        is_dealer = (state.get("status") == "dealer")
+        metrics_key = await _get_metrics_key(mint)
+        
+        # ========== 共用：持仓数据读取 ==========
         holding_qty = float(state.get(f"{mint}_holdingQty", "0"))
         holding_cost = float(state.get(f"{mint}_holdingCost", "0"))
         avg_price = float(state.get(f"{mint}_avgPrice", "0"))
@@ -436,6 +439,7 @@ async def _calculate_index(tx_detail: Dict[str, Any], mint: str) -> Dict[str, An
         old_holding_cost = holding_cost
         old_realized = total_sell_amount - total_sell_principal
         
+        # ========== 共用：BUY/SELL 计算 ==========
         if tx_type == "BUY":
             buy_amount = abs(sol_spent)
             buy_qty = amount
@@ -452,29 +456,25 @@ async def _calculate_index(tx_detail: Dict[str, Any], mint: str) -> Dict[str, An
             sell_qty = abs(amount)
             sell_amount = abs(sol_spent)
             
-            # 卖出本金 = 卖出数量 × 当时均价
             sell_principal = sell_qty * avg_price
-            
             total_sell_principal += sell_principal
             total_sell_amount += sell_amount
             holding_qty -= sell_qty
             holding_cost -= sell_principal
             
-            # 防负值
             if holding_qty < 0.001:
                 holding_qty = 0
                 holding_cost = 0
                 avg_price = 0
             
-            # 更新均价
             if holding_qty > 0:
                 avg_price = holding_cost / holding_qty
             
             realized = sell_amount - sell_principal
             logger.debug(f"[计算] {address[:8]}... SELL {sell_qty} @ {sell_amount} SOL, 落袋: {realized:.6f} SOL")
         
-        # 直接保存状态（传字典而不是修改 state）
-        await save_trader_state(redis, mint, address, {
+        # ========== 共用：保存状态 ==========
+        save_data = {
             "status": state["status"],
             "conditions": state["conditions"],
             "status_source": state.get("status_source", "system"),
@@ -485,31 +485,31 @@ async def _calculate_index(tx_detail: Dict[str, Any], mint: str) -> Dict[str, An
             "totalBuyAmount": total_buy_amount,
             "totalSellAmount": total_sell_amount,
             "totalSellPrincipal": total_sell_principal,
-        })
+        }
+        if is_dealer:
+            save_data[f"{mint}_dealerExcluded"] = "true"
+        await save_trader_state(redis, mint, address, save_data)
         
-        # 更新全局指标
-        new_holding_cost = holding_cost
-        new_realized = total_sell_amount - total_sell_principal
-        
-        delta_bet = new_holding_cost - old_holding_cost
-        delta_profit = new_realized - old_realized
-        
-        await update_metrics_delta(redis, mint, delta_bet, delta_profit)
-        
-        # C008: 更新全局总持仓数量（含庄家，不分排除）
-        metrics_key = await _get_metrics_key(mint)
+        # C008: 更新全局总持仓数量
         if tx_type == "BUY":
             await redis.hincrbyfloat(metrics_key, "total_holdingQty", buy_qty)
         elif tx_type == "SELL":
             await redis.hincrbyfloat(metrics_key, "total_holdingQty", -sell_qty)
         
-        # ── 排除庄家数据 ──
-        if state.get("status") == "dealer":
-            await exclude_dealer(mint, address)
-            trace(mint, sig, "⑤ 庄家排除", f"address={address[:8]}..., delta_bet={delta_bet}, delta_profit={delta_profit}")
-            logger.info(f"[庄家排除] {address[:8]}... delta_bet={delta_bet}, delta_profit={delta_profit}")
-            # 注释：庄家也广播到前端，由前端开关控制是否显示
-            # return {"status": "dealer", "cluster_info": cluster_info}
+        # ========== 分支：散户更新指标 / 庄家首次排除 ==========
+        new_holding_cost = holding_cost
+        new_realized = total_sell_amount - total_sell_principal
+        delta_bet = new_holding_cost - old_holding_cost
+        delta_profit = new_realized - old_realized
+        
+        if not is_dealer:
+            await update_metrics_delta(redis, mint, delta_bet, delta_profit)
+        else:
+            dealer_excluded = state.get(f"{mint}_dealerExcluded", "")
+            if dealer_excluded != "true":
+                await exclude_dealer(mint, address)
+                trace(mint, sig, "⑤ 庄家排除", f"address={address[:8]}..., 首次排除")
+                logger.info(f"[庄家排除] {address[:8]}... delta_bet={delta_bet}, delta_profit={delta_profit}")
         
         # 更新 Redis 中的分析结果
         await tx_redis.update_tx_analysis(sig, {
@@ -761,15 +761,15 @@ async def reset_processor(mint: str, db: Session):
                     break
             logger.info(f"[重置] 队列已清空，丢弃 {cleared} 条消息")
 
-        # 3. 清理 Redis 指标数据（不清理用户数据）
-        await clear_mint_redis(mint)
+        # 3. 清理 Redis 指标数据（不清理用户数据）—— 测试期间保留
+        # await clear_mint_redis(mint)
 
-        # 4. 删除 Redis 中该 mint 的交易数据（txlist 和 tx:*）
-        from app.services.dealer_detector import _redis
-        if _redis:
-            await _redis.delete(f"txlist:rpc_fill:{mint}")
-            await _redis.delete(f"txlist:ws:{mint}")
-            logger.info(f"[重置] 已删除 Redis 交易列表: txlist:rpc_fill:{mint}, txlist:ws:{mint}")
+        # 4. 删除 Redis 中该 mint 的交易数据（txlist 和 tx:*）—— 测试期间保留
+        # from app.services.dealer_detector import _redis
+        # if _redis:
+        #     await _redis.delete(f"txlist:rpc_fill:{mint}")
+        #     await _redis.delete(f"txlist:ws:{mint}")
+        #     logger.info(f"[重置] 已删除 Redis 交易列表: txlist:rpc_fill:{mint}, txlist:ws:{mint}")
 
         # 5. 重置全局变量
         _trade_queue = asyncio.Queue()
