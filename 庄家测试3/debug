@@ -1,0 +1,33 @@
+(venv) curtdk@curtdkdeMac-mini-2 fastapiGmgn %  cd /Users/curtdk/.openclaw/workspace/fastapiGmgn ; /usr/bin/env /Users/curtdk/.ope
+nclaw/workspace/fastapiGmgn/venv/bin/python /Users/curtdk/.trae-cn/extensions/ms-python.debugpy-2026.6.0-darwin-arm64/bundled/libs
+/debugpy/adapter/../../debugpy/launcher 52273 -- -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload 
+INFO:     Will watch for changes in these directories: ['/Users/curtdk/.openclaw/workspace/fastapiGmgn']
+ERROR:    [Errno 48] Address already in use
+(venv) curtdk@curtdkdeMac-mini-2 fastapiGmgn %  cd /Users/curtdk/.openclaw/workspace/fastapiGmgn ; /usr/bin/env /Users/curtdk/.ope
+nclaw/workspace/fastapiGmgn/venv/bin/python /Users/curtdk/.trae-cn/extensions/ms-python.debugpy-2026.6.0-darwin-arm64/bundled/libs
+/debugpy/adapter/../../debugpy/launcher 52324 -- -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload 
+INFO:     Will watch for changes in these directories: ['/Users/curtdk/.openclaw/workspace/fastapiGmgn']
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO:     Started reloader process [92049] using WatchFiles
+2026-06-10 16:14:03,558 - main - INFO - Admin user already exists
+2026-06-10 16:14:03,584 - app.services.settings_service - INFO - 默认设置初始化完成
+INFO:     Started server process [92053]
+INFO:     Waiting for application startup.
+ERROR:    Traceback (most recent call last):
+  File "/Users/curtdk/.openclaw/workspace/fastapiGmgn/venv/lib/python3.9/site-packages/starlette/routing.py", line 738, in lifespan
+    async with self.lifespan_context(app) as maybe_state:
+  File "/Users/curtdk/.openclaw/workspace/fastapiGmgn/venv/lib/python3.9/site-packages/starlette/routing.py", line 610, in __aenter__
+    await self._router.startup()
+  File "/Users/curtdk/.openclaw/workspace/fastapiGmgn/venv/lib/python3.9/site-packages/starlette/routing.py", line 715, in startup
+    await handler()
+  File "/Users/curtdk/.openclaw/workspace/fastapiGmgn/main.py", line 55, in on_startup
+    from app.services.cluster.redis_keys import init_cluster_redis
+  File "/Users/curtdk/.openclaw/workspace/fastapiGmgn/app/services/cluster/__init__.py", line 9, in <module>
+    from app.services.cluster.detector import run_cluster_detection
+  File "/Users/curtdk/.openclaw/workspace/fastapiGmgn/app/services/cluster/detector.py", line 23, in <module>
+    from app.services.cluster.manager import create_manager
+  File "/Users/curtdk/.openclaw/workspace/fastapiGmgn/app/services/cluster/manager.py", line 17, in <module>
+    from app.services.cluster.redis_keys import (
+ImportError: cannot import name 'add_tx_to_cluster_sync' from 'app.services.cluster.redis_keys' (/Users/curtdk/.openclaw/workspace/fastapiGmgn/app/services/cluster/redis_keys.py)
+
+ERROR:    Application startup failed. Exiting.

@@ -114,10 +114,6 @@ class ClusterData:
         base_programs: List[str] = None,
         base_main_instructions: List[Dict] = None,
         base_inner_instructions: List[Dict] = None,
-        txs: List[str] = None,
-        users: List[str] = None,
-        tx_count: int = 0,
-        user_count: int = 0,
         created_at: float = None,
     ):
         self.name = name
@@ -137,11 +133,12 @@ class ClusterData:
         self.base_programs = base_programs or []
         self.base_main_instructions = base_main_instructions or []
         self.base_inner_instructions = base_inner_instructions or []
-        self.txs = txs or []
-        self.users = users or []
-        self.tx_count = tx_count
-        self.user_count = user_count
         self.created_at = created_at or 0
+        # 以下字段不再持久化到 Redis，保留为 0 兼容旧代码
+        self.txs: List[str] = []
+        self.users: List[str] = []
+        self.tx_count: int = 0
+        self.user_count: int = 0
     
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典"""
@@ -163,10 +160,6 @@ class ClusterData:
             "base_programs": json.dumps(self.base_programs),
             "base_main_instructions": json.dumps(self.base_main_instructions),
             "base_inner_instructions": json.dumps(self.base_inner_instructions),
-            "txs": json.dumps(self.txs),
-            "users": json.dumps(self.users),
-            "tx_count": str(self.tx_count),
-            "user_count": str(self.user_count),
             "created_at": str(self.created_at),
         }
     
@@ -191,10 +184,6 @@ class ClusterData:
             base_programs=json.loads(data.get("base_programs", "[]")),
             base_main_instructions=json.loads(data.get("base_main_instructions", "[]")),
             base_inner_instructions=json.loads(data.get("base_inner_instructions", "[]")),
-            txs=json.loads(data.get("txs", "[]")),
-            users=json.loads(data.get("users", "[]")),
-            tx_count=int(data.get("tx_count", "0")),
-            user_count=int(data.get("user_count", "0")),
             created_at=float(data.get("created_at", "0")),
         )
 
@@ -211,10 +200,10 @@ async def save_cluster(cluster: ClusterData) -> bool:
     data = cluster.to_dict()
     await redis.hset(key, mapping=data)
     
-    # 更新索引（按 tx_count 排序）
-    await redis.zadd(CLUSTER_INDEX_KEY, {cluster.name: cluster.tx_count})
+    # 更新索引（按创建时间排序）
+    await redis.zadd(CLUSTER_INDEX_KEY, {cluster.name: cluster.created_at})
     
-    logger.debug(f"[cluster:redis] 保存簇组 {cluster.name[:8]}... tx_count={cluster.tx_count}")
+    logger.debug(f"[cluster:redis] 保存簇组 {cluster.name[:8]}...")
     return True
 
 
@@ -273,36 +262,6 @@ async def update_cluster_field(name: str, field: str, value: str) -> bool:
     return True
 
 
-async def add_tx_to_cluster(cluster_name: str, sig: str, user_address: str) -> bool:
-    """为簇组添加 Tx 和用户（去重）"""
-    redis = await _get_redis()
-    key = cluster_data_key(cluster_name)
-    
-    # 获取现有数据
-    txs_json = await redis.hget(key, "txs")
-    users_json = await redis.hget(key, "users")
-    
-    txs = json.loads(txs_json) if txs_json else []
-    users = json.loads(users_json) if users_json else []
-    
-    # 去重添加
-    if sig not in txs:
-        txs.append(sig)
-    if user_address not in users:
-        users.append(user_address)
-    
-    # 更新
-    await redis.hset(key, "txs", json.dumps(txs))
-    await redis.hset(key, "users", json.dumps(users))
-    await redis.hset(key, "tx_count", str(len(txs)))
-    await redis.hset(key, "user_count", str(len(users)))
-    
-    # 更新索引
-    await redis.zadd(CLUSTER_INDEX_KEY, {cluster_name: len(txs)})
-    
-    return True
-
-
 async def set_cluster_type(cluster_name: str, cluster_type: str, judgment_type: str = "system") -> bool:
     """设置簇组类型和判定类型"""
     redis = await _get_redis()
@@ -347,9 +306,9 @@ def save_cluster_sync(cluster: ClusterData) -> bool:
         data = cluster.to_dict()
         
         r.hset(key, mapping=data)
-        r.zadd(CLUSTER_INDEX_KEY, {cluster.name: cluster.tx_count})
+        r.zadd(CLUSTER_INDEX_KEY, {cluster.name: cluster.created_at})
         
-        logger.debug(f"[cluster:redis:sync] 保存簇组 {cluster.name[:8]}... tx_count={cluster.tx_count}")
+        logger.info(f"[cluster:redis:sync] 保存簇组 {cluster.name[:8]}..., key={key}")
         return True
     except Exception as e:
         logger.warning(f"[cluster:redis:sync] 保存簇组失败: {e}")
@@ -394,36 +353,9 @@ def get_enabled_clusters_sync() -> List[ClusterData]:
     return [c for c in all_clusters if c.enabled]
 
 
-def add_tx_to_cluster_sync(cluster_name: str, sig: str, user_address: str) -> bool:
-    """同步版本：为簇组添加 Tx 和用户（使用同步客户端）"""
-    try:
-        r = _get_sync_redis()
-        key = cluster_data_key(cluster_name)
-        
-        # 获取现有数据
-        txs_json = r.hget(key, "txs")
-        users_json = r.hget(key, "users")
-        
-        txs = json.loads(txs_json) if txs_json else []
-        users = json.loads(users_json) if users_json else []
-        
-        # 去重添加
-        if sig not in txs:
-            txs.append(sig)
-        if user_address not in users:
-            users.append(user_address)
-        
-        # 更新
-        r.hset(key, "txs", json.dumps(txs))
-        r.hset(key, "users", json.dumps(users))
-        r.hset(key, "tx_count", str(len(txs)))
-        r.hset(key, "user_count", str(len(users)))
-        r.zadd(CLUSTER_INDEX_KEY, {cluster_name: len(txs)})
-        
-        return True
-    except Exception as e:
-        logger.warning(f"[cluster:redis:sync] 添加交易到簇组失败: {e}")
-        return False
+def user_mint_key(mint: str, address: str) -> str:
+    """per-mint 用户持仓 key"""
+    return f"user:{mint}:{address}"
 
 
 def set_cluster_type_sync(cluster_name: str, cluster_type: str, judgment_type: str = "system") -> bool:

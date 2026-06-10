@@ -45,7 +45,7 @@ DEFAULT_SETTINGS = {
     "dealer_normal_user_programs": "", # C005 普通用户程序（JSON 对象，空则用硬编码默认值）
     "dealer_dealer_programs": "",  # C005 庄家程序（JSON 对象，空则用硬编码默认值）
     # 簇组（C006）设置
-    "cluster_enabled": "false",              # 簇组功能总开关
+    "cluster_enabled": "true",               # 簇组功能总开关
     "cluster_match_cu_enabled": "false",     # CU 匹配条件
     "cluster_match_program_enabled": "false", # 程序ID数量匹配
     "cluster_match_main_instruction_enabled": "false", # 主指令数量匹配

@@ -40,42 +40,52 @@ async def _get_metrics_key(mint: str) -> str:
 
 async def get_trader_state(redis, mint: str, address: str) -> dict:
     """
-    获取用户状态（从 user:{address} 读取）
-    仅读取 Redis 数据，不触发任何庄家检测
-    
-    Redis 数据结构：
-      user:{address}
-        status: "unknown" | "dealer" | "retail"
-        conditions: '["C001"]'
-        {mint}_holdingQty: "1000"
-        {mint}_holdingCost: "5.5"
-        {mint}_avgPrice: "0.0055"
-        {mint}_totalBuyAmount: "10"
-        {mint}_totalSellAmount: "3"
-        {mint}_totalSellPrincipal: "2.5"
+    获取用户状态（合并两个 key）：
+      user:{address}       — 全局信息（status/conditions/cluster_name/dealerExcluded）
+      user:{mint}:{address} — per-mint 持仓数据
     """
     if not redis:
         return _default_trader_state()
     
     try:
-        key = user_key(address)
-        state = await redis.hgetall(key)
+        # 读取全局信息
+        global_state = await redis.hgetall(user_key(address))
         
-        if not state:
+        # 读取 per-mint 持仓
+        from app.services.cluster.redis_keys import user_mint_key
+        mint_state = await redis.hgetall(user_mint_key(mint, address))
+        
+        if not global_state and not mint_state:
             return _default_trader_state()
         
-        # 读取 status 和 conditions
-        status = state.get("status", "unknown")
+        global_state = global_state or {}
+        mint_state = mint_state or {}
+        
+        # 读取 status 和 conditions（来自全局）
+        status = global_state.get("status", "unknown")
         try:
-            conditions = json.loads(state.get("conditions", "[]"))
+            conditions = json.loads(global_state.get("conditions", "[]"))
         except:
             conditions = []
         
-        return {
+        result = {
             "status": status,
             "conditions": conditions,
-            **{k: v for k, v in state.items() if k not in ("status", "conditions")}
+            "status_source": global_state.get("status_source", "system"),
+            "cluster_name": global_state.get("cluster_name", ""),
+            # per-mint 持仓数据
+            f"{mint}_holdingQty": mint_state.get("holdingQty", "0"),
+            f"{mint}_holdingCost": mint_state.get("holdingCost", "0"),
+            f"{mint}_avgPrice": mint_state.get("avgPrice", "0"),
+            f"{mint}_totalBuyAmount": mint_state.get("totalBuyAmount", "0"),
+            f"{mint}_totalSellAmount": mint_state.get("totalSellAmount", "0"),
+            f"{mint}_totalSellPrincipal": mint_state.get("totalSellPrincipal", "0"),
         }
+        # dealerExcluded 标记（per-mint，存在全局 key 内）
+        excluded = global_state.get(f"{mint}_dealerExcluded", "")
+        if excluded:
+            result[f"{mint}_dealerExcluded"] = excluded
+        return result
     except Exception as e:
         logger.error(f"[交易员状态] 获取失败 address={address[:8]}...: {e}", exc_info=True)
         return _default_trader_state()
@@ -150,7 +160,7 @@ async def get_trader_state_with_sig(redis, mint: str, address: str, sig: str) ->
             if stored_cluster_name:
                 # 从簇组 Redis 读取最新 cluster_type（单一数据源）
                 stored_cluster_type = "unknown"
-                from app.services.cluster.redis_keys import add_tx_to_cluster_sync, get_cluster_sync
+                from app.services.cluster.redis_keys import get_cluster_sync
                 latest = get_cluster_sync(stored_cluster_name)
                 if latest:
                     stored_cluster_type = latest.cluster_type
@@ -161,8 +171,6 @@ async def get_trader_state_with_sig(redis, mint: str, address: str, sig: str) ->
                     "cluster_name": stored_cluster_name,
                     "cluster_type": stored_cluster_type,
                 }
-                # 追加当前 sig 到簇组（已有用户的每笔新交易）
-                add_tx_to_cluster_sync(stored_cluster_name, sig, address)
 
                 # 簇组类型变更 → 同步到用户状态（非手动修改才允许覆盖）
                 if status_source != "manual" and stored_cluster_type != "unknown" and status != stored_cluster_type:
@@ -201,26 +209,37 @@ def _default_trader_state() -> dict:
 
 async def save_trader_state(redis, mint: str, address: str, state: dict):
     """
-    保存用户状态（到 user:{address}）
+    保存用户状态（拆分为两个 key）：
+      user:{address}       — 全局信息（status/conditions/cluster_name/dealerExcluded）
+      user:{mint}:{address} — per-mint 持仓数据
     """
     if not redis:
         return
     
     try:
-        key = user_key(address)
-        save_data = {
+        # 全局信息 → user:{address}
+        global_data = {
             "status": state.get("status", "unknown"),
             "conditions": json.dumps(state.get("conditions", [])),
             "status_source": state.get("status_source", "system"),
             "cluster_name": state.get("cluster_name", ""),
-            f"{mint}_holdingQty": str(state.get("holdingQty", 0)),
-            f"{mint}_holdingCost": str(state.get("holdingCost", 0)),
-            f"{mint}_avgPrice": str(state.get("avgPrice", 0)),
-            f"{mint}_totalBuyAmount": str(state.get("totalBuyAmount", 0)),
-            f"{mint}_totalSellAmount": str(state.get("totalSellAmount", 0)),
-            f"{mint}_totalSellPrincipal": str(state.get("totalSellPrincipal", 0)),
         }
-        await redis.hset(key, mapping=save_data)
+        # 庄家排除标记（per-mint）
+        if state.get(f"{mint}_dealerExcluded"):
+            global_data[f"{mint}_dealerExcluded"] = "true"
+        await redis.hset(user_key(address), mapping=global_data)
+        
+        # per-mint 持仓 → user:{mint}:{address}
+        from app.services.cluster.redis_keys import user_mint_key
+        mint_data = {
+            "holdingQty": str(state.get("holdingQty", 0)),
+            "holdingCost": str(state.get("holdingCost", 0)),
+            "avgPrice": str(state.get("avgPrice", 0)),
+            "totalBuyAmount": str(state.get("totalBuyAmount", 0)),
+            "totalSellAmount": str(state.get("totalSellAmount", 0)),
+            "totalSellPrincipal": str(state.get("totalSellPrincipal", 0)),
+        }
+        await redis.hset(user_mint_key(mint, address), mapping=mint_data)
     except Exception as e:
         logger.error(f"[保存状态] 失败 address={address[:8]}...: {e}", exc_info=True)
 
@@ -546,12 +565,6 @@ async def _calculate_index(tx_detail: Dict[str, Any], mint: str) -> Dict[str, An
         cluster_type = cluster_info.get("cluster_type", "unknown") if cluster_info else "unknown"
         cluster_tx_count = 0
         cluster_user_count = 0
-        if cluster_name:
-            from app.services.cluster.redis_keys import get_cluster_sync
-            c = get_cluster_sync(cluster_name)
-            if c:
-                cluster_tx_count = c.tx_count
-                cluster_user_count = c.user_count
         
         await ws_manager.broadcast(mint, {
             "type": "user_status",
@@ -595,7 +608,7 @@ async def _calculate_index(tx_detail: Dict[str, Any], mint: str) -> Dict[str, An
 
 
 async def exclude_dealer(mint: str, address: str):
-    """排除庄家：从汇总中减去该用户贡献"""
+    """排除庄家：从汇总中减去该用户贡献（读取 per-mint 持仓数据）"""
     redis = await _get_redis()
     
     if not redis:

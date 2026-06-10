@@ -20,7 +20,6 @@ from app.services.cluster.redis_keys import (
     get_cluster_sync,
     get_all_clusters_sync,
     get_enabled_clusters_sync,
-    add_tx_to_cluster_sync,
     get_all_clusters,
     delete_cluster,
     set_cluster_type as redis_set_cluster_type,
@@ -73,10 +72,6 @@ class ClusterManager:
             base_programs=features.programs,
             base_main_instructions=features.main_instructions,
             base_inner_instructions=features.inner_instructions,
-            txs=[features.sig],
-            users=[features.user_address],
-            tx_count=1,
-            user_count=1,
             created_at=time.time(),
         )
         

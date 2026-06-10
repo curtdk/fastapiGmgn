@@ -9,10 +9,9 @@ router = APIRouter(prefix="/admin", tags=["簇组管理"])
 
 @router.get("/api/clusters/summary")
 async def api_get_clusters_summary(mint: str = ""):
-    """获取当前 mint 的簇组摘要（按庄家/散户/未定义分组）"""
+    """获取当前 mint 的簇组摘要（按庄家/散户/未定义分组，user_count 由扫描 user:{mint}:* 动态计算）"""
     from app.services.cluster.manager import create_manager
     from app.utils.database import SessionLocal
-    from app.services.trade_processor import user_key
     from app.services.cluster.redis_keys import _get_sync_redis
     
     db = SessionLocal()
@@ -21,34 +20,36 @@ async def api_get_clusters_summary(mint: str = ""):
         clusters = await manager.get_all_clusters()
         r = _get_sync_redis()
         
+        # per-mint: 扫描 user:{mint}:* 统计每个簇组的活跃用户数
+        cluster_user_counts = {}
+        if mint:
+            cursor = 0
+            while True:
+                cursor, keys = r.scan(cursor=cursor, match=f"user:{mint}:*", count=100)
+                for key in keys:
+                    addr = key.replace(f"user:{mint}:", "")
+                    gdata = r.hgetall(f"user:{addr}")
+                    if gdata:
+                        cn = gdata.get("cluster_name", "")
+                        if cn:
+                            cluster_user_counts[cn] = cluster_user_counts.get(cn, 0) + 1
+                if cursor == 0:
+                    break
+        
         groups = {"dealer": [], "retail": [], "undefined": []}
         for c in clusters:
             ct = c.cluster_type
             if ct not in groups:
                 ct = "undefined"
             
-            # per-mint 过滤：统计当前 mint 的活跃用户数
-            active_count = 0
-            active_tx = 0
-            if mint and c.users:
-                for addr in c.users:
-                    key = user_key(addr)
-                    ustate = r.hgetall(key)
-                    if not ustate:
-                        continue
-                    holding_qty = float(ustate.get(f"{mint}_holdingQty", "0"))
-                    if holding_qty > 0:
-                        active_count += 1
-                if active_count == 0:
-                    continue  # 该簇组在当前 mint 无活跃用户，跳过
-            else:
-                active_count = c.user_count
-                active_tx = c.tx_count
+            active_count = cluster_user_counts.get(c.name, 0)
+            if mint and active_count == 0:
+                continue  # 该簇组在当前 mint 无活跃用户，跳过
             
             groups[ct].append({
                 "name": c.name,
                 "user_count": active_count,
-                "tx_count": c.tx_count,
+                "tx_count": 0,
                 "cluster_type": c.cluster_type,
                 "judgment_type": c.judgment_type,
             })
@@ -193,10 +194,10 @@ async def api_update_cluster_enabled(name: str, request: Request):
 
 
 @router.get("/api/clusters/{name}/users-detail")
-async def api_get_cluster_users_detail(name: str):
-    """获取簇组用户详情（按状态分组）"""
+async def api_get_cluster_users_detail(name: str, mint: str = ""):
+    """获取簇组用户详情（按状态分组），通过扫描 user:{mint}:* 过滤 cluster_name"""
     from app.services.cluster.redis_keys import get_cluster
-    from app.services.trade_processor import user_key, _get_redis
+    from app.services.trade_processor import _get_redis
     from urllib.parse import unquote
     
     name = unquote(name)
@@ -210,48 +211,57 @@ async def api_get_cluster_users_detail(name: str):
     retail_users = []
     unknown_users = []
     
-    if redis and cluster.users:
-        for addr in cluster.users:
-            key = user_key(addr)
-            state = await redis.hgetall(key)
-            if not state:
-                unknown_users.append(addr)
-                continue
-            
-            # 解码
-            decoded = {}
-            for k, v in state.items():
-                k_str = k.decode() if isinstance(k, bytes) else k
-                v_str = v.decode() if isinstance(v, bytes) else v
-                decoded[k_str] = v_str
-            
-            status = decoded.get("status", "unknown")
-            conditions = []
-            try:
-                conditions = json.loads(decoded.get("conditions", "[]"))
-            except:
-                pass
-            
-            user_info = {
-                "address": addr,
-                "status": status,
-                "status_source": decoded.get("status_source", "system"),
-                "conditions": conditions,
-            }
-            
-            if status == "dealer":
-                dealer_users.append(user_info)
-            elif status == "retail":
-                retail_users.append(user_info)
-            else:
-                unknown_users.append(user_info)
+    if redis:
+        # 扫描 per-mint 用户，按 cluster_name 过滤
+        if mint:
+            cursor = 0
+            while True:
+                cursor, keys = await redis.scan(cursor=cursor, match=f"user:{mint}:*", count=100)
+                for key in keys:
+                    key_str = key.decode() if isinstance(key, bytes) else key
+                    addr = key_str.replace(f"user:{mint}:", "")
+                    
+                    gdata = await redis.hgetall(f"user:{addr}")
+                    if not gdata:
+                        continue
+                    decoded = {}
+                    for k, v in gdata.items():
+                        k_str = k.decode() if isinstance(k, bytes) else k
+                        v_str = v.decode() if isinstance(v, bytes) else v
+                        decoded[k_str] = v_str
+                    
+                    if decoded.get("cluster_name") != name:
+                        continue
+                    
+                    status = decoded.get("status", "unknown")
+                    conditions = []
+                    try:
+                        conditions = json.loads(decoded.get("conditions", "[]"))
+                    except:
+                        pass
+                    
+                    user_info = {
+                        "address": addr,
+                        "status": status,
+                        "status_source": decoded.get("status_source", "system"),
+                        "conditions": conditions,
+                    }
+                    
+                    if status == "dealer":
+                        dealer_users.append(user_info)
+                    elif status == "retail":
+                        retail_users.append(user_info)
+                    else:
+                        unknown_users.append(user_info)
+                if cursor == 0:
+                    break
     
     return JSONResponse({
         "cluster_name": cluster.name,
         "cluster_type": cluster.cluster_type,
         "judgment_type": cluster.judgment_type,
-        "tx_count": cluster.tx_count,
-        "user_count": cluster.user_count,
+        "tx_count": 0,
+        "user_count": len(dealer_users) + len(retail_users) + len(unknown_users),
         "dealer_users": dealer_users,
         "dealer_count": len(dealer_users),
         "retail_users": retail_users,

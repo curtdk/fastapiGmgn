@@ -305,7 +305,7 @@ users_router = APIRouter(prefix="/admin/api", tags=["用户列表"])
 
 @users_router.get("/users")
 async def api_get_users(mint: str = ""):
-    """获取当前 mint 所有用户状态列表"""
+    """获取当前 mint 所有用户状态列表（扫描 user:{mint}:*）"""
     if not mint:
         return JSONResponse({"users": [], "total": 0})
     
@@ -318,30 +318,34 @@ async def api_get_users(mint: str = ""):
     
     try:
         users_list = []
-        # 扫描所有 user:{address} key
+        # 扫描当前 mint 的所有用户持仓 key
         cursor = 0
         while True:
-            cursor, keys = await redis.scan(cursor, match="user:*", count=100)
+            cursor, keys = await redis.scan(cursor, match=f"user:{mint}:*", count=100)
             for key in keys:
                 key_str = key.decode() if isinstance(key, bytes) else key
-                data = await redis.hgetall(key_str)
-                if not data:
-                    continue
+                address = key_str.replace(f"user:{mint}:", "")
                 
-                # 解码 bytes key
-                decoded = {}
-                for k, v in data.items():
+                # 读取 per-mint 持仓数据
+                mint_data = await redis.hgetall(key_str)
+                if not mint_data:
+                    continue
+                decoded_mint = {}
+                for k, v in mint_data.items():
                     k_str = k.decode() if isinstance(k, bytes) else k
                     v_str = v.decode() if isinstance(v, bytes) else v
-                    decoded[k_str] = v_str
+                    decoded_mint[k_str] = v_str
                 
-                # 只返回有当前 mint 持仓记录的用户
-                has_mint = any(k.startswith(f"{mint}_") for k in decoded.keys())
-                if not has_mint:
-                    continue
+                # 读取全局用户信息
+                global_data = await redis.hgetall(f"user:{address}")
+                decoded_global = {}
+                if global_data:
+                    for k, v in global_data.items():
+                        k_str = k.decode() if isinstance(k, bytes) else k
+                        v_str = v.decode() if isinstance(v, bytes) else v
+                        decoded_global[k_str] = v_str
                 
-                address = key_str.replace("user:", "")
-                cluster_name = decoded.get("cluster_name", "")
+                cluster_name = decoded_global.get("cluster_name", "")
                 cluster_type = "unknown"
                 cluster_tx_count = 0
                 cluster_user_count = 0
@@ -349,26 +353,24 @@ async def api_get_users(mint: str = ""):
                     latest = get_cluster_sync(cluster_name)
                     if latest:
                         cluster_type = latest.cluster_type
-                        cluster_tx_count = latest.tx_count
-                        cluster_user_count = latest.user_count
                 
                 conditions = []
                 try:
-                    conditions = json.loads(decoded.get("conditions", "[]"))
+                    conditions = json.loads(decoded_global.get("conditions", "[]"))
                 except:
                     pass
                 
                 users_list.append({
                     "address": address,
-                    "status": decoded.get("status", "unknown"),
-                    "status_source": decoded.get("status_source", "system"),
+                    "status": decoded_global.get("status", "unknown"),
+                    "status_source": decoded_global.get("status_source", "system"),
                     "conditions": conditions,
                     "cluster_name": cluster_name,
                     "cluster_type": cluster_type,
                     "cluster_tx_count": cluster_tx_count,
                     "cluster_user_count": cluster_user_count,
-                    "holding_qty": float(decoded.get(f"{mint}_holdingQty", "0")),
-                    "holding_cost": float(decoded.get(f"{mint}_holdingCost", "0")),
+                    "holding_qty": float(decoded_mint.get("holdingQty", "0")),
+                    "holding_cost": float(decoded_mint.get("holdingCost", "0")),
                 })
             
             if cursor == 0:

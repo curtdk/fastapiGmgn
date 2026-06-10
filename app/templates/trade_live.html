@@ -1210,7 +1210,7 @@ async function openClusterDetailModal(clusterName) {
   
   // 异步加载簇组详细用户信息
   try {
-    var resp = await fetch('/admin/api/clusters/' + encodeURIComponent(clusterName) + '/users-detail');
+    var resp = await fetch('/admin/api/clusters/' + encodeURIComponent(clusterName) + '/users-detail?mint=' + encodeURIComponent(currentMint));
     if (!resp.ok) { document.getElementById('cdmUserBody').innerHTML = '<tr><td colspan="4" class="text-center text-muted">加载失败</td></tr>'; return; }
     var detail = await resp.json();
     
