@@ -1281,7 +1281,7 @@ var _currentSummaryTab = 'dealer';
 
 function computeClusterSummary() {
   // 从 userData 按 cluster_name 分组
-  var clusters = {};  // { clusterName: { type, users: [addr], tx_count, user_count } }
+  var clusters = {};  // { clusterName: { type, users: [addr], tx_count, user_count, holding_qty } }
   var emptyCluster = 0;
   for (var addr in userData) {
     if (!userData.hasOwnProperty(addr)) continue;
@@ -1289,12 +1289,21 @@ function computeClusterSummary() {
     var cname = u.cluster_name || '';
     if (!cname) { emptyCluster++; continue; }
     if (!clusters[cname]) {
-      clusters[cname] = { type: u.cluster_type || 'undefined', users: [], tx_count: u.cluster_tx_count || 0, user_count: u.cluster_user_count || 0 };
+      clusters[cname] = { type: u.cluster_type || 'undefined', users: [], holding_qty: 0, tx_count: u.cluster_tx_count || 0, user_count: u.cluster_user_count || 0 };
     }
     if (clusters[cname].users.indexOf(addr) === -1) clusters[cname].users.push(addr);
     // 取最新的 tx_count / user_count
     if (u.cluster_tx_count) clusters[cname].tx_count = u.cluster_tx_count;
     if (u.cluster_user_count) clusters[cname].user_count = u.cluster_user_count;
+    // 累加持仓量
+    clusters[cname].holding_qty += (parseFloat(u.holding_qty) || 0);
+  }
+  
+  // 计算全局总持仓（所有 userData 的 holding_qty 总和，作为占比分母）
+  var totalHoldingQty = 0;
+  for (var addr in userData) {
+    if (!userData.hasOwnProperty(addr)) continue;
+    totalHoldingQty += (parseFloat(userData[addr].holding_qty) || 0);
   }
   
   // 按类型分组
@@ -1304,7 +1313,7 @@ function computeClusterSummary() {
     var c = clusters[cn];
     var ct = c.type;
     if (!groups[ct]) ct = 'undefined';
-    groups[ct].push({ name: cn, user_count: c.users.length, tx_count: c.tx_count });
+    groups[ct].push({ name: cn, user_count: c.users.length, holding_qty: c.holding_qty, tx_count: c.tx_count });
   }
   
   // 排序
@@ -1332,7 +1341,7 @@ function computeClusterSummary() {
       var html = '';
       for (var j = 0; j < top3.length; j++) {
         var c = top3[j];
-        var ratio = totalUsers > 0 ? (c.user_count / totalUsers * 100).toFixed(0) : 0;
+        var ratio = totalHoldingQty > 0 ? (c.holding_qty / totalHoldingQty * 100).toFixed(1) : 0;
         html += '<div>' + shortCluster(c.name) + ' (' + c.user_count + '人 ' + ratio + '%)</div>';
       }
       if (items.length > 3) html += '<div style="color:#999;">...共 ' + items.length + ' 个簇组</div>';
@@ -1379,7 +1388,7 @@ function switchClusterSummaryTab(tabType, tabEl) {
 
 function renderSummaryTab(tabType, summaryData) {
   var data = summaryData[tabType] || { count: 0, total_users: 0, clusters: [] };
-  var totalUsers = data.total_users || 0;
+  var totalHoldingQty = summaryData.total_holding_qty || 0;
   var html = '';
   
   if (data.clusters.length === 0) {
@@ -1387,7 +1396,7 @@ function renderSummaryTab(tabType, summaryData) {
   } else {
     for (var j = 0; j < data.clusters.length; j++) {
       var c = data.clusters[j];
-      var ratio = totalUsers > 0 ? (c.user_count / totalUsers * 100).toFixed(0) : 0;
+      var ratio = totalHoldingQty > 0 ? ((c.holding_qty || 0) / totalHoldingQty * 100).toFixed(1) : 0;
       var judgeLabel = c.judgment_type === 'manual' ? '<span class="badge bg-warning text-dark">手动</span>' : '<span class="badge bg-info">系统</span>';
       html += '<tr>' +
         '<td style="font-family: monospace; font-size: 11px;" title="' + c.name + '">' + c.name.slice(0, 30) + (c.name.length > 30 ? '...' : '') + '</td>' +
@@ -1405,8 +1414,8 @@ function renderSummaryTab(tabType, summaryData) {
 function openClusterDetailFromSummary(btn) {
   var clusterName = btn.getAttribute('data-cluster').replace(/&#39;/g, "'");
   var summaryModal = bootstrap.Modal.getInstance(document.getElementById('clusterSummaryModal'));
-  summaryModal.hide();
-  setTimeout(function() { openClusterDetailModal(clusterName); }, 300);
+  if (summaryModal) summaryModal.hide();
+  setTimeout(function() { openClusterDetailModal(clusterName); }, summaryModal ? 300 : 100);
 }
   </script>
 </body>

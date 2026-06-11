@@ -9,7 +9,7 @@ router = APIRouter(prefix="/admin", tags=["簇组管理"])
 
 @router.get("/api/clusters/summary")
 async def api_get_clusters_summary(mint: str = ""):
-    """获取当前 mint 的簇组摘要（按庄家/散户/未定义分组，user_count 由扫描 user:{mint}:* 动态计算）"""
+    """获取当前 mint 的簇组摘要（按庄家/散户/未定义分组，user_count 和 holding_qty 由扫描 user:{mint}:* 动态计算）"""
     from app.services.cluster.manager import create_manager
     from app.utils.database import SessionLocal
     from app.services.cluster.redis_keys import _get_sync_redis
@@ -20,8 +20,9 @@ async def api_get_clusters_summary(mint: str = ""):
         clusters = await manager.get_all_clusters()
         r = _get_sync_redis()
         
-        # per-mint: 扫描 user:{mint}:* 统计每个簇组的活跃用户数
+        # per-mint: 扫描 user:{mint}:* 统计每个簇组的活跃用户数 + 持仓量
         cluster_user_counts = {}
+        cluster_holding_qty = {}
         if mint:
             cursor = 0
             while True:
@@ -33,8 +34,16 @@ async def api_get_clusters_summary(mint: str = ""):
                         cn = gdata.get("cluster_name", "")
                         if cn:
                             cluster_user_counts[cn] = cluster_user_counts.get(cn, 0) + 1
+                            mdata = r.hgetall(key)
+                            holding = float((mdata or {}).get("holdingQty", "0"))
+                            cluster_holding_qty[cn] = cluster_holding_qty.get(cn, 0) + holding
                 if cursor == 0:
                     break
+        
+        # 读取全局总持仓量（C008 分母）
+        total_holding_qty = 0.0
+        if mint:
+            total_holding_qty = float(r.hget(f"metrics:{mint}", "total_holdingQty") or "0")
         
         groups = {"dealer": [], "retail": [], "undefined": []}
         for c in clusters:
@@ -50,6 +59,7 @@ async def api_get_clusters_summary(mint: str = ""):
                 "name": c.name,
                 "user_count": active_count,
                 "tx_count": 0,
+                "holding_qty": cluster_holding_qty.get(c.name, 0.0),
                 "cluster_type": c.cluster_type,
                 "judgment_type": c.judgment_type,
             })
@@ -64,6 +74,7 @@ async def api_get_clusters_summary(mint: str = ""):
                 "total_users": total_users,
                 "clusters": items,
             }
+        result["total_holding_qty"] = total_holding_qty
         
         return JSONResponse(result)
     finally:
