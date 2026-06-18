@@ -140,67 +140,6 @@ class TradeMonitorView(BaseView):
 
     # ===== API 端点 =====
 
-    @expose("/api/trades", methods=["GET"])
-    async def api_get_trades(self, request: Request):
-        from app.services import tx_redis
-        mint = request.query_params.get("mint", "")
-        page = int(request.query_params.get("page", 1))
-        page_size = int(request.query_params.get("page_size", 300))
-        
-        # 从 Redis 获取交易列表
-        rpc_sigs = await tx_redis.get_tx_list(mint, "rpc_fill")
-        ws_sigs = await tx_redis.get_tx_list(mint, "ws")
-        total = len(rpc_sigs) + len(ws_sigs)
-        
-        # 分页
-        start = (page - 1) * page_size
-        end = start + page_size
-        all_sigs = rpc_sigs + ws_sigs
-        paginated_sigs = all_sigs[start:end]
-        
-        trade_list = []
-        for sig in paginated_sigs:
-            tx_detail = await tx_redis.get_tx(sig)
-            if not tx_detail:
-                continue
-            trade_list.append({
-                "sig": tx_detail.get("sig", ""),
-                "slot": tx_detail.get("slot", 0),
-                "block_time": tx_detail.get("block_time"),
-                "from_address": tx_detail.get("from_address", ""),
-                "to_address": tx_detail.get("to_address", ""),
-                "amount": tx_detail.get("amount", 0),
-                "token_mint": tx_detail.get("token_mint", mint),
-                "token_symbol": tx_detail.get("token_symbol", ""),
-                "transaction_type": tx_detail.get("transaction_type", ""),
-                "dex": tx_detail.get("dex", ""),
-                "pool_address": tx_detail.get("pool_address", ""),
-                "sol_spent": round(tx_detail.get("sol_spent", 0) or 0, 6),
-                "fee": tx_detail.get("fee", 0),
-                "source": tx_detail.get("source", ""),
-                "net_sol_flow": tx_detail.get("net_sol_flow", 0.0),
-                "net_token_flow": tx_detail.get("net_token_flow", 0.0),
-                "price_per_token": tx_detail.get("price_per_token", 0.0),
-                "wallet_tag": tx_detail.get("wallet_tag"),
-                "risk_score": tx_detail.get("risk_score", 0) or 0,
-                "risk_verdict": tx_detail.get("risk_verdict", ""),
-                "risk_indicators": tx_detail.get("risk_indicators", "[]"),
-                "priority_fee": tx_detail.get("priority_fee", 0),
-                "cu_consumed": tx_detail.get("cu_consumed", 0) or 0,
-                "cu_limit": tx_detail.get("cu_limit", 200000) or 200000,
-                "cu_price": tx_detail.get("cu_price", 0) or 0,
-                "instructions_count": tx_detail.get("instructions_count", 0) or 0,
-                "inner_instructions_count": tx_detail.get("inner_instructions_count", 0) or 0,
-                "total_instruction_count": tx_detail.get("total_instruction_count", 0) or 0,
-                "account_keys_count": tx_detail.get("account_keys_count", 0) or 0,
-                "uses_lookup_table": tx_detail.get("uses_lookup_table", False) or False,
-                "signers_count": tx_detail.get("signers_count", 0) or 0,
-                "main_instructions": tx_detail.get("main_instructions", "[]"),
-                "inner_instructions": tx_detail.get("inner_instructions", "[]"),
-                "program_ids": tx_detail.get("program_ids", "[]"),
-            })
-        return JSONResponse({"trades": trade_list, "total": total, "has_more": (end < total)})
-
     @expose("/api/metrics", methods=["GET"])
     async def api_get_metrics(self, request: Request):
         mint = request.query_params.get("mint", "")

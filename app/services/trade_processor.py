@@ -645,13 +645,22 @@ async def _calculate_index(tx_detail: Dict[str, Any], mint: str) -> Dict[str, An
             "processed_at": datetime.utcnow().isoformat(),
         })
         
-        # ── 广播（非庄家交易） ──
-        # 1. 先广播 trade（让前端先显示行）
+        # ── 广播 ──
+        # 读取当前指标，随 trade 广播下发，前端无需额外 HTTP 请求
+        current_total_bet = float(await redis.hget(metrics_key, "total_bet") or 0)
+        current_realized_profit = float(await redis.hget(metrics_key, "realized_profit") or 0)
+        rpc_count = await redis.zcard(f"txlist:rpc_fill:{mint}")
+        ws_count = await redis.zcard(f"txlist:ws:{mint}")
+
         await ws_manager.broadcast(mint, {
             "type": "trade",
             "data": {
                 **tx_detail,
                 "wallet_tag": state["status"],
+                "current_bet": current_total_bet,
+                "realized_profit": current_realized_profit,
+                "current_cost": current_total_bet - current_realized_profit,
+                "trade_count": rpc_count + ws_count,
             }
         })
         

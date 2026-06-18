@@ -468,7 +468,7 @@ function updateAllDisplays() {
   document.querySelector('#metricBet').closest('.metric-card').querySelector('.label').textContent = isUsdt ? '本轮下注 (USDT)' : '本轮下注 (SOL)';
   document.querySelector('#metricCost').closest('.metric-card').querySelector('.label').textContent = isUsdt ? '本轮成本 (USDT)' : '本轮成本 (SOL)';
   document.querySelector('#metricProfit').closest('.metric-card').querySelector('.label').textContent = isUsdt ? '已落袋 (USDT)' : '已落袋 (SOL)';
-  fetchMetrics();
+  if (window._lastMetrics) updateMetrics(window._lastMetrics);
 }
 
 function fmtSolValue(solValue, decimals) {
@@ -570,6 +570,8 @@ function addTradeRow(data, isNew) {
 }
 
 function updateMetrics(data) {
+  // 缓存最近一次的原始指标数据，供切换币种时重新渲染
+  window._lastMetrics = data;
   const isUsdt = currencyMode === 'USDT';
   document.getElementById('metricBet').textContent = fmtSolValue(data.current_bet, isUsdt ? 2 : 4);
   document.getElementById('metricCost').textContent = fmtSolValue(data.current_cost, isUsdt ? 2 : 4);
@@ -597,7 +599,7 @@ function connectWS() {
     try {
       const msg = JSON.parse(evt.data);
       if (msg.type === 'status') updateStatus(msg.data);
-      else if (msg.type === 'trade') { addTradeRow(msg.data, true); fetchMetrics(); }
+      else if (msg.type === 'trade') { addTradeRow(msg.data, true); updateMetrics(msg.data); }
       else if (msg.type === 'error') alert('错误: ' + (msg.data.message || '未知'));
       else if (msg.type === 'user_status') handleUserStatus(msg.data);
       else if (msg.type === 'cluster_matched') handleClusterMatched(msg.data);
@@ -605,15 +607,6 @@ function connectWS() {
     } catch (e) { console.error('WS 消息解析失败:', e); }
   };
   ws.onclose = () => { console.log('WS 已断开'); if (currentMint) setTimeout(() => { if (currentMint) connectWS(); }, 3000); };
-}
-
-async function fetchMetrics() {
-  if (!currentMint) return;
-  try {
-    const resp = await fetch('/admin/api/metrics?mint=' + currentMint);
-    const data = await resp.json();
-    updateMetrics(data);
-  } catch (e) { console.error('获取指标失败:', e); }
 }
 
 async function startMonitor() {
@@ -866,8 +859,6 @@ function toggleStrategyPanel() {
     toggle.textContent = '▲';
   }
 }
-
-window.addEventListener('DOMContentLoaded', () => { fetchMetrics(); });
 
 function downloadTrace() {
   if (!currentMint) { alert('请先启动监控'); return; }
