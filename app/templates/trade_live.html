@@ -1114,7 +1114,11 @@ async function fetchUsers() {
 
 function upsertUserRow(data) {
   if (!data || !data.address) return;
-  userData[data.address] = data;
+  var existing = userData[data.address] || {};
+  for (var k in data) {
+    if (data.hasOwnProperty(k)) existing[k] = data[k];
+  }
+  userData[data.address] = existing;
   renderUserTable();
 }
 
