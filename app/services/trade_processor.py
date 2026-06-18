@@ -447,21 +447,56 @@ async def _calculate_index(tx_detail: Dict[str, Any], mint: str) -> Dict[str, An
         is_dealer = (state.get("status") == "dealer")
         metrics_key = await _get_metrics_key(mint)
         
-        # ========== 共用：持仓数据读取 ==========
-        holding_qty = float(state.get(f"{mint}_holdingQty", "0"))
-        holding_cost = float(state.get(f"{mint}_holdingCost", "0"))
-        avg_price = float(state.get(f"{mint}_avgPrice", "0"))
-        total_buy_amount = float(state.get(f"{mint}_totalBuyAmount", "0"))
-        total_sell_amount = float(state.get(f"{mint}_totalSellAmount", "0"))
-        total_sell_principal = float(state.get(f"{mint}_totalSellPrincipal", "0"))
+        # ========== 共用：持仓数据读取（从 user:{mint}:{address} 读取） ==========
+        from app.services.cluster.redis_keys import user_mint_key
+        mint_state = await redis.hgetall(user_mint_key(mint, address))
+        if mint_state:
+            holding_qty = float(mint_state.get("holdingQty", "0"))
+            holding_cost = float(mint_state.get("holdingCost", "0"))
+            avg_price = float(mint_state.get("avgPrice", "0"))
+            total_buy_amount = float(mint_state.get("totalBuyAmount", "0"))
+            total_sell_amount = float(mint_state.get("totalSellAmount", "0"))
+            total_sell_principal = float(mint_state.get("totalSellPrincipal", "0"))
+        else:
+            holding_qty = holding_cost = avg_price = 0.0
+            total_buy_amount = total_sell_amount = total_sell_principal = 0.0
         
         old_holding_cost = holding_cost
         old_realized = total_sell_amount - total_sell_principal
+
+        # ── ①② 交易头 + 庄家判定 + 交易前持仓 ──
+        short_addr = address[:8] + "..." if len(address) > 8 else address
+        logger.info("=" * 54)
+        logger.info(
+            "📊 [指数计算] mint=%s sig=%s type=%s address=%s",
+            mint[:8] + "...", sig, tx_type, short_addr,
+        )
+        logger.info("-" * 54)
+        logger.info(
+            "① 庄家判定: status=%s, is_dealer=%s, conditions=%s",
+            trader_status, is_dealer, tracer_conditions,
+        )
+        logger.info(
+            "② 交易前用户持仓: holdingQty=%.6f  holdingCost=%.6f  avgPrice=%.12f",
+            holding_qty, holding_cost, avg_price,
+        )
+        logger.info(
+            "   totalBuyAmount=%.6f  totalSellAmount=%.6f  totalSellPrincipal=%.6f",
+            total_buy_amount, total_sell_amount, total_sell_principal,
+        )
+        logger.info(
+            "   old_holding_cost=%.6f  old_realized=%.6f",
+            old_holding_cost, old_realized,
+        )
         
         # ========== 共用：BUY/SELL 计算 ==========
         if tx_type == "BUY":
             buy_amount = abs(sol_spent)
             buy_qty = amount
+            
+            old_qty = holding_qty
+            old_cost = holding_cost
+            old_avg = avg_price
             
             holding_qty += buy_qty
             holding_cost += buy_amount
@@ -469,13 +504,33 @@ async def _calculate_index(tx_detail: Dict[str, Any], mint: str) -> Dict[str, An
             if holding_qty > 0:
                 avg_price = holding_cost / holding_qty
             
-            logger.debug(f"[计算] {address[:8]}... BUY {buy_qty} @ {buy_amount} SOL")
+            logger.info(
+                "③ 用户指数 [BUY]: buy_qty=%.6f  buy_amount=%.6f SOL",
+                buy_qty, buy_amount,
+            )
+            logger.info(
+                "   holdingQty:   %.6f → %.6f",
+                old_qty, holding_qty,
+            )
+            logger.info(
+                "   holdingCost:  %.6f → %.6f",
+                old_cost, holding_cost,
+            )
+            logger.info(
+                "   avgPrice:     %.12f → %.12f",
+                old_avg, avg_price,
+            )
         
         elif tx_type == "SELL":
             sell_qty = abs(amount)
             sell_amount = abs(sol_spent)
             
             sell_principal = sell_qty * avg_price
+            
+            old_qty = holding_qty
+            old_cost = holding_cost
+            old_avg = avg_price
+            
             total_sell_principal += sell_principal
             total_sell_amount += sell_amount
             holding_qty -= sell_qty
@@ -490,7 +545,23 @@ async def _calculate_index(tx_detail: Dict[str, Any], mint: str) -> Dict[str, An
                 avg_price = holding_cost / holding_qty
             
             realized = sell_amount - sell_principal
-            logger.debug(f"[计算] {address[:8]}... SELL {sell_qty} @ {sell_amount} SOL, 落袋: {realized:.6f} SOL")
+            logger.info(
+                "③ 用户指数 [SELL]: sell_qty=%.6f  sell_amount=%.6f SOL  sell_principal=%.6f(=sell_qty×avgPrice)",
+                sell_qty, sell_amount, sell_principal,
+            )
+            logger.info("   落袋收益(realized)=%.6f SOL", realized)
+            logger.info(
+                "   holdingQty:   %.6f → %.6f",
+                old_qty, holding_qty,
+            )
+            logger.info(
+                "   holdingCost:  %.6f → %.6f",
+                old_cost, holding_cost,
+            )
+            logger.info(
+                "   avgPrice:     %.12f → %.12f",
+                old_avg, avg_price,
+            )
         
         # ========== 共用：保存状态 ==========
         save_data = {
@@ -510,25 +581,60 @@ async def _calculate_index(tx_detail: Dict[str, Any], mint: str) -> Dict[str, An
         await save_trader_state(redis, mint, address, save_data)
         
         # C008: 更新全局总持仓数量
+        old_total_holding_qty_before = float(
+            await redis.hget(metrics_key, "total_holdingQty") or 0
+        )
         if tx_type == "BUY":
             await redis.hincrbyfloat(metrics_key, "total_holdingQty", buy_qty)
         elif tx_type == "SELL":
             await redis.hincrbyfloat(metrics_key, "total_holdingQty", -sell_qty)
+        new_total_holding_qty = float(
+            await redis.hget(metrics_key, "total_holdingQty") or 0
+        )
+        logger.info(
+            "⑥ 全局 total_holdingQty(含庄家): %.6f → %.6f",
+            old_total_holding_qty_before, new_total_holding_qty,
+        )
         
         # ========== 分支：散户更新指标 / 庄家首次排除 ==========
         new_holding_cost = holding_cost
         new_realized = total_sell_amount - total_sell_principal
         delta_bet = new_holding_cost - old_holding_cost
         delta_profit = new_realized - old_realized
+
+        logger.info("-" * 54)
+        logger.info(
+            "④ delta: delta_bet=%.6f (=new_holding_cost %.6f - old %.6f)",
+            delta_bet, new_holding_cost, old_holding_cost,
+        )
+        logger.info(
+            "   delta_profit=%.6f (=new_realized %.6f - old %.6f)",
+            delta_profit, new_realized, old_realized,
+        )
+
+        old_total_bet = float(await redis.hget(metrics_key, "total_bet") or 0)
+        old_realized_profit = float(await redis.hget(metrics_key, "realized_profit") or 0)
         
         if not is_dealer:
             await update_metrics_delta(redis, mint, delta_bet, delta_profit)
+            new_total_bet = old_total_bet + delta_bet
+            new_realized_profit = old_realized_profit + delta_profit
+            logger.info(
+                "⑤ 全局散户指数 [更新]: total_bet %.6f → %.6f, realized_profit %.6f → %.6f",
+                old_total_bet, new_total_bet, old_realized_profit, new_realized_profit,
+            )
         else:
             dealer_excluded = state.get(f"{mint}_dealerExcluded", "")
+            logger.info(
+                "⑤ 全局散户指数 [跳过-庄家]: total_bet=%.6f(不变), realized_profit=%.6f(不变), dealerExcluded=%s",
+                old_total_bet, old_realized_profit, dealer_excluded,
+            )
             if dealer_excluded != "true":
                 await exclude_dealer(mint, address)
                 trace(mint, sig, "⑤ 庄家排除", f"address={address[:8]}..., 首次排除")
-                logger.info(f"[庄家排除] {address[:8]}... delta_bet={delta_bet}, delta_profit={delta_profit}")
+                logger.info("   ⚠ 首次排除庄家，执行 exclude_dealer()")
+            else:
+                logger.info("   已排除过庄家，跳过")
         
         # 更新 Redis 中的分析结果
         await tx_redis.update_tx_analysis(sig, {

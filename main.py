@@ -269,15 +269,25 @@ class TradeMonitorView(BaseView):
         if st: await st.stop()
         del active_monitors[mint]
 
-        # 不再删除数据库记录，只清理 Redis 内存状态
-        # from app.services.trade_processor import reset_processor
-        # db = SessionLocal()
-        # try:
-        #     await reset_processor(mint, db)
-        # finally:
-        #     db.close()
+        # 清理 Redis 中该 mint 的指标和用户持仓数据（保留 txlist）
+        from app.services.dealer_detector import _redis
+        if _redis:
+            await _redis.delete(f"metrics:{mint}")
+            cursor = 0
+            user_mint_keys = []
+            while True:
+                cursor, keys = await _redis.scan(cursor, match=f"user:{mint}:*", count=100)
+                user_mint_keys.extend(keys)
+                if cursor == 0:
+                    break
+            for key in user_mint_keys:
+                addr = key.replace(f"user:{mint}:", "")
+                await _redis.hdel(f"user:{addr}", f"{mint}_dealerExcluded")
+            if user_mint_keys:
+                await _redis.delete(*user_mint_keys)
+            logger.info(f"[清理] metrics:{mint} + {len(user_mint_keys)} 个 user key 已清除")
 
-        return JSONResponse({"message": f"已停止监听 {mint}，数据库记录已保留"})
+        return JSONResponse({"message": f"已停止监听 {mint}"})
 
     @expose("/api/settings", methods=["GET"])
     async def api_get_settings(self, request: Request):
