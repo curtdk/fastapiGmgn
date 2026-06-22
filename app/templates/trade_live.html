@@ -208,21 +208,21 @@
 
   <!-- 簇组概览 -->
   <div class="cluster-summary" id="clusterSummary" style="display:none;">
-    <div class="cluster-summary-card dealer" onclick="openClusterSummaryModal()" title="点击查看详情">
+    <div class="cluster-summary-card dealer" onclick="openClusterSummaryModal('dealer')" title="点击查看详情">
       <div class="cs-header">
         <span class="cs-title">庄簇</span>
         <span class="cs-count" id="csDealerCount">0簇 / 0人</span>
       </div>
       <div class="cs-items" id="csDealerItems"><span class="cs-empty">暂无</span></div>
     </div>
-    <div class="cluster-summary-card retail" onclick="openClusterSummaryModal()" title="点击查看详情">
+    <div class="cluster-summary-card retail" onclick="openClusterSummaryModal('retail')" title="点击查看详情">
       <div class="cs-header">
         <span class="cs-title">散户簇</span>
         <span class="cs-count" id="csRetailCount">0簇 / 0人</span>
       </div>
       <div class="cs-items" id="csRetailItems"><span class="cs-empty">暂无</span></div>
     </div>
-    <div class="cluster-summary-card undefined" onclick="openClusterSummaryModal()" title="点击查看详情">
+    <div class="cluster-summary-card undefined" onclick="openClusterSummaryModal('undefined')" title="点击查看详情">
       <div class="cs-header">
         <span class="cs-title">未定义簇</span>
         <span class="cs-count" id="csUndefinedCount">0簇 / 0人</span>
@@ -1397,7 +1397,8 @@ function computeClusterSummary() {
   }
 }
 
-async function openClusterSummaryModal() {
+async function openClusterSummaryModal(tabType) {
+  tabType = tabType || 'dealer';
   var modal = new bootstrap.Modal(document.getElementById('clusterSummaryModal'));
   modal.show();
   
@@ -1413,8 +1414,13 @@ async function openClusterSummaryModal() {
     document.getElementById('cdTabRetailCount').textContent = (_summaryData.retail || {}).count || 0;
     document.getElementById('cdTabUndefinedCount').textContent = (_summaryData.undefined || {}).count || 0;
     
-    // 默认选中 dealer tab
-    renderSummaryTab('dealer', _summaryData);
+    // 根据传入类型激活对应 tab
+    var tabs = document.querySelectorAll('#clusterSummaryModal .cd-tab');
+    for (var i = 0; i < tabs.length; i++) { tabs[i].classList.remove('active'); }
+    if (tabType === 'retail' && tabs[1]) tabs[1].classList.add('active');
+    else if (tabType === 'undefined' && tabs[2]) tabs[2].classList.add('active');
+    else if (tabs[0]) tabs[0].classList.add('active');
+    renderSummaryTab(tabType, _summaryData);
   } catch (e) {
     document.getElementById('cdSummaryTableBody').innerHTML = '<tr><td colspan="6" class="text-center text-muted">加载失败: ' + e.message + '</td></tr>';
   }
@@ -1460,9 +1466,7 @@ function renderSummaryTab(tabType, summaryData) {
 
 function openClusterDetailFromSummary(btn) {
   var clusterName = btn.getAttribute('data-cluster').replace(/&#39;/g, "'");
-  var summaryModal = bootstrap.Modal.getInstance(document.getElementById('clusterSummaryModal'));
-  if (summaryModal) summaryModal.hide();
-  setTimeout(function() { openClusterDetailModal(clusterName); }, summaryModal ? 300 : 100);
+  openClusterDetailModal(clusterName);
 }
 
 // ── 工具函数 ──
