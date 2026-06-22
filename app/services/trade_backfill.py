@@ -726,6 +726,24 @@ class TradeBackfill:
             elif abs(sol_spent) <= 0.001:
                 tx_type = "TRANSFER"
 
+            # ===== wSOL 余额变化修正 sol_spent（DEX 交易资金主力） =====
+            WSOL_MINT = "So11111111111111111111111111111111111111112"
+            wsol_pre = wsol_post = 0.0
+            for b in post_token_list:
+                if b.get("mint") == WSOL_MINT and b.get("owner") == signer:
+                    wsol_post = b.get("uiTokenAmount", {}).get("uiAmount", 0) or 0.0
+                    break
+            for b in pre_token_list:
+                if b.get("mint") == WSOL_MINT and b.get("owner") == signer:
+                    wsol_pre = b.get("uiTokenAmount", {}).get("uiAmount", 0) or 0.0
+                    break
+            wsol_delta = wsol_post - wsol_pre
+            # SELL: wSOL 到账是真正的卖入金额；BUY: wSOL 支出是真正的买入花费
+            if tx_type == "SELL" and wsol_delta > 0:
+                sol_spent = -wsol_delta
+            elif tx_type == "BUY" and wsol_delta < 0:
+                sol_spent = -wsol_delta
+
             # ===== DEX 检测 =====
             dex = ""
             pool_address = ""
