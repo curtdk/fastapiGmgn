@@ -1291,9 +1291,6 @@ async function openClusterDetailModal(clusterName) {
 }
 
 function editUserStatusFromCluster(address, currentStatus) {
-  // 隐藏簇组弹窗，打开用户状态弹窗
-  var cdmModal = bootstrap.Modal.getInstance(document.getElementById('clusterDetailModal'));
-  cdmModal.hide();
   editUserStatus(address, currentStatus);
 }
 
