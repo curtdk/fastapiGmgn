@@ -1333,9 +1333,13 @@ function computeClusterSummary() {
     var cname = u.cluster_name || '';
     if (!cname) { emptyCluster++; continue; }
     if (!clusters[cname]) {
-      clusters[cname] = { type: u.cluster_type || 'undefined', users: [], holding_qty: 0, tx_count: u.cluster_tx_count || 0, user_count: u.cluster_user_count || 0 };
+      clusters[cname] = { type: u.cluster_type || 'undefined', users: [], holding_qty: 0, tx_count: u.cluster_tx_count || 0, user_count: u.cluster_user_count || 0, dealer_count: 0, retail_count: 0, unknown_count: 0 };
     }
     if (clusters[cname].users.indexOf(addr) === -1) clusters[cname].users.push(addr);
+    // 按用户状态计数
+    if (u.status === 'dealer') clusters[cname].dealer_count++;
+    else if (u.status === 'retail') clusters[cname].retail_count++;
+    else clusters[cname].unknown_count++;
     // 取最新的 tx_count / user_count
     if (u.cluster_tx_count) clusters[cname].tx_count = u.cluster_tx_count;
     if (u.cluster_user_count) clusters[cname].user_count = u.cluster_user_count;
@@ -1357,7 +1361,7 @@ function computeClusterSummary() {
     var c = clusters[cn];
     var ct = c.type;
     if (!groups[ct]) ct = 'undefined';
-    groups[ct].push({ name: cn, user_count: c.users.length, holding_qty: c.holding_qty, tx_count: c.tx_count });
+    groups[ct].push({ name: cn, user_count: c.users.length, holding_qty: c.holding_qty, tx_count: c.tx_count, dealer_count: c.dealer_count, retail_count: c.retail_count, unknown_count: c.unknown_count });
   }
   
   // 排序
@@ -1386,7 +1390,7 @@ function computeClusterSummary() {
       for (var j = 0; j < top3.length; j++) {
         var c = top3[j];
         var ratio = totalHoldingQty > 0 ? (c.holding_qty / totalHoldingQty * 100).toFixed(1) : 0;
-        html += '<div>' + shortCluster(c.name) + ' (' + c.user_count + '人 ' + ratio + '%)</div>';
+        html += '<div>' + shortCluster(c.name) + ' (' + c.user_count + '人 庄' + (c.dealer_count||0) + ' 散' + (c.retail_count||0) + ' 未' + (c.unknown_count||0) + ' ' + ratio + '%)</div>';
       }
       if (items.length > 3) html += '<div style="color:#999;">...共 ' + items.length + ' 个簇组</div>';
       document.getElementById(t.itemsId).innerHTML = html;
