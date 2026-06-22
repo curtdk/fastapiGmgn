@@ -783,6 +783,7 @@ class TradeBackfill:
             result_data = {
                 "sig": sig,
                 "slot": slot,
+                "collected_at": datetime.utcnow().isoformat(),
                 "block_time": block_time,
                 "from_address": from_addr,
                 "to_address": to_addr,

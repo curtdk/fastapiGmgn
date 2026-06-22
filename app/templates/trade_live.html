@@ -174,21 +174,23 @@
     <!-- 交易列表列筛选 -->
     <div class="filter-bar">
       <span style="font-size:12px; color:#666; margin-right:8px;">列显示:</span>
-      <label style="margin-right:6px; font-size:12px;"><input type="checkbox" checked onchange="toggleTableColumns('tradeTable',0,this.checked)"> 类型</label>
-      <label style="margin-right:6px; font-size:12px;"><input type="checkbox" checked onchange="toggleTableColumns('tradeTable',1,this.checked)"> 钱包</label>
-      <label style="margin-right:6px; font-size:12px;"><input type="checkbox" checked onchange="toggleTableColumns('tradeTable',2,this.checked)"> 数量</label>
-      <label style="margin-right:6px; font-size:12px;"><input type="checkbox" checked onchange="toggleTableColumns('tradeTable',3,this.checked)"> 金额</label>
-      <label style="margin-right:6px; font-size:12px;"><input type="checkbox" checked onchange="toggleTableColumns('tradeTable',4,this.checked)"> 风险</label>
-      <label style="margin-right:6px; font-size:12px;"><input type="checkbox" checked onchange="toggleTableColumns('tradeTable',5,this.checked)"> 原因</label>
-      <label style="margin-right:6px; font-size:12px;"><input type="checkbox" checked onchange="toggleTableColumns('tradeTable',6,this.checked)"> CU</label>
-      <label style="margin-right:6px; font-size:12px;"><input type="checkbox" checked onchange="toggleTableColumns('tradeTable',7,this.checked)"> 簇组</label>
-      <label style="margin-right:6px; font-size:12px;"><input type="checkbox" checked onchange="toggleTableColumns('tradeTable',8,this.checked)"> 标记</label>
+      <label style="margin-right:6px; font-size:12px;"><input type="checkbox" checked onchange="toggleTableColumns('tradeTable',0,this.checked)"> 时间</label>
+      <label style="margin-right:6px; font-size:12px;"><input type="checkbox" checked onchange="toggleTableColumns('tradeTable',1,this.checked)"> 类型</label>
+      <label style="margin-right:6px; font-size:12px;"><input type="checkbox" checked onchange="toggleTableColumns('tradeTable',2,this.checked)"> 钱包</label>
+      <label style="margin-right:6px; font-size:12px;"><input type="checkbox" checked onchange="toggleTableColumns('tradeTable',3,this.checked)"> 数量</label>
+      <label style="margin-right:6px; font-size:12px;"><input type="checkbox" checked onchange="toggleTableColumns('tradeTable',4,this.checked)"> 金额</label>
+      <label style="margin-right:6px; font-size:12px;"><input type="checkbox" checked onchange="toggleTableColumns('tradeTable',5,this.checked)"> 风险</label>
+      <label style="margin-right:6px; font-size:12px;"><input type="checkbox" checked onchange="toggleTableColumns('tradeTable',6,this.checked)"> 原因</label>
+      <label style="margin-right:6px; font-size:12px;"><input type="checkbox" checked onchange="toggleTableColumns('tradeTable',7,this.checked)"> CU</label>
+      <label style="margin-right:6px; font-size:12px;"><input type="checkbox" checked onchange="toggleTableColumns('tradeTable',8,this.checked)"> 簇组</label>
+      <label style="margin-right:6px; font-size:12px;"><input type="checkbox" checked onchange="toggleTableColumns('tradeTable',9,this.checked)"> 标记</label>
     </div>
     <div class="trade-table-wrap">
       <div class="table-scroll">
         <table class="table table-sm table-hover" id="tradeTable">
           <thead>
             <tr>
+              <th class="sortable" onclick="toggleTimeMode()" style="cursor:pointer;white-space:nowrap;">时间</th>
               <th>类型</th>
               <th>钱包</th>
               <th>数量</th>
@@ -440,6 +442,7 @@ let userSortBy = '';
 let userSortAsc = true;
 let userStatusFilter = 'retail_unknown';  // 状态筛选: all | dealer | retail | unknown | retail_unknown
 let userData = {};  // address → user dict
+let timeDisplayMode = 'relative';  // 'relative' | 'absolute'
 
 function toggleShowDealer() {
   showDealer = document.getElementById('showDealerToggle').checked;
@@ -564,8 +567,23 @@ function addTradeRow(data, isNew) {
   else if (data.transaction_type === 'SELL') { typeLabel = '卖出'; typeColor = '#d63939'; }
   else { typeLabel = data.transaction_type || '-'; typeColor = '#6c757d'; }
 
+  // 时间列
+  var collectedAt = data.collected_at;
+  var timeDisplay;
+  if (timeDisplayMode === 'relative') {
+    if (collectedAt) {
+      var elapsed = Math.floor((Date.now() - new Date(collectedAt + 'Z').getTime()) / 1000);
+      timeDisplay = elapsed <= 0 ? '刚刚' : (elapsed < 60 ? elapsed + 's前' : (elapsed < 3600 ? Math.floor(elapsed/60) + 'm前' : (elapsed < 86400 ? Math.floor(elapsed/3600) + 'h前' : Math.floor(elapsed/86400) + 'd前')));
+    } else {
+      timeDisplay = '刚刚';
+    }
+  } else {
+    timeDisplay = collectedAt ? new Date(collectedAt + 'Z').toLocaleTimeString() : '-';
+  }
+
   var fullAddr = data.from_address || '';
-  tr.innerHTML = '<td style="font-weight:600; color:' + typeColor + '">' + typeLabel + '</td>' +
+  tr.innerHTML = '<td style="font-size:11px; white-space:nowrap;">' + timeDisplay + '</td>' +
+    '<td style="font-weight:600; color:' + typeColor + '">' + typeLabel + '</td>' +
     '<td style="cursor:pointer; font-family:monospace; font-size:11px" onclick="copyAddr(this)" data-addr="' + fullAddr.replace(/"/g, '&quot;') + '" title="点击复制完整地址">' + shortAddr(fullAddr) + '</td>' +
     '<td>' + fmtNum(data.amount, 2) + '</td>' +
     '<td class="' + netClass + '" style="font-weight:600">' + solDisplay + '</td>' +
@@ -1468,6 +1486,31 @@ function renderSummaryTab(tabType, summaryData) {
 function openClusterDetailFromSummary(btn) {
   var clusterName = btn.getAttribute('data-cluster').replace(/&#39;/g, "'");
   openClusterDetailModal(clusterName);
+}
+
+// ── 时间列切换 ──
+
+function toggleTimeMode() {
+  timeDisplayMode = timeDisplayMode === 'relative' ? 'absolute' : 'relative';
+  var ths = document.querySelectorAll('#tradeTable thead th');
+  if (ths[0]) ths[0].textContent = timeDisplayMode === 'relative' ? '时间' : '时间(UTC)';
+  var rows = document.querySelectorAll('#tradeBody tr');
+  for (var i = 0; i < rows.length; i++) updateTradeRowTime(rows[i]);
+}
+
+function updateTradeRowTime(tr) {
+  if (!tr._tradeData) return;
+  var td = tr.querySelector('td');
+  if (!td) return;
+  var collectedAt = tr._tradeData.collected_at;
+  if (timeDisplayMode === 'relative') {
+    if (collectedAt) {
+      var elapsed = Math.floor((Date.now() - new Date(collectedAt + 'Z').getTime()) / 1000);
+      td.textContent = elapsed <= 0 ? '刚刚' : (elapsed < 60 ? elapsed + 's前' : (elapsed < 3600 ? Math.floor(elapsed/60) + 'm前' : (elapsed < 86400 ? Math.floor(elapsed/3600) + 'h前' : Math.floor(elapsed/86400) + 'd前')));
+    } else { td.textContent = '刚刚'; }
+  } else {
+    td.textContent = collectedAt ? new Date(collectedAt + 'Z').toLocaleTimeString() : '-';
+  }
 }
 
 // ── 工具函数 ──
