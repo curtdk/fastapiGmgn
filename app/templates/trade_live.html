@@ -245,6 +245,17 @@
       <label style="margin-right:6px; font-size:12px;"><input type="checkbox" checked onchange="toggleTableColumns('userTable',5,this.checked)"> 条件</label>
       <label style="margin-right:6px; font-size:12px;"><input type="checkbox" checked onchange="toggleTableColumns('userTable',6,this.checked)"> 持仓数量</label>
       <label style="margin-right:6px; font-size:12px;"><input type="checkbox" checked onchange="toggleTableColumns('userTable',7,this.checked)"> 持仓成本</label>
+      <label style="margin-right:6px; font-size:12px;"><input type="checkbox" checked onchange="toggleTableColumns('userTable',8,this.checked)"> 总买入</label>
+      <label style="margin-right:6px; font-size:12px;"><input type="checkbox" checked onchange="toggleTableColumns('userTable',9,this.checked)"> 总卖出</label>
+      <label style="margin-right:6px; font-size:12px;"><input type="checkbox" checked onchange="toggleTableColumns('userTable',10,this.checked)"> 已卖本金</label>
+      <span style="margin-left:12px; font-size:12px; color:#666;">状态筛选:</span>
+      <select id="userStatusFilter" onchange="onUserStatusFilterChange()" style="font-size:12px; padding:1px 4px; margin-left:4px;">
+        <option value="all">全部</option>
+        <option value="dealer">庄家</option>
+        <option value="retail">散户</option>
+        <option value="unknown">未定义</option>
+        <option value="retail_unknown" selected>散户和未定义</option>
+      </select>
     </div>
     <div class="table-responsive" style="max-height: 500px; overflow-y: auto;">
       <table class="table table-sm table-striped mb-0" id="userTable">
@@ -258,6 +269,9 @@
             <th>条件</th>
             <th class="sortable" onclick="sortUsers('holding_qty')" style="cursor:pointer">持仓数量 <span id="sort-holding_qty"></span></th>
             <th class="sortable" onclick="sortUsers('holding_cost')" style="cursor:pointer">持仓成本 <span id="sort-holding_cost"></span></th>
+            <th class="sortable" onclick="sortUsers('total_buy_amount')" style="cursor:pointer">总买入 <span id="sort-total_buy_amount"></span></th>
+            <th class="sortable" onclick="sortUsers('total_sell_amount')" style="cursor:pointer">总卖出 <span id="sort-total_sell_amount"></span></th>
+            <th class="sortable" onclick="sortUsers('total_sell_principal')" style="cursor:pointer">已卖本金 <span id="sort-total_sell_principal"></span></th>
           </tr>
         </thead>
         <tbody id="userBody"></tbody>
@@ -424,6 +438,7 @@ let showDealer = false;  // 是否显示庄家交易
 let currentUserAddress = '';  // 手动修改用户状态时的地址
 let userSortBy = '';
 let userSortAsc = true;
+let userStatusFilter = 'retail_unknown';  // 状态筛选: all | dealer | retail | unknown | retail_unknown
 let userData = {};  // address → user dict
 
 function toggleShowDealer() {
@@ -1125,7 +1140,15 @@ function upsertUserRow(data) {
 function renderUserTable() {
   var users = [];
   for (var addr in userData) {
-    if (userData.hasOwnProperty(addr)) users.push(userData[addr]);
+    if (userData.hasOwnProperty(addr)) {
+      var u = userData[addr];
+      if (userStatusFilter === 'retail_unknown') {
+        if (u.status !== 'retail' && u.status !== 'unknown') continue;
+      } else if (userStatusFilter !== 'all' && u.status !== userStatusFilter) {
+        continue;
+      }
+      users.push(u);
+    }
   }
   
   // 排序
@@ -1155,12 +1178,20 @@ function renderUserTable() {
       '<td style="font-size: 11px;">' + conditionsStr + '</td>' +
       '<td>' + (u.holding_qty != null ? Number(u.holding_qty).toFixed(4) : '0') + '</td>' +
       '<td>' + (u.holding_cost != null ? Number(u.holding_cost).toFixed(6) : '0') + '</td>' +
+      '<td>' + (u.total_buy_amount != null ? Number(u.total_buy_amount).toFixed(6) : '0') + '</td>' +
+      '<td>' + (u.total_sell_amount != null ? Number(u.total_sell_amount).toFixed(6) : '0') + '</td>' +
+      '<td>' + (u.total_sell_principal != null ? Number(u.total_sell_principal).toFixed(6) : '0') + '</td>' +
       '</tr>';
   });
-  tbody.innerHTML = html || '<tr><td colspan="8" class="text-center text-muted">暂无用户</td></tr>';
+  tbody.innerHTML = html || '<tr><td colspan="11" class="text-center text-muted">暂无用户</td></tr>';
   
   // WS 事件驱动：每次用户列表渲染后更新簇组概览
   computeClusterSummary();
+}
+
+function onUserStatusFilterChange() {
+  userStatusFilter = document.getElementById('userStatusFilter').value;
+  renderUserTable();
 }
 
 function sortUsers(field) {
@@ -1171,7 +1202,7 @@ function sortUsers(field) {
     userSortAsc = true;
   }
   // 更新排序图标
-  for (var i in {address:1,status:1,status_source:1,cluster_name:1,cluster_type:1,holding_qty:1,holding_cost:1}) {
+  for (var i in {address:1,status:1,status_source:1,cluster_name:1,cluster_type:1,holding_qty:1,holding_cost:1,total_buy_amount:1,total_sell_amount:1,total_sell_principal:1}) {
     var el = document.getElementById('sort-' + i);
     if (el) el.textContent = '';
   }

@@ -372,6 +372,9 @@ async def api_get_users(mint: str = ""):
                     "cluster_user_count": cluster_user_count,
                     "holding_qty": float(decoded_mint.get("holdingQty", "0")),
                     "holding_cost": float(decoded_mint.get("holdingCost", "0")),
+                    "total_buy_amount": float(decoded_mint.get("totalBuyAmount", "0")),
+                    "total_sell_amount": float(decoded_mint.get("totalSellAmount", "0")),
+                    "total_sell_principal": float(decoded_mint.get("totalSellPrincipal", "0")),
                 })
             
             if cursor == 0:

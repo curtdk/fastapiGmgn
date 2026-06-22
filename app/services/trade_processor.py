@@ -694,6 +694,9 @@ async def _calculate_index(tx_detail: Dict[str, Any], mint: str) -> Dict[str, An
                 "cluster_user_count": cluster_user_count,
                 "holding_qty": holding_qty,
                 "holding_cost": holding_cost,
+                "total_buy_amount": total_buy_amount,
+                "total_sell_amount": total_sell_amount,
+                "total_sell_principal": total_sell_principal,
             }
         })
 
