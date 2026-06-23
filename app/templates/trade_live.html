@@ -487,6 +487,7 @@ function updateAllDisplays() {
   document.querySelector('#metricCost').closest('.metric-card').querySelector('.label').textContent = isUsdt ? '本轮成本 (USDT)' : '本轮成本 (SOL)';
   document.querySelector('#metricProfit').closest('.metric-card').querySelector('.label').textContent = isUsdt ? '已落袋 (USDT)' : '已落袋 (SOL)';
   if (window._lastMetrics) updateMetrics(window._lastMetrics);
+  renderUserTable();
 }
 
 function fmtSolValue(solValue, decimals) {
@@ -1195,10 +1196,10 @@ function renderUserTable() {
       '<td>' + getClusterTypeBadge(u.cluster_type) + '</td>' +
       '<td style="font-size: 11px;">' + conditionsStr + '</td>' +
       '<td>' + (u.holding_qty != null ? Number(u.holding_qty).toFixed(4) : '0') + '</td>' +
-      '<td>' + (u.holding_cost != null ? Number(u.holding_cost).toFixed(6) : '0') + '</td>' +
-      '<td>' + (u.total_buy_amount != null ? Number(u.total_buy_amount).toFixed(6) : '0') + '</td>' +
-      '<td>' + (u.total_sell_amount != null ? Number(u.total_sell_amount).toFixed(6) : '0') + '</td>' +
-      '<td>' + (u.total_sell_principal != null ? Number(u.total_sell_principal).toFixed(6) : '0') + '</td>' +
+      '<td>' + fmtSolValue(u.holding_cost || 0, 6) + '</td>' +
+      '<td>' + fmtSolValue(u.total_buy_amount || 0, 6) + '</td>' +
+      '<td>' + fmtSolValue(u.total_sell_amount || 0, 6) + '</td>' +
+      '<td>' + fmtSolValue(u.total_sell_principal || 0, 6) + '</td>' +
       '</tr>';
   });
   tbody.innerHTML = html || '<tr><td colspan="11" class="text-center text-muted">暂无用户</td></tr>';
