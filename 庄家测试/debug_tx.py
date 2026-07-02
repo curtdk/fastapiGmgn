@@ -1,10 +1,12 @@
 """调试脚本 - 查看 API 返回的原始数据结构"""
 import asyncio
 import json
+import os
 import httpx
+from dotenv import load_dotenv
+load_dotenv()
 
-HELIUS_RPC_URL = "https://mainnet.helius-rpc.com"
-API_KEY = "f43f1a35-863c-4c55-9a13-d00092f0ff2d"
+HELIUS_RPC_URL = os.getenv("HELIUS_RPC_URL", "https://mainnet.helius-rpc.com")
 
 DEALER_WALLET = "6EssiA1oHwrhtFAGobtSyWrh9foJVfmaXDbioihAdmh3"  # 庄家2 - 有 Sell + closeAccount
 
@@ -28,7 +30,7 @@ async def debug_transaction():
     }
     
     async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.post(f"{HELIUS_RPC_URL}/?api-key={API_KEY}", json=body)
+        resp = await client.post(HELIUS_RPC_URL, json=body)
         data = resp.json()
         
         if "error" in data:

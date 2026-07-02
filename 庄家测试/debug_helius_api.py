@@ -1,10 +1,12 @@
 """调试脚本 - 使用 Helius 增强 API"""
 import asyncio
 import json
+import os
 import httpx
+from dotenv import load_dotenv
+load_dotenv()
 
-HELIUS_RPC_URL = "https://mainnet.helius-rpc.com"
-API_KEY = "f43f1a35-863c-4c55-9a13-d00092f0ff2d"
+HELIUS_RPC_URL = os.getenv("HELIUS_RPC_URL", "https://mainnet.helius-rpc.com")
 
 DEALER2_SELL_SIG = "3aTX5VRKqnviFe8quEmj1LYpxdynwX7ZLfMVTvRDVdRPST3cDVvKP1oCr1dc1rtFhGWMcfFtEmPVrnLWvrb9vr6z"
 
@@ -31,7 +33,7 @@ async def get_helius_enriched_tx(sig: str):
     }
     
     async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.post(f"{HELIUS_RPC_URL}/?api-key={API_KEY}", json=body)
+        resp = await client.post(HELIUS_RPC_URL, json=body)
         return resp.json()
 
 
@@ -54,7 +56,7 @@ async def get_tx_with_full_logs(sig: str):
     }
     
     async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.post(f"{HELIUS_RPC_URL}/?api-key={API_KEY}", json=body)
+        resp = await client.post(HELIUS_RPC_URL, json=body)
         return resp.json()
 
 
@@ -75,7 +77,7 @@ async def get_tx_raw_response(sig: str):
     }
     
     async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.post(f"{HELIUS_RPC_URL}/?api-key={API_KEY}", json=body)
+        resp = await client.post(HELIUS_RPC_URL, json=body)
         data = resp.json()
         
         # 打印完整响应（限制长度）

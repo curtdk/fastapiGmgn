@@ -16,7 +16,11 @@ from app.websocket.manager import ws_manager
 from datetime import datetime  # 必须添加此行
 logger = logging.getLogger(__name__)
 
-HELIUS_RPC_URL = "https://mainnet.helius-rpc.com"
+# Helius RPC：URL 已含 api-key，从 .env 读取
+import os
+from dotenv import load_dotenv
+load_dotenv()
+HELIUS_RPC_URL = os.getenv("HELIUS_RPC_URL", "https://mainnet.helius-rpc.com")
 
 
 class TradeBackfill:
@@ -207,9 +211,9 @@ class TradeBackfill:
 
                     try:
                         resp = await client.post(
-                            f"{HELIUS_RPC_URL}/?api-key={api_key}",
-                            json=body
-                        )
+                                HELIUS_RPC_URL,
+                                json=body
+                            )
                         resp.raise_for_status()
                         data = resp.json()
                     except httpx.HTTPStatusError as e:
@@ -260,6 +264,7 @@ class TradeBackfill:
                         except Exception as e:
                             logger.warning(f"[回填] 处理交易失败: {e}")
                             continue
+                    abc=1
 
                     # 进度通知
                     try:
@@ -348,7 +353,7 @@ class TradeBackfill:
 
                     try:
                         resp = await client.post(
-                            f"{HELIUS_RPC_URL}/?api-key={api_key}",
+                            HELIUS_RPC_URL,
                             json=body
                         )
                         resp.raise_for_status()

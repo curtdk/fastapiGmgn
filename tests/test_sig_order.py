@@ -24,7 +24,7 @@ Base.metadata.create_all(bind=engine)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
-HELIUS_RPC_URL = "https://mainnet.helius-rpc.com"
+HELIUS_RPC_URL = os.getenv("HELIUS_RPC_URL", "https://mainnet.helius-rpc.com")
 TEST_MINT = "9hK5hP651A7GSwR7jdBD7SFoo5ut4BYLeCj1LhBipump"
 
 
@@ -58,7 +58,7 @@ async def fetch_rpc_signatures(mint: str) -> list[dict]:
             body["params"][1]["before"] = before_sig
 
         async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.post(f"{HELIUS_RPC_URL}/?api-key={api_key}", json=body)
+            resp = await client.post(HELIUS_RPC_URL, json=body)
             resp.raise_for_status()
             data = resp.json()
 
@@ -120,7 +120,7 @@ async def run_backfill(mint: str):
         api_key = get_api_key()
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.post(
-                f"{HELIUS_RPC_URL}/?api-key={api_key}",
+                HELIUS_RPC_URL,
                 json={
                     "jsonrpc": "2.0",
                     "id": 1,

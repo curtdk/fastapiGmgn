@@ -1,12 +1,14 @@
 """根据交易签名(Sig)解析交易详情并打印 Gas 费"""
 import asyncio
 import json
+import os
 import sys
 from datetime import datetime
 import httpx
+from dotenv import load_dotenv
+load_dotenv()
 
-HELIUS_RPC_URL = "https://mainnet.helius-rpc.com"
-API_KEY = "f43f1a35-863c-4c55-9a13-d00092f0ff2d"
+HELIUS_RPC_URL = os.getenv("HELIUS_RPC_URL", "https://mainnet.helius-rpc.com")
 
 
 async def get_tx_by_signature(sig: str) -> dict:
@@ -25,7 +27,7 @@ async def get_tx_by_signature(sig: str) -> dict:
     }
     
     async with httpx.AsyncClient(timeout=30.0) as client:
-        resp = await client.post(f"{HELIUS_RPC_URL}/?api-key={API_KEY}", json=body)
+        resp = await client.post(HELIUS_RPC_URL, json=body)
         data = resp.json()
         
         if "error" in data:

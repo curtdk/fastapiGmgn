@@ -78,12 +78,12 @@ def run_cluster_detection(
 ) -> ClusterDetectionResult:
     """
     同步版本：执行 C006 簇组检测
-    
+
     Args:
         db: 数据库 session
         tx_detail: 交易详情（来自 _extract_trade_info）
         mint: 代币地址
-    
+
     Returns:
         ClusterDetectionResult
     """
@@ -145,7 +145,7 @@ def run_cluster_detection(
     )
     
     logger.info(f"[C006] Tx {sig[:8]}... 无匹配，创建新簇组 {new_cluster_name[:8]}...")
-    
+
     # 返回广播数据，由上层统一广播
     broadcast_data = {
         "type": "cluster_created",

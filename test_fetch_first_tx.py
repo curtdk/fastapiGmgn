@@ -1,16 +1,18 @@
 """测试 _fetch_first_transaction 方法"""
 import asyncio
+import os
 import httpx
 import logging
+from dotenv import load_dotenv
+load_dotenv()
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
-HELIUS_RPC_URL = "https://mainnet.helius-rpc.com"
+HELIUS_RPC_URL = os.getenv("HELIUS_RPC_URL", "https://mainnet.helius-rpc.com")
 
 # 测试用地址（你可以换成有交易记录的地址）
 TEST_ADDRESS = "42BdU4C3FMymU1GN6fSDyho6EpWNyQGF2M78KNfYcxR8"
-TEST_API_KEY = "f43f1a35-863c-4c55-9a13-d00092f0ff2d"
 
 
 async def test_fetch_first_transaction():
@@ -33,13 +35,13 @@ async def test_fetch_first_transaction():
     }
     
     logger.info(f"请求地址: {TEST_ADDRESS}")
-    logger.info(f"API URL: {HELIUS_RPC_URL}/?api-key={TEST_API_KEY[:10]}...")
+    logger.info(f"API URL: {HELIUS_RPC_URL[:60]}...")
     
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
             logger.info("发送请求...")
             resp = await client.post(
-                f"{HELIUS_RPC_URL}/?api-key={TEST_API_KEY}",
+                HELIUS_RPC_URL,
                 json=body,
             )
             logger.info(f"响应状态码: {resp.status_code}")

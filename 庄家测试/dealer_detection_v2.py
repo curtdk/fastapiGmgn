@@ -6,11 +6,13 @@
 """
 import asyncio
 import json
+import os
 import httpx
 from typing import List, Dict, Optional, Tuple
+from dotenv import load_dotenv
+load_dotenv()
 
-HELIUS_RPC_URL = "https://mainnet.helius-rpc.com"
-API_KEY = "f43f1a35-863c-4c55-9a13-d00092f0ff2d"
+HELIUS_RPC_URL = os.getenv("HELIUS_RPC_URL", "https://mainnet.helius-rpc.com")
 
 # 测试钱包
 DEALER_WALLETS = [
@@ -166,7 +168,7 @@ async def get_transactions(address: str, limit: int = 10) -> List[dict]:
     }
     
     async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.post(f"{HELIUS_RPC_URL}/?api-key={API_KEY}", json=body)
+        resp = await client.post(HELIUS_RPC_URL, json=body)
         data = resp.json()
         
         if "error" in data:

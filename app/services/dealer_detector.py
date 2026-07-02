@@ -36,7 +36,10 @@ import logging
 logger = logging.getLogger(__name__)
 
 REDIS_URL = "redis://localhost:6379"
-HELIUS_RPC_URL = "https://mainnet.helius-rpc.com"
+import os
+from dotenv import load_dotenv
+load_dotenv()
+HELIUS_RPC_URL = os.getenv("HELIUS_RPC_URL", "https://mainnet.helius-rpc.com")
 
 # 模块级变量
 _redis: Optional[aioredis.Redis] = None
@@ -685,8 +688,8 @@ async def _fetch_first_transaction(address: str, api_key: str) -> Optional[dict]
             logger.info(f"[庄家判定] 发送请求到 {HELIUS_RPC_URL}（第 {attempt + 1} 次）")
             async with httpx.AsyncClient(timeout=20.0) as client:
                 resp = await client.post(
-                    f"{HELIUS_RPC_URL}/?api-key={api_key}",
-                    json=body,
+                    HELIUS_RPC_URL,
+                    json=body
                 )
             logger.info(f"[庄家判定] 收到响应 status={resp.status_code}")
             resp.raise_for_status()

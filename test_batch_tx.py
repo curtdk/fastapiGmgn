@@ -2,11 +2,13 @@
 import asyncio
 import time
 import json
+import os
 from datetime import datetime
 import httpx
+from dotenv import load_dotenv
+load_dotenv()
 
-HELIUS_RPC_URL = "https://mainnet.helius-rpc.com"
-API_KEY = "f43f1a35-863c-4c55-9a13-d00092f0ff2d"
+HELIUS_RPC_URL = os.getenv("HELIUS_RPC_URL", "https://mainnet.helius-rpc.com")
 MINT = "5AowH4Erw73DRmcwfmSv6gGizr6cedFVcvHBAJo3pump"
 
 
@@ -18,7 +20,7 @@ async def test_get_signatures():
     
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.post(
-            f"{HELIUS_RPC_URL}/?api-key={API_KEY}",
+            HELIUS_RPC_URL,
             json={
                 "jsonrpc": "2.0",
                 "id": 1,
@@ -161,7 +163,7 @@ async def test_get_transactions_with_details():
     async def fetch_tx(sig: str):
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.post(
-                f"{HELIUS_RPC_URL}/?api-key={API_KEY}",
+                HELIUS_RPC_URL,
                 json={
                     "jsonrpc": "2.0",
                     "id": 1,
@@ -231,12 +233,12 @@ async def test_concurrent_get_transactions():
         async with semaphore:
             async with httpx.AsyncClient(timeout=30) as client:
                 resp = await client.post(
-                    f"{HELIUS_RPC_URL}/?api-key={API_KEY}",
-                    json={
-                        "jsonrpc": "2.0",
-                        "id": 1,
-                        "method": "getTransaction",
-                        "params": [sig, {"encoding": "jsonParsed", "maxSupportedTransactionVersion": 0}]
+                HELIUS_RPC_URL,
+                json={
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "getTransaction",
+                    "params": [sig, {"encoding": "jsonParsed", "maxSupportedTransactionVersion": 0}]
                     }
                 )
                 data = resp.json()
@@ -322,7 +324,7 @@ async def test_fetch_all_signatures():
         start_time = time.time()
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.post(
-                f"{HELIUS_RPC_URL}/?api-key={API_KEY}",
+                HELIUS_RPC_URL,
                 json=body
             )
         elapsed = time.time() - start_time

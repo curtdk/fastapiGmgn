@@ -5,14 +5,16 @@
 """
 import asyncio
 import logging
+import os
 import httpx
 from typing import Optional
+from dotenv import load_dotenv
+load_dotenv()
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-HELIUS_RPC_URL = "https://mainnet.helius-rpc.com"
-API_KEY = "f43f1a35-863c-4c55-9a13-d00092f0ff2d"
+HELIUS_RPC_URL = os.getenv("HELIUS_RPC_URL", "https://mainnet.helius-rpc.com")
 
 # 从账户判断.md 提取的地址
 DEALER_WALLETS = [
@@ -131,7 +133,7 @@ async def fetch_first_transaction(address: str) -> Optional[dict]:
     
     try:
         async with httpx.AsyncClient(timeout=20.0) as client:
-            resp = await client.post(f"{HELIUS_RPC_URL}/?api-key={API_KEY}", json=body)
+            resp = await client.post(HELIUS_RPC_URL, json=body)
             data = resp.json()
             
             if "error" in data:

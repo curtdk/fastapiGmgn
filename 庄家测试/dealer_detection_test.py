@@ -1,11 +1,13 @@
 """庄家检测测试 - 验证新检测条件 C002/C003/C004"""
 import asyncio
 import json
+import os
 import httpx
 from typing import List, Dict, Optional
+from dotenv import load_dotenv
+load_dotenv()
 
-HELIUS_RPC_URL = "https://mainnet.helius-rpc.com"
-API_KEY = "f43f1a35-863c-4c55-9a13-d00092f0ff2d"
+HELIUS_RPC_URL = os.getenv("HELIUS_RPC_URL", "https://mainnet.helius-rpc.com")
 
 # 测试钱包
 DEALER_WALLETS = [
@@ -174,7 +176,7 @@ async def get_recent_transactions(address: str, limit: int = 5) -> List[dict]:
     }
     
     async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.post(f"{HELIUS_RPC_URL}/?api-key={API_KEY}", json=body)
+        resp = await client.post(HELIUS_RPC_URL, json=body)
         resp.raise_for_status()
         data = resp.json()
         
@@ -204,7 +206,7 @@ async def get_first_transaction(address: str) -> Optional[dict]:
     }
     
     async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.post(f"{HELIUS_RPC_URL}/?api-key={API_KEY}", json=body)
+        resp = await client.post(HELIUS_RPC_URL, json=body)
         resp.raise_for_status()
         data = resp.json()
         

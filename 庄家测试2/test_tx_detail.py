@@ -14,12 +14,14 @@
 """
 import asyncio
 import base58
+import os
 from datetime import datetime
 from typing import Dict, Any, List, Optional
 import httpx
+from dotenv import load_dotenv
+load_dotenv()
 
-HELIUS_RPC_URL = "https://mainnet.helius-rpc.com"
-API_KEY = "f43f1a35-863c-4c55-9a13-d00092f0ff2d"
+HELIUS_RPC_URL = os.getenv("HELIUS_RPC_URL", "https://mainnet.helius-rpc.com")
 
 
 
@@ -605,7 +607,7 @@ async def get_transaction_by_sig(sig: str) -> Optional[Dict[str, Any]]:
     }
     
     async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.post(f"{HELIUS_RPC_URL}/?api-key={API_KEY}", json=body)
+        resp = await client.post(HELIUS_RPC_URL, json=body)
         resp.raise_for_status()
         data = resp.json()
         
@@ -635,7 +637,7 @@ async def get_transactions_for_address(address: str, limit: int = 10) -> List[Di
     }
     
     async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.post(f"{HELIUS_RPC_URL}/?api-key={API_KEY}", json=body)
+        resp = await client.post(HELIUS_RPC_URL, json=body)
         resp.raise_for_status()
         data = resp.json()
         

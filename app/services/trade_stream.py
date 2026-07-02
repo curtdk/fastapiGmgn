@@ -16,8 +16,11 @@ from app.websocket.manager import ws_manager
 
 logger = logging.getLogger(__name__)
 
-HELIUS_WS_URL = "wss://mainnet.helius-rpc.com?api-key={api_key}"
-HELIUS_RPC_URL = "https://mainnet.helius-rpc.com"
+# Helius RPC / WS：URL 已含 api-key，从 .env 读取
+from dotenv import load_dotenv
+load_dotenv()
+HELIUS_WS_URL = os.getenv("HELIUS_WS_URL", "wss://mainnet.helius-rpc.com")
+HELIUS_RPC_URL = os.getenv("HELIUS_RPC_URL", "https://mainnet.helius-rpc.com")
 
 
 class TradeStream:

@@ -1,10 +1,12 @@
 """调试脚本 - 直接用签名查询交易"""
 import asyncio
 import json
+import os
 import httpx
+from dotenv import load_dotenv
+load_dotenv()
 
-HELIUS_RPC_URL = "https://mainnet.helius-rpc.com"
-API_KEY = "f43f1a35-863c-4c55-9a13-d00092f0ff2d"
+HELIUS_RPC_URL = os.getenv("HELIUS_RPC_URL", "https://mainnet.helius-rpc.com")
 
 # 庄家2 的 Sell 交易签名（从文档中获取）
 DEALER2_SELL_SIG = "3aTX5VRKqnviFe8quEmj1LYpxdynwX7ZLfMVTvRDVdRPST3cDVvKP1oCr1dc1rtFhGWMcfFtEmPVrnLWvrb9vr6z"
@@ -27,7 +29,7 @@ async def get_tx_by_signature(sig: str):
     }
     
     async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.post(f"{HELIUS_RPC_URL}/?api-key={API_KEY}", json=body)
+        resp = await client.post(HELIUS_RPC_URL, json=body)
         data = resp.json()
         
         if "error" in data:
@@ -114,7 +116,7 @@ async def get_wallet_txs_with_getTransaction(address: str):
     }
     
     async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.post(f"{HELIUS_RPC_URL}/?api-key={API_KEY}", json=body)
+        resp = await client.post(HELIUS_RPC_URL, json=body)
         data = resp.json()
         
         if "error" in data:

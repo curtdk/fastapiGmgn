@@ -1,11 +1,13 @@
 """测试 Helius getTransactionsForAddress - 获取钱包地址的交易详情"""
 import asyncio
 import json
+import os
 from datetime import datetime
 import httpx
+from dotenv import load_dotenv
+load_dotenv()
 
-HELIUS_RPC_URL = "https://mainnet.helius-rpc.com"
-API_KEY = "f43f1a35-863c-4c55-9a13-d00092f0ff2d"
+HELIUS_RPC_URL = os.getenv("HELIUS_RPC_URL", "https://mainnet.helius-rpc.com")
 
 # 测试钱包集合
 WALLET_ADDRESSES = [
@@ -140,7 +142,7 @@ async def get_first_transaction(wallet: str) -> dict:
     
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.post(
-            f"{HELIUS_RPC_URL}/?api-key={API_KEY}",
+            HELIUS_RPC_URL,
             json=body
         )
         resp.raise_for_status()

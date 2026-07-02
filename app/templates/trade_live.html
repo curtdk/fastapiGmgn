@@ -207,6 +207,24 @@
       </div>
     </div>
   </div>
+</div>
+
+<!-- backfill 状态提示 -->
+<div id="backfillStatus" style="display:none; position:fixed; top:10px; right:10px; z-index:9999; padding:10px 16px; background:#fff3cd; border:1px solid #ffc107; border-radius:6px; box-shadow:0 2px 8px rgba(0,0,0,0.1); min-width:280px;">
+  <div style="display:flex; align-items:center; gap:8px;">
+    <div id="backfillSpinner" style="display:inline-block; width:14px; height:14px; border:2px solid #ffc107; border-top-color:transparent; border-radius:50%; animation:spin 0.8s linear infinite;"></div>
+    <span id="backfillText" style="font-weight:600; color:#856404;">正在回填历史数据...</span>
+  </div>
+  <div style="margin-top:6px; font-size:12px; color:#856404;">
+    实时交易照常显示，<span id="backfillProgress">0/0</span>
+    <div id="backfillBarWrap" style="margin-top:4px; height:4px; background:#ffe69c; border-radius:2px; overflow:hidden;">
+      <div id="backfillBar" style="height:100%; width:0%; background:#ffc107; transition:width 0.2s;"></div>
+    </div>
+  </div>
+</div>
+<style>
+@keyframes spin { to { transform: rotate(360deg); } }
+</style>
 
   <!-- 簇组概览 -->
   <div class="cluster-summary" id="clusterSummary" style="display:none;">
@@ -526,10 +544,23 @@ function fmtNum(n, decimals = 4) {
 function addTradeRow(data, isNew) {
   // 庄家且开关关闭时，不添加行
   if (data.wallet_tag === 'dealer' && !showDealer) return;
-  
+
   const tbody = document.getElementById('tradeBody');
-  const tr = document.createElement('tr');
+  const tr = _buildTradeRow(data);
+  if (!tr) return;
   if (isNew) tr.classList.add('new-row');
+
+  if (tbody.children.length >= MAX_ROWS) tbody.removeChild(tbody.lastChild);
+  tbody.insertBefore(tr, tbody.firstChild);
+  tradeCount++;
+}
+
+// 创建交易行（仅构造 tr，不插入 DOM）— 用于批量渲染
+function _buildTradeRow(data) {
+  if (data.wallet_tag === 'dealer' && !showDealer) return null;
+
+  const tr = document.createElement('tr');
+  tr.classList.add('new-row');
 
   const netFlow = data.sol_spent || 0;
   const netClass = netFlow > 0 ? 'text-success' : (netFlow < 0 ? 'text-danger' : '');
@@ -559,7 +590,7 @@ function addTradeRow(data, isNew) {
   const solDisplay = isUsdt ? fmtSolValue(netFlow, 2) : fmtNum(netFlow, 4);
 
   const clusterName = data.cluster_name || '';
-    const clusterType = data.cluster_type || 'unknown';
+  const clusterType = data.cluster_type || 'unknown';
   const clusterTag = clusterName ? '<span class="cluster-tag ' + clusterType + '" onclick="openClusterTypeModal(\'' + clusterName + '\', \'' + clusterType + '\')" title="' + clusterName + '">' + shortCluster(clusterName) + ' ' + getClusterTypeLabel(clusterType) + '</span>' : '-';
 
   // 类型：中文 + 颜色
@@ -597,10 +628,7 @@ function addTradeRow(data, isNew) {
   tr.style.cursor = 'pointer';
   tr._tradeData = data;
   tr.addEventListener('click', function() { showTxDetail(this); });
-
-  if (tbody.children.length >= MAX_ROWS) tbody.removeChild(tbody.lastChild);
-  tbody.insertBefore(tr, tbody.firstChild);
-  tradeCount++;
+  return tr;
 }
 
 function updateMetrics(data) {
@@ -632,17 +660,79 @@ function connectWS() {
   ws.onmessage = (evt) => {
     try {
       const msg = JSON.parse(evt.data);
-      if (msg.type === 'status') updateStatus(msg.data);
-      else if (msg.type === 'trade') { addTradeRow(msg.data, true); updateMetrics(msg.data); }
-      else if (msg.type === 'error') alert('错误: ' + (msg.data.message || '未知'));
-      else if (msg.type === 'user_status') handleUserStatus(msg.data);
-      else if (msg.type === 'cluster_matched') handleClusterMatched(msg.data);
-      else if (msg.type === 'cluster_created') handleClusterMatched(msg.data);
+      if (msg.type === 'trade') {
+        // 批量合并：避免 backfill 期间消息堆积导致后端 send_text 阻塞
+        _pendingTrades.push(msg.data);
+        if (!_flushTimer) {
+          _flushTimer = setTimeout(_flushTrades, 50);
+        }
+      } else {
+        if (msg.type === 'status') updateStatus(msg.data);
+        else if (msg.type === 'error') alert('错误: ' + (msg.data.message || '未知'));
+        else if (msg.type === 'user_status') handleUserStatus(msg.data);
+        else if (msg.type === 'cluster_matched') handleClusterMatched(msg.data);
+        else if (msg.type === 'cluster_created') handleClusterMatched(msg.data);
+        else if (msg.type === 'backfill_start') _showBackfill(msg.data.total || 0);
+        else if (msg.type === 'backfill_progress') _updateBackfill(msg.data.count, msg.data.total);
+        else if (msg.type === 'backfill_done') _finishBackfill(msg.data.count);
+      }
     } catch (e) { console.error('WS 消息解析失败:', e); }
   };
-  ws.onclose = () => { console.log('WS 已断开'); if (currentMint) setTimeout(() => { if (currentMint) connectWS(); }, 3000); };
+  ws.onclose = () => { console.log('WS 已断开'); if (currentMint) setTimeout(() => { if (currentMint) connectWS(); }, 3000); }
 }
 
+// ── backfill 状态提示 ──
+function _showBackfill(total) {
+  const el = document.getElementById('backfillStatus');
+  if (el) el.style.display = 'block';
+  document.getElementById('backfillText').textContent = '正在回填历史数据...';
+  document.getElementById('backfillProgress').textContent = `0/${total || '?'}`;
+  document.getElementById('backfillBar').style.width = '0%';
+  document.getElementById('backfillSpinner').style.display = 'inline-block';
+}
+function _updateBackfill(count, total) {
+  if (!total || total <= 0) return;
+  document.getElementById('backfillProgress').textContent = `${count}/${total}`;
+  const pct = Math.min(100, (count / total) * 100);
+  document.getElementById('backfillBar').style.width = pct + '%';
+}
+function _finishBackfill(count) {
+  document.getElementById('backfillSpinner').style.display = 'none';
+  document.getElementById('backfillText').textContent = `回填完成（${count} 条）`;
+  document.getElementById('backfillBar').style.width = '100%';
+  setTimeout(() => {
+    const el = document.getElementById('backfillStatus');
+    if (el) el.style.display = 'none';
+  }, 3000);
+}
+
+// 批量渲染：50ms 内合并所有 trade 消息
+let _pendingTrades = [];
+let _flushTimer = null;
+function _flushTrades() {
+  _flushTimer = null;
+  const batch = _pendingTrades;
+  _pendingTrades = [];
+  if (batch.length === 0) return;
+  // 取最后一条的 metrics（最新指标）
+  const lastMetrics = batch[batch.length - 1];
+  // 批量插入
+  const tbody = document.getElementById('tradeBody');
+  const frag = document.createDocumentFragment();
+  for (const data of batch) {
+    const tr = _buildTradeRow(data);
+    if (tr) frag.appendChild(tr);
+  }
+  tbody.insertBefore(frag, tbody.firstChild);
+  // 限行
+  while (tbody.children.length > MAX_ROWS) tbody.removeChild(tbody.lastChild);
+  // 计数器
+  tradeCount += batch.length;
+  // 指标（只更新一次）
+  updateMetrics(lastMetrics);
+}
+
+// 把 addTradeRow 拆成"创建 tr"和"插入"两步，便于批量
 async function startMonitor() {
   const mint = document.getElementById('mintInput').value.trim();
   if (!mint) { alert('请输入 Mint 地址'); return; }

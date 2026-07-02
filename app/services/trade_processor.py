@@ -28,6 +28,11 @@ async def _get_redis():
     return _redis
 
 
+# 当前正在 backfill（全量计算）的 mint 集合
+# backfill 期间 _calculate_index 不会向 WS 广播，避免前端 DOM 堆积导致 send_text 阻塞
+_backfilling_mints: set = set()
+
+
 def user_key(address: str) -> str:
     """获取用户 Redis Key"""
     return f"user:{address}"
@@ -402,7 +407,11 @@ async def _get_dealer_conditions_detail(redis, address: str, tx_detail: dict) ->
 # 指数计算核心
 # ──────────────────────────────────────────────────────────
 
-async def _calculate_index(tx_detail: Dict[str, Any], mint: str) -> Dict[str, Any]:
+async def _calculate_index(
+    tx_detail: Dict[str, Any],
+    mint: str,
+    is_backfill: bool = False,
+) -> Dict[str, Any]:
     """
     均价法计算指数
     
@@ -422,15 +431,15 @@ async def _calculate_index(tx_detail: Dict[str, Any], mint: str) -> Dict[str, An
     sig = tx_detail.get("sig", "")
     try:
         redis = await _get_redis()
-        
+
         address = tx_detail.get("from_address", "")
         tx_type = tx_detail.get("transaction_type", "")
         sol_spent = tx_detail.get("sol_spent", 0) or 0.0
         amount = tx_detail.get("amount", 0) or 0.0
-        
+
         if not address:
             return {}
-        
+
         # ── C002-C005 + C006 庄家检测（统一入口） ──
         # 获取用户状态（内部包含 C002-C005 本地检测 + C006 簇组检测）
         result = await get_trader_state_with_sig(redis, mint, address, sig)
@@ -644,7 +653,7 @@ async def _calculate_index(tx_detail: Dict[str, Any], mint: str) -> Dict[str, An
             "wallet_tag": state["status"],
             "processed_at": datetime.utcnow().isoformat(),
         })
-        
+
         # ── 广播 ──
         # 读取当前指标，随 trade 广播下发，前端无需额外 HTTP 请求
         current_total_bet = float(await redis.hget(metrics_key, "total_bet") or 0)
@@ -652,53 +661,55 @@ async def _calculate_index(tx_detail: Dict[str, Any], mint: str) -> Dict[str, An
         rpc_count = await redis.zcard(f"txlist:rpc_fill:{mint}")
         ws_count = await redis.zcard(f"txlist:ws:{mint}")
 
-        await ws_manager.broadcast(mint, {
-            "type": "trade",
-            "data": {
-                **tx_detail,
-                "wallet_tag": state["status"],
-                "current_bet": current_total_bet,
-                "realized_profit": current_realized_profit,
-                "current_cost": current_total_bet - current_realized_profit,
-                "trade_count": rpc_count + ws_count,
-            }
-        })
-        
-        # 2. 再广播 cluster_matched（更新前端同一行的簇组标签）
-        if cluster_info:
+        # backfill 期间不发广播（避免前端 DOM 堆积 + TCP backpressure 阻塞 send_text）
+        if mint not in _backfilling_mints:
             await ws_manager.broadcast(mint, {
-                "type": "cluster_matched",
-                "data": cluster_info
+                "type": "trade",
+                "data": {
+                    **tx_detail,
+                    "wallet_tag": state["status"],
+                    "current_bet": current_total_bet,
+                    "realized_profit": current_realized_profit,
+                    "current_cost": current_total_bet - current_realized_profit,
+                    "trade_count": rpc_count + ws_count,
+                }
             })
-        
-        # 3. 最后广播新簇组创建
-        if new_cluster_broadcast:
-            await ws_manager.broadcast(mint, new_cluster_broadcast)
 
-        # 4. 广播 user_status 更新前端用户列表
-        cluster_name = state.get("cluster_name", "")
-        cluster_type = cluster_info.get("cluster_type", "unknown") if cluster_info else "unknown"
-        cluster_tx_count = 0
-        cluster_user_count = 0
-        
-        await ws_manager.broadcast(mint, {
-            "type": "user_status",
-            "data": {
-                "address": address,
-                "status": state["status"],
-                "status_source": state.get("status_source", "system"),
-                "conditions": state.get("conditions", []),
-                "cluster_name": cluster_name,
-                "cluster_type": cluster_type,
-                "cluster_tx_count": cluster_tx_count,
-                "cluster_user_count": cluster_user_count,
-                "holding_qty": holding_qty,
-                "holding_cost": holding_cost,
-                "total_buy_amount": total_buy_amount,
-                "total_sell_amount": total_sell_amount,
-                "total_sell_principal": total_sell_principal,
-            }
-        })
+            # 2. 再广播 cluster_matched（更新前端同一行的簇组标签）
+            if cluster_info:
+                await ws_manager.broadcast(mint, {
+                    "type": "cluster_matched",
+                    "data": cluster_info
+                })
+
+            # 3. 最后广播新簇组创建
+            if new_cluster_broadcast:
+                await ws_manager.broadcast(mint, new_cluster_broadcast)
+
+            # 4. 广播 user_status 更新前端用户列表
+            cluster_name = state.get("cluster_name", "")
+            cluster_type = cluster_info.get("cluster_type", "unknown") if cluster_info else "unknown"
+            cluster_tx_count = 0
+            cluster_user_count = 0
+
+            await ws_manager.broadcast(mint, {
+                "type": "user_status",
+                "data": {
+                    "address": address,
+                    "status": state["status"],
+                    "status_source": state.get("status_source", "system"),
+                    "conditions": state.get("conditions", []),
+                    "cluster_name": cluster_name,
+                    "cluster_type": cluster_type,
+                    "cluster_tx_count": cluster_tx_count,
+                    "cluster_user_count": cluster_user_count,
+                    "holding_qty": holding_qty,
+                    "holding_cost": holding_cost,
+                    "total_buy_amount": total_buy_amount,
+                    "total_sell_amount": total_sell_amount,
+                    "total_sell_principal": total_sell_principal,
+                }
+            })
 
         # ── 策略入队（根据 ifNeedDealer 过滤庄家） ──
         from app.taskcl.consumer import enqueue_trade_for_strategy, get_strategy_params
@@ -711,7 +722,7 @@ async def _calculate_index(tx_detail: Dict[str, Any], mint: str) -> Dict[str, An
             await enqueue_trade_for_strategy(tx_detail)
             trace(mint, sig, "⑥ 策略入队", f"ifNeedDealer={if_need_dealer}, is_dealer={is_dealer} → 已入队策略队列")
         else:
-            trace(mint, sig, "⑥ 策略入队→跳过", f"ifNeedDealer={if_need_dealer}, is_dealer={is_dealer} → 庄家不入队")
+            trace(mint, sig, "⑥ 策略入队→跳过", f"ifNeedDealer={ifNeedDealer}, is_dealer={is_dealer} → 庄家不入队")
 
         return {
             "holdingQty": holding_qty,
@@ -832,6 +843,15 @@ async def run_full_calculation(db: Session, mint: str):
     """全量指数计算（从 Redis 获取交易数据）"""
     logger.info(f"[全量计算] 开始计算 mint={mint}")
 
+    # backfill 期间不发 WS 广播（避免前端 DOM 堆积 + TCP backpressure 阻塞 send_text）
+    _backfilling_mints.add(mint)
+
+    # 推送 backfill 启动状态（前端显示）
+    try:
+        await ws_manager.broadcast(mint, {"type": "backfill_start", "data": {"mint": mint}})
+    except Exception:
+        pass
+
     try:
         # 从 Redis 有序集合获取交易列表（先 rpc_fill，再 ws）
         # rpc_fill 需要倒序获取（从最新到最旧），因为 backfill 时最新交易先存入
@@ -839,10 +859,18 @@ async def run_full_calculation(db: Session, mint: str):
         rpc_sigs = list(reversed(await tx_redis.get_tx_list(mint, "rpc_fill")))
         ws_sigs = await tx_redis.get_tx_list(mint, "ws")
         all_sigs = rpc_sigs + ws_sigs
+        total = len(all_sigs)
 
-        logger.info(f"[全量计算] 共 {len(all_sigs)} 条交易待处理 (rpc_fill: {len(rpc_sigs)}, ws: {len(ws_sigs)})")
+        logger.info(f"[全量计算] 共 {total} 条交易待处理 (rpc_fill: {len(rpc_sigs)}, ws: {len(ws_sigs)})")
 
-        for sig in all_sigs:
+        # 推送总条数
+        try:
+            await ws_manager.broadcast(mint, {"type": "backfill_progress", "data": {"count": 0, "total": total}})
+        except Exception:
+            pass
+
+        _last_progress = 0
+        for idx, sig in enumerate(all_sigs, start=1):
             try:
                 # 从 Redis 获取交易详情
                 tx_detail = await tx_redis.get_tx(sig)
@@ -850,14 +878,32 @@ async def run_full_calculation(db: Session, mint: str):
                     continue
 
                 # 指数计算 + 统一广播（内部完成）
-                await _calculate_index(tx_detail, mint)
+                # backfill 交易：标记 is_backfill=True，不发 WS 广播（避免前端 DOM 堆积）
+                await _calculate_index(tx_detail, mint, is_backfill=True)
+
+                # 每 50 条或末尾推一次进度
+                if idx - _last_progress >= 50 or idx == total:
+                    try:
+                        await ws_manager.broadcast(mint, {"type": "backfill_progress", "data": {"count": idx, "total": total}})
+                    except Exception:
+                        pass
+                    _last_progress = idx
 
             except Exception as e:
                 logger.error(f"[全量计算] 处理 {sig[:8]}... 失败: {e}")
+        abc=2
 
         logger.info(f"[全量计算] 完成 mint={mint}")
+
+        # 推送 backfill 完成
+        try:
+            await ws_manager.broadcast(mint, {"type": "backfill_done", "data": {"count": total, "mint": mint}})
+        except Exception:
+            pass
     except Exception as e:
         logger.error(f"[全量计算] 异常 mint={mint[:8]}...: {e}", exc_info=True)
+    finally:
+        _backfilling_mints.discard(mint)
 
 
 async def reset_processor(mint: str, db: Session):
