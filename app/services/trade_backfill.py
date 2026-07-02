@@ -178,7 +178,7 @@ class TradeBackfill:
         max_total = 50000
         total_saved = 0
         # 批次间限速间隔（秒）：给 dealer_detector 等其他请求留出带宽
-        _BACKFILL_INTERVAL = 0.2
+        _BACKFILL_INTERVAL = 0.1
 
         api_key = self._get_api_key()
         if not api_key:
@@ -782,9 +782,6 @@ class TradeBackfill:
             # ===== 新增：风险分析 =====
             risk_info = self._analyze_risk(instruction_details, priority_fee)
 
-            # JSON 序列化列表字段
-            import json
-            
             result_data = {
                 "sig": sig,
                 "slot": slot,

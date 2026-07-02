@@ -674,7 +674,7 @@ function connectWS() {
         else if (msg.type === 'cluster_created') handleClusterMatched(msg.data);
         else if (msg.type === 'backfill_start') _showBackfill(msg.data.total || 0);
         else if (msg.type === 'backfill_progress') _updateBackfill(msg.data.count, msg.data.total);
-        else if (msg.type === 'backfill_done') _finishBackfill(msg.data.count);
+        else if (msg.type === 'backfill_done') _finishBackfill(msg.data.count, msg.data);
       }
     } catch (e) { console.error('WS 消息解析失败:', e); }
   };
@@ -696,7 +696,40 @@ function _updateBackfill(count, total) {
   const pct = Math.min(100, (count / total) * 100);
   document.getElementById('backfillBar').style.width = pct + '%';
 }
-function _finishBackfill(count) {
+function _finishBackfill(count, data) {
+  // 数据可能在 _pendingTrades 中（如果 backfill 完成时有 trade 正在缓冲）
+  // 先 flush 掉，再处理 backfill_done 自己的数据
+  if (_flushTimer) {
+    clearTimeout(_flushTimer);
+    _flushTimer = null;
+  }
+  if (_pendingTrades.length > 0) {
+    _flushTrades();
+  }
+  // backfill_done 中可能带 metrics + recent_trades
+  if (data && data.metrics) {
+    updateMetrics({
+      current_bet: data.metrics.total_bet || 0,
+      realized_profit: data.metrics.realized_profit || 0,
+      current_cost: (data.metrics.total_bet || 0) - (data.metrics.realized_profit || 0),
+      trade_count: data.metrics.trade_count || 0,
+    });
+  }
+  // recent_trades 渲染（一次性插入）
+  if (data && data.recent_trades && data.recent_trades.length > 0) {
+    const tbody = document.getElementById('tradeBody');
+    // 清空旧内容（避免重复）
+    tbody.innerHTML = '';
+    tradeCount = 0;
+    // 倒序遍历：最新的显示在最上面
+    const frag = document.createDocumentFragment();
+    for (let i = data.recent_trades.length - 1; i >= 0; i--) {
+      const tr = _buildTradeRow(data.recent_trades[i]);
+      if (tr) frag.appendChild(tr);
+    }
+    tbody.appendChild(frag);
+    tradeCount = data.recent_trades.length;
+  }
   document.getElementById('backfillSpinner').style.display = 'none';
   document.getElementById('backfillText').textContent = `回填完成（${count} 条）`;
   document.getElementById('backfillBar').style.width = '100%';

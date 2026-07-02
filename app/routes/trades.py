@@ -226,23 +226,29 @@ async def start_monitor(mint: str, db: Session = Depends(get_db)):
 
 
 @router.post("/{mint}/stop")
-async def stop_monitor(mint: str):
+async def stop_monitor(mint: str, db: Session = Depends(get_db)):
     """停止监听"""
     monitor = active_monitors.get(mint)
-    if not monitor:
-        return {"message": "未运行"}
 
-    backfill = monitor.get("backfill")
-    stream = monitor.get("stream")
+    backfill = monitor.get("backfill") if monitor else None
+    stream = monitor.get("stream") if monitor else None
 
     if backfill:
         backfill.stop()
     if stream:
         await stream.stop()
 
+    # 强制停掉 trade_processor 里的 _consumer_task（避免和 backfill 并发）
+    try:
+        from app.services.trade_processor import reset_processor
+        await reset_processor(mint, db)
+    except Exception as e:
+        logger.warning(f"[停止监听] 清理消费者失败（可忽略）: {e}")
+
     from app.services.trade_tracer import end_session
     end_session(mint)
-    del active_monitors[mint]
+    if monitor:
+        del active_monitors[mint]
     return {"message": f"已停止监听 {mint}"}
 
 

@@ -857,11 +857,11 @@ async def run_full_calculation(db: Session, mint: str):
         # rpc_fill 需要倒序获取（从最新到最旧），因为 backfill 时最新交易先存入
         # 然后反转得到从旧到新的顺序，保证指数计算从最早的交易开始
         rpc_sigs = list(reversed(await tx_redis.get_tx_list(mint, "rpc_fill")))
-        ws_sigs = await tx_redis.get_tx_list(mint, "ws")
-        all_sigs = rpc_sigs + ws_sigs
+        # ws 实时交易由 _consumer_loop 单独处理（不重复计算）
+        all_sigs = rpc_sigs
         total = len(all_sigs)
 
-        logger.info(f"[全量计算] 共 {total} 条交易待处理 (rpc_fill: {len(rpc_sigs)}, ws: {len(ws_sigs)})")
+        logger.info(f"[全量计算] 共 {total} 条历史交易待处理 (ws 实时由消费者处理)")
 
         # 推送总条数
         try:
@@ -870,6 +870,8 @@ async def run_full_calculation(db: Session, mint: str):
             pass
 
         _last_progress = 0
+        # 记录 backfill 实际处理的 sig 顺序（指数计算依赖此顺序）
+        _processed_sigs: list = []
         for idx, sig in enumerate(all_sigs, start=1):
             try:
                 # 从 Redis 获取交易详情
@@ -880,6 +882,8 @@ async def run_full_calculation(db: Session, mint: str):
                 # 指数计算 + 统一广播（内部完成）
                 # backfill 交易：标记 is_backfill=True，不发 WS 广播（避免前端 DOM 堆积）
                 await _calculate_index(tx_detail, mint, is_backfill=True)
+                # 记录已处理的 sig 顺序（用于 backfill_done 取最近 N 笔）
+                _processed_sigs.append(sig)
 
                 # 每 50 条或末尾推一次进度
                 if idx - _last_progress >= 50 or idx == total:
@@ -895,11 +899,72 @@ async def run_full_calculation(db: Session, mint: str):
 
         logger.info(f"[全量计算] 完成 mint={mint}")
 
-        # 推送 backfill 完成
+        # 推送 backfill 完成（含最终指数 + 最近 100 笔交易）
         try:
-            await ws_manager.broadcast(mint, {"type": "backfill_done", "data": {"count": total, "mint": mint}})
-        except Exception:
-            pass
+            # 0. 获取 redis 连接
+            redis = await _get_redis()
+            # 1. 读最终指标
+            metrics_key = f"metrics:{mint}"
+            metrics_raw = await redis.hgetall(metrics_key)
+            trade_count_total = int(metrics_raw.get("trade_count", total))
+            metrics_payload = {
+                "total_bet": float(metrics_raw.get("total_bet", 0) or 0),
+                "realized_profit": float(metrics_raw.get("realized_profit", 0) or 0),
+                "total_holdingQty": float(metrics_raw.get("total_holdingQty", 0) or 0),
+                "trade_count": trade_count_total,
+            }
+
+            # 2. 取最近 100 笔交易
+            # 顺序原则：复用 backfill 实际处理的 sig 顺序（_processed_sigs）
+            # 末尾 100 笔 = "最新一批"（指数计算最后处理的）
+            # 前端展示时倒序遍历：最新的显示在最上面
+            RECENT_TRADES_LIMIT = 100
+            recent_sigs: list = []
+            if RECENT_TRADES_LIMIT > 0 and _processed_sigs:
+                recent_sigs = _processed_sigs[-RECENT_TRADES_LIMIT:]
+
+            # 3. 批量取详情
+            txs_map = await tx_redis.get_tx_batch(recent_sigs) if recent_sigs else {}
+            # 按 recent_sigs 顺序输出，去掉前端不用的超大字段
+            recent_trades = []
+            # 前端 _buildTradeRow 需要的字段：
+            #   sig, from_address, to_address, amount, token_symbol, transaction_type,
+            #   sol_spent, cu_consumed, cu_limit, risk_score, risk_indicators,
+            #   collected_at, wallet_tag, cluster_name, cluster_type
+            # 其余 raw_data / instructions 等大字段全部去掉
+            _DROP_FIELDS = (
+                "_raw", "cluster_info", "user_status", "new_cluster_broadcast",
+                "raw_data", "main_instructions", "inner_instructions", "program_ids",
+                "account_keys_count", "signers_count", "total_instruction_count",
+                "uses_lookup_table", "instructions_count", "inner_instructions_count",
+            )
+            for s in recent_sigs:
+                tx = txs_map.get(s)
+                if tx:
+                    for k in _DROP_FIELDS:
+                        tx.pop(k, None)
+                    # 截断 risk_indicators（一般很长，截前 3 项即可）
+                    ri = tx.get("risk_indicators")
+                    if isinstance(ri, list) and len(ri) > 3:
+                        tx["risk_indicators"] = ri[:3]
+                    recent_trades.append(tx)
+
+            await ws_manager.broadcast(mint, {
+                "type": "backfill_done",
+                "data": {
+                    "count": total,
+                    "mint": mint,
+                    "metrics": metrics_payload,
+                    "recent_trades": recent_trades,
+                }
+            })
+        except Exception as e:
+            logger.warning(f"[全量计算] 推送 backfill_done 失败（不影响业务）: {e}")
+            # 失败时退回到最小 payload
+            try:
+                await ws_manager.broadcast(mint, {"type": "backfill_done", "data": {"count": total, "mint": mint}})
+            except Exception:
+                pass
     except Exception as e:
         logger.error(f"[全量计算] 异常 mint={mint[:8]}...: {e}", exc_info=True)
     finally:
