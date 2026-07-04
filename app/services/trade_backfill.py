@@ -180,10 +180,10 @@ class TradeBackfill:
         # 批次间限速间隔（秒）：给 dealer_detector 等其他请求留出带宽
         _BACKFILL_INTERVAL = 0.1
 
-        api_key = self._get_api_key()
-        if not api_key:
-            logger.error("[回填] API Key 为空，跳过回填")
-            return 0
+        # api_key = self._get_api_key()
+        # if not api_key:
+        #     logger.error("[回填] API Key 为空，跳过回填")
+        #     return 0
 
         try:
             # 复用同一个 AsyncClient，避免每次分页都新建 TCP 连接
@@ -325,11 +325,6 @@ class TradeBackfill:
         max_total = 50000  # 测试模式下限制获取数量
         total_saved = 0
         _BACKFILL_INTERVAL = 0.2
-
-        api_key = self._get_api_key()
-        if not api_key:
-            logger.error("[回填] API Key 为空，跳过回填")
-            return 0
 
         try:
             async with httpx.AsyncClient(timeout=60) as client:

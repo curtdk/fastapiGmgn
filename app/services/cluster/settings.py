@@ -9,7 +9,7 @@ import logging
 from typing import Optional
 
 from sqlalchemy.orm import Session
-
+ 
 from app.services.settings_service import get_setting, get_int_setting, get_float_setting
 
 logger = logging.getLogger(__name__)
