@@ -8,7 +8,7 @@ Redis 数据结构：
   - name: 簇组名称（首个钱包地址）
   - folder: 所属文件夹（默认空）
   - enabled: "true"/"false"
-  - cluster_type: "undefined"/"retail"/"dealer"
+  - cluster_type: "unknown"/"retail"/"dealer"
   - judgment_type: "system"/"manual"
   - base_transaction_type: 交易类型（BUY/SELL）
   - base_programs: JSON，程序ID列表（保序）
@@ -145,7 +145,7 @@ class ClusterData:
             name=data.get("name", ""),
             folder=data.get("folder", ""),
             enabled=data.get("enabled", "true") == "true",
-            cluster_type=data.get("cluster_type", "undefined"),
+            cluster_type=data.get("cluster_type", "unknown"),
             judgment_type=data.get("judgment_type", "system"),
             base_transaction_type=data.get("base_transaction_type", ""),
             base_programs=json.loads(data.get("base_programs", "[]")),

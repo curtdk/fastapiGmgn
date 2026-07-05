@@ -35,6 +35,7 @@
     .cluster-tag.dealer { background: #f8d7da; color: #721c24; }
     .cluster-tag.unknown { background: #e9ecef; color: #495057; }
     .cluster-tag.undefined { background: #e9ecef; color: #495057; }
+    /* 兼容 .unknown 别名（新代码用 unknown，旧代码可能用 undefined） */
     .filter-bar { padding: 6px 12px; background: #f8f9fa; border-bottom: 1px solid #dee2e6; display: flex; align-items: center; flex-wrap: wrap; gap: 2px; }
     .cluster-tag:hover { opacity: 0.8; }
     
@@ -51,7 +52,9 @@
     .cluster-summary-card.dealer .cs-title { color: #d63939; }
     .cluster-summary-card.retail { border-left: 3px solid #2fb344; }
     .cluster-summary-card.retail .cs-title { color: #2fb344; }
+    .cluster-summary-card.unknown,
     .cluster-summary-card.undefined { border-left: 3px solid #adb5bd; }
+    .cluster-summary-card.unknown .cs-title,
     .cluster-summary-card.undefined .cs-title { color: #6c757d; }
     
     /* 簇组详情弹窗 */
@@ -242,7 +245,7 @@
       </div>
       <div class="cs-items" id="csRetailItems"><span class="cs-empty">暂无</span></div>
     </div>
-    <div class="cluster-summary-card undefined" onclick="openClusterSummaryModal('undefined')" title="点击查看详情">
+    <div class="cluster-summary-card unknown" onclick="openClusterSummaryModal('unknown')" title="点击查看详情">
       <div class="cs-header">
         <span class="cs-title">未定义簇</span>
         <span class="cs-count" id="csUndefinedCount">0簇 / 0人</span>
@@ -311,7 +314,7 @@
           <div class="cd-tabs">
             <button class="cd-tab active" onclick="switchClusterSummaryTab('dealer', this)">庄簇 (<span id="cdTabDealerCount">0</span>)</button>
             <button class="cd-tab" onclick="switchClusterSummaryTab('retail', this)">散户簇 (<span id="cdTabRetailCount">0</span>)</button>
-            <button class="cd-tab" onclick="switchClusterSummaryTab('undefined', this)">未定义 (<span id="cdTabUndefinedCount">0</span>)</button>
+            <button class="cd-tab" onclick="switchClusterSummaryTab('unknown', this)">未定义 (<span id="cdTabUndefinedCount">0</span>)</button>
           </div>
           <div class="cd-table-wrap">
             <table class="table table-sm table-striped cd-table mb-0">
@@ -1405,7 +1408,7 @@ async function openClusterDetailModal(clusterName) {
     var detail = await resp.json();
     
     // 更新类型下拉
-    document.getElementById('cdmClusterTypeSelect').value = detail.cluster_type || 'undefined';
+    document.getElementById('cdmClusterTypeSelect').value = detail.cluster_type || 'unknown';
     
     // 统计
     document.getElementById('cdmClusterStats').innerHTML =
@@ -1476,7 +1479,7 @@ function computeClusterSummary() {
     var cname = u.cluster_name || '';
     if (!cname) { emptyCluster++; continue; }
     if (!clusters[cname]) {
-      clusters[cname] = { type: u.cluster_type || 'undefined', users: [], holding_qty: 0, tx_count: u.cluster_tx_count || 0, user_count: u.cluster_user_count || 0, dealer_count: 0, retail_count: 0, unknown_count: 0 };
+      clusters[cname] = { type: u.cluster_type || 'unknown', users: [], holding_qty: 0, tx_count: u.cluster_tx_count || 0, user_count: u.cluster_user_count || 0, dealer_count: 0, retail_count: 0, unknown_count: 0 };
     }
     if (clusters[cname].users.indexOf(addr) === -1) clusters[cname].users.push(addr);
     // 按用户状态计数
@@ -1498,12 +1501,12 @@ function computeClusterSummary() {
   }
   
   // 按类型分组
-  var groups = { dealer: [], retail: [], undefined: [] };
+  var groups = { dealer: [], retail: [], unknown: [] };
   for (var cn in clusters) {
     if (!clusters.hasOwnProperty(cn)) continue;
     var c = clusters[cn];
     var ct = c.type;
-    if (!groups[ct]) ct = 'undefined';
+    if (!groups[ct]) ct = 'unknown';
     groups[ct].push({ name: cn, user_count: c.users.length, holding_qty: c.holding_qty, tx_count: c.tx_count, dealer_count: c.dealer_count, retail_count: c.retail_count, unknown_count: c.unknown_count });
   }
   
@@ -1514,7 +1517,7 @@ function computeClusterSummary() {
   var types = [
     { key: 'dealer', countId: 'csDealerCount', itemsId: 'csDealerItems' },
     { key: 'retail', countId: 'csRetailCount', itemsId: 'csRetailItems' },
-    { key: 'undefined', countId: 'csUndefinedCount', itemsId: 'csUndefinedItems' },
+    { key: 'unknown', countId: 'csUndefinedCount', itemsId: 'csUndefinedItems' },
   ];
   
   for (var i = 0; i < types.length; i++) {
@@ -1556,13 +1559,13 @@ async function openClusterSummaryModal(tabType) {
     // 更新 tab 计数
     document.getElementById('cdTabDealerCount').textContent = (_summaryData.dealer || {}).count || 0;
     document.getElementById('cdTabRetailCount').textContent = (_summaryData.retail || {}).count || 0;
-    document.getElementById('cdTabUndefinedCount').textContent = (_summaryData.undefined || {}).count || 0;
+    document.getElementById('cdTabUndefinedCount').textContent = (_summaryData.unknown || {}).count || 0;
     
     // 根据传入类型激活对应 tab
     var tabs = document.querySelectorAll('#clusterSummaryModal .cd-tab');
     for (var i = 0; i < tabs.length; i++) { tabs[i].classList.remove('active'); }
     if (tabType === 'retail' && tabs[1]) tabs[1].classList.add('active');
-    else if (tabType === 'undefined' && tabs[2]) tabs[2].classList.add('active');
+    else if (tabType === 'unknown' && tabs[2]) tabs[2].classList.add('active');
     else if (tabs[0]) tabs[0].classList.add('active');
     renderSummaryTab(tabType, _summaryData);
   } catch (e) {

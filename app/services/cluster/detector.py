@@ -130,7 +130,7 @@ def run_cluster_detection(
             return ClusterDetectionResult(
                 matched=True,
                 cluster=cluster,
-                cluster_type=cluster.cluster_type,  # undefined
+                cluster_type=cluster.cluster_type,  # unknown/retail/dealer
                 judgment_type=cluster.judgment_type,
                 should_continue_detection=True,  # 继续 C001-C005
                 created_new_cluster=False,

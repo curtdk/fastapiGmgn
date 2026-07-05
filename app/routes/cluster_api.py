@@ -45,16 +45,14 @@ async def api_get_clusters_summary(mint: str = ""):
         if mint:
             total_holding_qty = float(r.hget(f"metrics:{mint}", "total_holdingQty") or "0")
         
-        groups = {"dealer": [], "retail": [], "undefined": []}
+        groups = {"dealer": [], "retail": [], "unknown": []}
         for c in clusters:
             ct = c.cluster_type
             if ct not in groups:
-                ct = "undefined"
-            
+                ct = "unknown"
+
             active_count = cluster_user_counts.get(c.name, 0)
-            if mint and active_count == 0:
-                continue  # 该簇组在当前 mint 无活跃用户，跳过
-            
+
             groups[ct].append({
                 "name": c.name,
                 "user_count": active_count,
@@ -63,9 +61,9 @@ async def api_get_clusters_summary(mint: str = ""):
                 "cluster_type": c.cluster_type,
                 "judgment_type": c.judgment_type,
             })
-        
+
         result = {}
-        for key in ("dealer", "retail", "undefined"):
+        for key in ("dealer", "retail", "unknown"):
             items = groups[key]
             total_users = sum(item["user_count"] for item in items)
             items.sort(key=lambda x: x["user_count"], reverse=True)
