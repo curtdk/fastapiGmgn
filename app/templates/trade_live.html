@@ -227,6 +227,24 @@
 </div>
 <style>
 @keyframes spin { to { transform: rotate(360deg); } }
+.user-stat-sub {
+    font-size: 12px;
+    color: #888;
+    padding: 4px 8px;
+    background: #f8f9fa;
+    border-radius: 4px;
+    margin-bottom: 6px;
+    display: inline-block;
+    margin-right: 8px;
+  }
+.user-stat-sub:hover {
+    background: #eef2f7;
+  }
+.user-stat-sub span {
+    font-weight: 600;
+    color: #4263eb;
+    margin-left: 4px;
+  }
 </style>
 
   <!-- 簇组概览 -->
@@ -280,6 +298,7 @@
         <option value="retail_unknown" selected>散户和未定义</option>
       </select>
     </div>
+    <div class="user-stat-sub">持仓用户 <span id="userStatHolding">0</span></div>
     <div class="table-responsive" style="max-height: 500px; overflow-y: auto;">
       <table class="table table-sm table-striped mb-0" id="userTable">
         <thead class="table-dark" style="position: sticky; top: 0; z-index: 1;">
@@ -1309,6 +1328,13 @@ function renderUserTable() {
   }
   
   document.getElementById('userCount').textContent = users.length;
+  // 持仓用户统计 (holding_qty > 0)，不增加额外遍历（用 userData 全量）
+  var holdingCount = 0;
+  for (var _addr in userData) {
+    if (userData.hasOwnProperty(_addr) && (parseFloat(userData[_addr].holding_qty) || 0) > 0) holdingCount++;
+  }
+  var _hEl = document.getElementById('userStatHolding');
+  if (_hEl) _hEl.textContent = holdingCount;
   var tbody = document.getElementById('userBody');
   var html = '';
   users.forEach(function(u) {
