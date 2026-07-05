@@ -1,121 +1,73 @@
 """簇组配置项读取
 
-从 settings_service 读取簇组相关的配置项：
-- 总开关
-- 匹配条件开关
-- 自动判定阈值
+精简版：仅保留总开关 + C008 自动判定阈值。
+匹配条件已固定（按 signature 索引 + programs 保序），不再可配置。
 """
 import logging
-from typing import Optional
+import time
+from typing import Optional, Dict, Any
 
 from sqlalchemy.orm import Session
- 
+
 from app.services.settings_service import get_setting, get_int_setting, get_float_setting
 
 logger = logging.getLogger(__name__)
 
 
 class ClusterSettings:
-    """簇组配置类"""
-    
+    """簇组配置类（精简版）
+
+    使用类级别共享缓存（30s TTL）：
+    - 单次查询所有 setting
+    - 后续 30s 内所有属性访问从内存读取
+    - 避免每笔交易都查 DB
+    """
+
+    _cache: Dict[str, Any] = {}
+    _cache_ts: float = 0
+    _CACHE_TTL: float = 30.0
+
     def __init__(self, db: Session):
         self.db = db
-    
+        self._load_if_needed()
+
+    def _load_if_needed(self):
+        """检查缓存失效并按需重新加载。"""
+        now = time.time()
+        if not ClusterSettings._cache or (now - ClusterSettings._cache_ts) > ClusterSettings._CACHE_TTL:
+            ClusterSettings._cache = self._load_all_settings()
+            ClusterSettings._cache_ts = now
+
+    def _load_all_settings(self) -> Dict[str, str]:
+        """一次性查所有 setting 到 dict。"""
+        return {
+            "cluster_enabled": get_setting(self.db, "cluster_enabled"),
+            "cluster_c008_user_threshold": get_setting(self.db, "cluster_c008_user_threshold") or "20",
+            "cluster_c008_holding_ratio": get_setting(self.db, "cluster_c008_holding_ratio") or "0.30",
+        }
+
     # ── 总开关 ──
-    
+
     @property
     def enabled(self) -> bool:
-        """簇组功能是否启用"""
-        return get_setting(self.db, "cluster_enabled") == "true"
-    
-    # ── 匹配条件开关 ──
-    
-    @property
-    def match_cu_enabled(self) -> bool:
-        """CU 匹配条件是否启用"""
-        return get_setting(self.db, "cluster_match_cu_enabled") == "true"
-    
-    @property
-    def match_program_enabled(self) -> bool:
-        """程序ID数量匹配条件是否启用"""
-        return get_setting(self.db, "cluster_match_program_enabled") == "true"
-    
-    @property
-    def match_main_instruction_enabled(self) -> bool:
-        """主指令数量匹配条件是否启用"""
-        return get_setting(self.db, "cluster_match_main_instruction_enabled") == "true"
-    
-    @property
-    def match_inner_instruction_enabled(self) -> bool:
-        """内部指令数量匹配条件是否启用"""
-        return get_setting(self.db, "cluster_match_inner_instruction_enabled") == "true"
-    
-    @property
-    def match_exact_content_enabled(self) -> bool:
-        """精确内容匹配条件是否启用（交易类型+程序ID+指令完全相同）"""
-        return get_setting(self.db, "cluster_match_exact_content_enabled") == "true"
-    
-    # ── 匹配偏移量设置 ──
-    
-    @property
-    def cu_offset(self) -> int:
-        """CU 偏移量（基准 ± offset）"""
-        return get_int_setting(self.db, "cluster_cu_offset", 0)
-    
-    @property
-    def program_offset(self) -> int:
-        """程序ID数量偏移量"""
-        return get_int_setting(self.db, "cluster_program_offset", 0)
-    
-    @property
-    def main_instruction_offset(self) -> int:
-        """主指令数量偏移量"""
-        return get_int_setting(self.db, "cluster_main_instruction_offset", 0)
-    
-    @property
-    def inner_instruction_offset(self) -> int:
-        """内部指令数量偏移量"""
-        return get_int_setting(self.db, "cluster_inner_instruction_offset", 0)
-    
-    # ── 自动判定阈值 ──
-    
-    @property
-    def tx_threshold(self) -> int:
-        """Tx数阈值（默认 > 50）"""
-        return get_int_setting(self.db, "cluster_tx_threshold", 50)
-    
-    @property
-    def user_threshold(self) -> int:
-        """用户数阈值（默认 > 50）"""
-        return get_int_setting(self.db, "cluster_user_threshold", 50)
-    
+        return ClusterSettings._cache.get("cluster_enabled") == "true"
+
     # ── C008 庄家持仓占比判定 ──
-    
+
     @property
     def c008_user_threshold(self) -> int:
-        """C008 用户数阈值（默认 20）"""
-        return get_int_setting(self.db, "cluster_c008_user_threshold", 20)
-    
+        return int(ClusterSettings._cache.get("cluster_c008_user_threshold") or 20)
+
     @property
     def c008_holding_ratio(self) -> float:
-        """C008 持仓占比阈值（默认 0.30 = 30%）"""
-        return get_float_setting(self.db, "cluster_c008_holding_ratio", 0.30)
-    
+        return float(ClusterSettings._cache.get("cluster_c008_holding_ratio") or 0.30)
+
     def to_dict(self) -> dict:
         """转换为字典（用于前端展示）"""
         return {
             "enabled": self.enabled,
-            "match_cu_enabled": self.match_cu_enabled,
-            "match_program_enabled": self.match_program_enabled,
-            "match_main_instruction_enabled": self.match_main_instruction_enabled,
-            "match_inner_instruction_enabled": self.match_inner_instruction_enabled,
-            "match_exact_content_enabled": self.match_exact_content_enabled,
-            "cu_offset": self.cu_offset,
-            "program_offset": self.program_offset,
-            "main_instruction_offset": self.main_instruction_offset,
-            "inner_instruction_offset": self.inner_instruction_offset,
-            "tx_threshold": self.tx_threshold,
-            "user_threshold": self.user_threshold,
+            "c008_user_threshold": self.c008_user_threshold,
+            "c008_holding_ratio": self.c008_holding_ratio,
         }
 
 

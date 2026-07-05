@@ -101,45 +101,26 @@ async def api_get_clusters(
     
     # 允许排序的字段
     allowed_sort_fields = {
-        "base_cu", "base_program_count", "base_main_instruction_count",
-        "base_inner_instruction_count", "tx_count", "user_count", "created_at"
+        "user_count", "created_at"
     }
     if sort_by not in allowed_sort_fields:
         sort_by = "created_at"
-    
+
     db = SessionLocal()
     try:
         manager = create_manager(db)
         clusters = await manager.get_all_clusters()
-        
-        # 搜索过滤（匹配簇组名称或用户地址）
+
+        # 搜索过滤（匹配簇组名称）
         if search:
             search_lower = search.lower()
-            filtered = []
-            for c in clusters:
-                # 匹配簇组名称
-                if search_lower in c.name.lower():
-                    filtered.append(c)
-                # 匹配用户地址
-                elif any(search_lower in user.lower() for user in c.users):
-                    filtered.append(c)
-            clusters = filtered
-        
+            clusters = [c for c in clusters if search_lower in c.name.lower()]
+
         # 排序
         reverse = sort_order == "desc"
         def sort_key(c):
-            if sort_by == "base_cu":
-                return c.base_cu
-            elif sort_by == "base_program_count":
-                return c.base_program_count
-            elif sort_by == "base_main_instruction_count":
-                return c.base_main_instruction_count
-            elif sort_by == "base_inner_instruction_count":
-                return c.base_inner_instruction_count
-            elif sort_by == "tx_count":
-                return c.tx_count
-            elif sort_by == "user_count":
-                return c.user_count
+            if sort_by == "user_count":
+                return c.get_user_count()
             else:  # created_at
                 return c.created_at
         
@@ -163,7 +144,7 @@ async def api_get_clusters(
                 "total_clusters": len(clusters),
                 "dealer_clusters": sum(1 for c in clusters if c.cluster_type == "dealer"),
                 "retail_clusters": sum(1 for c in clusters if c.cluster_type == "retail"),
-                "total_txs": sum(c.tx_count for c in clusters),
+                "total_users": sum(c.get_user_count() for c in clusters),
             }
         })
     finally:
@@ -356,8 +337,8 @@ async def api_get_cluster_txs(name: str):
     if not cluster:
         return JSONResponse({"error": "簇组不存在"}, status_code=404)
     return JSONResponse({
-        "txs": cluster.txs,
-        "tx_count": cluster.tx_count,
+        "txs": getattr(cluster, 'txs', []),
+        "user_count": cluster.get_user_count(),
     })
 
 
@@ -382,16 +363,100 @@ async def api_update_cluster_type(name: str, request: Request):
         
         manager = create_manager(db)
         await manager.set_cluster_type(name, new_cluster_type, judgment_type)
-        
-        # 如果从 dealer 改成其他类型，需要恢复数据
-        if old_type == "dealer" and new_cluster_type != "dealer" and mint:
-            # 从簇组中获取第一个用户的 address
-            if old_cluster and old_cluster.users:
-                address = old_cluster.users[0]
-                from app.services.trade_processor import include_retail
-                await include_retail(mint, address)
-                logger.info(f"[簇组类型修改] {address[:8]}... 从庄家改回 {new_cluster_type}，已恢复数据")
-        
+
+        # 传播簇类型到所有 system 判定的用户
+        if mint:
+            await propagate_cluster_type_to_users(
+                mint=mint,
+                cluster_name=name,
+                old_type=old_type or "unknown",
+                new_type=new_cluster_type,
+                ws_broadcast=True,
+            )
+
         return JSONResponse({"message": "已更新"})
     finally:
         db.close()
+
+
+async def propagate_cluster_type_to_users(
+    mint: str,
+    cluster_name: str,
+    old_type: str,
+    new_type: str,
+    ws_broadcast: bool = True,
+) -> int:
+    """遍历某簇组下所有 system 判定的用户，根据 new_type 调整状态。
+
+    - old_type=dealer, new_type=dealer：跳过
+    - new_type=dealer：调 exclude_dealer 把 dealer_excluded 标记移除（恢复 dealer 状态）
+    - old_type=dealer, new_type≠dealer：调 include_retail 标记为 retail
+    - 其他情况不调整状态
+
+    返回：处理的用户数。
+    """
+    from app.services.cluster.redis_keys import _get_sync_redis
+    from app.services.trade_processor import include_retail, exclude_dealer
+    from app.websocket.manager import ws_manager
+
+    sync_redis = _get_sync_redis()
+    processed = 0
+
+    try:
+        # SCAN 所有 user:* key，找出 cluster_name == target 的
+        for key in sync_redis.scan_iter(match="user:*", count=500):
+            data = sync_redis.hgetall(key)
+            if data.get("cluster_name") != cluster_name:
+                continue
+            # 只处理 system 判定的（手动锁定的保留）
+            if data.get("status_source", "system") != "system":
+                continue
+            # 提取 address
+            address = key.split(":", 1)[1] if ":" in key else key.replace("user:", "")
+
+            try:
+                # 新簇类型是 dealer → 排除 dealer_excluded 标记
+                if new_type == "dealer":
+                    if data.get("status_source") == "system":
+                        await exclude_dealer(mint, address)
+                        logger.info(f"[簇类型传播] {address[:8]}... → dealer")
+
+                # 旧类型是 dealer，新类型非 dealer → 标记为 retail
+                elif old_type == "dealer" and new_type != "dealer":
+                    await include_retail(mint, address)
+                    logger.info(f"[簇类型传播] {address[:8]}... → {new_type}")
+
+                # 推 user_status 给前端
+                if ws_broadcast:
+                    from app.services.trade_processor import user_key
+                    redis_async = await _get_redis()
+                    new_state = await redis_async.hgetall(user_key(address))
+                    if new_state:
+                        await ws_manager.broadcast(mint, {
+                            "type": "user_status",
+                            "data": {
+                                "address": address,
+                                "status": new_state.get("status", "unknown"),
+                                "status_source": new_state.get("status_source", "system"),
+                                "conditions": new_state.get("conditions", "[]"),
+                                "cluster_name": cluster_name,
+                                "cluster_type": new_type,
+                                "cluster_tx_count": 0,
+                                "cluster_user_count": 0,
+                                "holding_qty": new_state.get("holdingQty", "0"),
+                                "holding_cost": new_state.get("holdingCost", "0"),
+                                "total_buy_amount": new_state.get("totalBuyAmount", "0"),
+                                "total_sell_amount": new_state.get("totalSellAmount", "0"),
+                                "total_sell_principal": new_state.get("totalSellPrincipal", "0"),
+                            }
+                        })
+
+                processed += 1
+            except Exception as e:
+                logger.error(f"[簇类型传播] {address[:8]}... 失败: {e}")
+
+        logger.info(f"[簇类型传播] 簇组 {cluster_name[:8]}... ({old_type}→{new_type}) 共处理 {processed} 个用户")
+        return processed
+    except Exception as e:
+        logger.error(f"[簇类型传播] 失败: {e}", exc_info=True)
+        return 0

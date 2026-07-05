@@ -1127,10 +1127,11 @@ async function loadClusterDetail(clusterName) {
       '<p class="mb-1"><strong>类型:</strong> <span class="badge ' + (c.cluster_type === 'dealer' ? 'bg-danger' : (c.cluster_type === 'retail' ? 'bg-success' : 'bg-secondary')) + '">' + getClusterTypeLabel(c.cluster_type) + '</span></p>' +
       '<p class="mb-1"><strong>判定来源:</strong> ' + (c.judgment_type || '-') + '</p></div>' +
       '<div class="col-md-6">' +
-      '<p class="mb-1"><strong>基准CU:</strong> ' + (c.base_cu || 0) + ' ± ' + (c.base_cu_offset || 0) + '</p>' +
-      '<p class="mb-1"><strong>基准程序数:</strong> ' + (c.base_program_count || 0) + '</p>' +
-      '<p class="mb-1"><strong>主指令数:</strong> ' + (c.base_main_instruction_count || 0) + ' ± ' + (c.base_main_offset || 0) + '</p>' +
-      '<p class="mb-1"><strong>内部指令数:</strong> ' + (c.base_inner_instruction_count || 0) + ' ± ' + (c.base_inner_offset || 0) + '</p></div></div>' +
+      '<p class="mb-1"><strong>路由签名:</strong> <code style="font-size:11px;">' + (c.base_signature || '-') + '</code></p>' +
+      '<p class="mb-1"><strong>主指令路由:</strong></p>' +
+      '<pre style="font-size:10px; overflow:auto; max-height:100px;">' + (c.base_main_route || '-') + '</pre>' +
+      '<p class="mb-1"><strong>内部指令路由:</strong></p>' +
+      '<pre style="font-size:10px; overflow:auto; max-height:100px;">' + (c.base_inner_route || '-') + '</pre></div></div>' +
       '<div class="mt-2"><strong>程序列表:</strong><pre style="font-size:10px;overflow:auto;max-height:120px;background:#f8f9fa;padding:4px;">' + (programs.length > 0 ? programs.map(function(p, i) { return '[' + (i+1) + '] ' + p; }).join('\n') : '-') + '</pre></div>';
     section.style.display = '';
   } catch (e) {

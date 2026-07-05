@@ -109,11 +109,7 @@
           <th>类型</th>
           <th>判定</th>
           <th>文件夹</th>
-          <th class="sort-header" onclick="toggleSort('base_cu')">基准CU <span class="sort-icon" id="sort-base_cu">↕</span></th>
-          <th class="sort-header" onclick="toggleSort('base_program_count')">基准程序数 <span class="sort-icon" id="sort-base_program_count">↕</span></th>
-          <th class="sort-header" onclick="toggleSort('base_main_instruction_count')">主指令数 <span class="sort-icon" id="sort-base_main_instruction_count">↕</span></th>
-          <th class="sort-header" onclick="toggleSort('base_inner_instruction_count')">内部指令数 <span class="sort-icon" id="sort-base_inner_instruction_count">↕</span></th>
-          <th class="sort-header" onclick="toggleSort('tx_count')">Tx数 <span class="sort-icon" id="sort-tx_count">↕</span></th>
+          <th>路由签名</th>
           <th class="sort-header" onclick="toggleSort('user_count')">用户数 <span class="sort-icon" id="sort-user_count">↕</span></th>
           <th class="sort-header" onclick="toggleSort('created_at')">创建时间 <span class="sort-icon" id="sort-created_at">↕</span></th>
           <th>操作</th>
@@ -264,12 +260,8 @@ function renderTable(typeFilter, judgmentFilter) {
       <td>
         <input type="text" class="folder-input" value="${c.folder || ''}" placeholder="文件夹" onblur="saveFolder('${c.name}', this.value)">
       </td>
-      <td>${c.base_cu || 0}</td>
-      <td>${c.base_program_count || 0}</td>
-      <td>${c.base_main_instruction_count || 0}</td>
-      <td>${c.base_inner_instruction_count || 0}</td>
-      <td>${c.tx_count || 0}</td>
-      <td>${c.user_count || 0}</td>
+      <td><code style="font-size:11px;">${c.base_signature || '-'}</code></td>
+      <td>${c.user_count !== undefined ? c.user_count : '-'}</td>
       <td>${createdAt}</td>
       <td>
         <button class="btn btn-sm btn-primary" onclick="showDetail('${c.name}')">详情</button>
@@ -378,12 +370,10 @@ async function showDetail(name) {
       <tr><td><strong>类型</strong></td><td>${c.cluster_type}</td></tr>
       <tr><td><strong>判定来源</strong></td><td>${c.judgment_type}</td></tr>
       <tr><td><strong>文件夹</strong></td><td>${c.folder || '-'}</td></tr>
-      <tr><td><strong>基准CU</strong></td><td>${c.base_cu} ± ${c.base_cu_offset}</td></tr>
-      <tr><td><strong>基准程序数</strong></td><td>${c.base_program_count} ± ${c.base_program_offset}</td></tr>
-      <tr><td><strong>主指令数</strong></td><td>${c.base_main_instruction_count} ± ${c.base_main_offset}</td></tr>
-      <tr><td><strong>内部指令数</strong></td><td>${c.base_inner_instruction_count} ± ${c.base_inner_offset}</td></tr>
-      <tr><td><strong>Tx数</strong></td><td>${c.tx_count}</td></tr>
+      <tr><td><strong>路由签名</strong></td><td><code style="font-size:11px;">${c.base_signature || '-'}</code></td></tr>
       <tr><td><strong>用户数</strong></td><td>${c.user_count}</td></tr>
+      <tr><td><strong>主指令路由</strong></td><td><pre style="font-size: 10px; overflow: auto;">${c.base_main_route || '-'}</pre></td></tr>
+      <tr><td><strong>内部指令路由</strong></td><td><pre style="font-size: 10px; overflow: auto;">${c.base_inner_route || '-'}</pre></td></tr>
       <tr><td><strong>程序ID列表</strong></td><td><pre style="font-size: 10px; overflow: auto;">${JSON.stringify(JSON.parse(c.base_programs || '[]'), null, 2)}</pre></td></tr>
     </table>
     <h5 class="mt-3">交易列表</h5>

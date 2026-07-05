@@ -318,44 +318,51 @@ def start_retry_consumer():
 # 本地庄家判定（不调用远程 API）
 # ──────────────────────────────────────────────────────────
 
-def _check_local_dealer_conditions(tx_detail: dict, state: dict, db=None, mint: str = None) -> tuple:
+def _check_local_dealer_conditions(tx_detail: dict, state: dict, db=None, mint: str = None, features=None, manager=None) -> tuple:
     """
     检查 C002/C003/C004/C005/C006 条件
-    
+
     Args:
         tx_detail: 交易详情
         state: 用户状态字典
         db: 数据库 session（C006 需要）
         mint: 代币地址（C006 需要）
-    
+        features: TxFeatures（已在外层提取，可选）
+        manager: ClusterManager（已在外层创建，可选）
+
     Returns:
         (status: str, conditions: list, cluster_info: dict or None, new_cluster_broadcast: dict or None)
         status: "dealer" | "retail" | "unknown"
     """
     from app.services.settings_service import get_setting, get_float_setting, get_int_setting
     from app.services.cluster import run_cluster_detection
-    
+    from app.services.cluster.matcher import extract_features_from_tx_detail
+
     conditions = list(state.get("conditions", []))
     cluster_info = None
     status = "unknown"  # 初始为 unknown
     should_close_db = False
-    
+
     if db is None:
         from app.utils.database import SessionLocal
         db = SessionLocal()
         should_close_db = True
-    
+
     try:
         # ── 条件 C006：簇组检测（优先检查）──
         new_cluster_broadcast = None
         cluster_info = None
-        
-        from app.services.cluster.settings import get_cluster_settings
-        c006_enabled = get_cluster_settings(db).enabled
-        
+
+        # 使用全局单例（启动时初始化 1 次）
+        from app.services.trade_processor import get_global_settings
+        c006_enabled = get_global_settings().enabled
+
         if c006_enabled and tx_detail and mint:
             try:
-                cluster_result = run_cluster_detection(db, tx_detail, mint)
+                # 复用外层 features（如果传入），否则本地提一次
+                if features is None:
+                    features = extract_features_from_tx_detail(tx_detail)
+                cluster_result = run_cluster_detection(db, features, manager)
                 
                 # 收集新簇组创建的广播数据
                 if cluster_result.new_cluster_broadcast:
@@ -381,8 +388,10 @@ def _check_local_dealer_conditions(tx_detail: dict, state: dict, db=None, mint: 
             from app.services.cluster.redis_keys import get_cluster_sync, set_cluster_type_sync, _get_sync_redis
             
             c008_cluster = get_cluster_sync(cluster_info["cluster_name"])
-            c008_user_threshold = get_cluster_settings(db).c008_user_threshold
-            c008_holding_ratio = get_cluster_settings(db).c008_holding_ratio
+            # 使用全局单例（启动时初始化 1 次）
+            _c008_settings = get_global_settings()
+            c008_user_threshold = _c008_settings.c008_user_threshold
+            c008_holding_ratio = _c008_settings.c008_holding_ratio
             
             if (c008_cluster 
                 and c008_cluster.cluster_type != "dealer"

@@ -26,7 +26,7 @@ from app.services.cluster.redis_keys import (
     get_cluster,
 )
 from app.services.cluster.matcher import TxFeatures, extract_features_from_tx_detail
-from app.services.cluster.rules import create_rules
+# rules.py 已废弃（双阈值自动判定功能）
 from app.services.cluster.settings import get_cluster_settings
 
 logger = logging.getLogger(__name__)
@@ -34,12 +34,34 @@ logger = logging.getLogger(__name__)
 
 class ClusterManager:
     """簇组管理器"""
-    
+
+    # 类级别共享缓存
+    _clusters_cache: List = []
+    _sig_index: Dict = {}
+    _cache_ts: float = 0
+    _CACHE_TTL: float = 30.0  # 30s 缓存失效
+
     def __init__(self, db: Session):
         self.db = db
         self.settings = get_cluster_settings(db)
-        self.rules = create_rules(db)
-    
+        # rules 已废弃，不再创建
+        # 刷新内存缓存
+        self._refresh_clusters_cache()
+
+    @classmethod
+    def _refresh_clusters_cache(cls):
+        """刷新内存中的簇组列表和 signature 索引。"""
+        try:
+            cls._clusters_cache = get_enabled_clusters_sync()
+            cls._sig_index = {}
+            for c in cls._clusters_cache:
+                sig = getattr(c, "base_signature", "")
+                if sig:
+                    cls._sig_index.setdefault(sig, []).append(c)
+            cls._cache_ts = time.time()
+        except Exception as e:
+            logger.warning(f"[cluster:manager] 缓存刷新失败: {e}")
+
     def create_cluster(
         self,
         name: str,
@@ -48,7 +70,7 @@ class ClusterManager:
     ) -> ClusterData:
         """
         创建新簇组（同步版本）
-        
+
         Args:
             name: 簇组名称（通常使用首个钱包地址）
             features: 第一笔交易的特征
@@ -60,55 +82,58 @@ class ClusterManager:
             enabled=True,
             cluster_type="unknown",  # 新簇组默认未知状态
             judgment_type="system",
-            base_cu=features.cu,
-            base_cu_offset=self.settings.cu_offset,
-            base_program_count=features.program_count,
-            base_program_offset=self.settings.program_offset,
-            base_main_instruction_count=features.main_instruction_count,
-            base_main_offset=self.settings.main_instruction_offset,
-            base_inner_instruction_count=features.inner_instruction_count,
-            base_inner_offset=self.settings.inner_instruction_offset,
             base_transaction_type=features.transaction_type,
             base_programs=features.programs,
-            base_main_instructions=features.main_instructions,
-            base_inner_instructions=features.inner_instructions,
+            base_main_route=features.main_route,
+            base_inner_route=features.inner_route,
+            base_signature=features.signature,
             created_at=time.time(),
         )
-        
+
         # 使用同步版本保存
         save_cluster_sync(cluster)
-        logger.info(f"[cluster:manager] 创建新簇组 {name[:8]}... (CU={features.cu}, 程序数={features.program_count})")
-        
+        logger.info(f"[cluster:manager] 创建新簇组 {name[:8]}... (sig={features.signature[:8]}, 程序数={len(features.programs)})")
+
+        # 刷新内存缓存（包含新的簇组）
+        ClusterManager._refresh_clusters_cache()
+
         return cluster
-    
+
     def match_cluster(
         self,
-        tx_detail: Dict[str, Any],
+        features,
     ) -> Optional[tuple]:
-        """
-        匹配簇组（遍历所有已启用簇组）
-        
+        """匹配簇组（基于内存缓存 + signature 索引 + programs 保序）。
+
+        Args:
+            features: TxFeatures（已在外层提取）
+
         Returns:
             (matched_cluster, reason) 或 None
         """
-        from app.services.cluster.matcher import ClusterMatcher
-        
-        # 提取特征
-        features = extract_features_from_tx_detail(tx_detail)
-        
-        # 创建匹配器
-        matcher = ClusterMatcher(self.settings)
-        
-        # 获取已启用簇组（同步版本）
-        clusters = get_enabled_clusters_sync()
-        
-        # 匹配
-        result = matcher.match_any(clusters, features)
-        
-        if result:
-            logger.debug(f"[cluster:manager] Tx {features.sig[:8]}... 匹配簇组 {result[0].name[:8]}... ({result[1]})")
-        
-        return result
+        from app.services.cluster.matcher import compare_programs_order
+
+        # 缓存过期自动刷新
+        if time.time() - ClusterManager._cache_ts > ClusterManager._CACHE_TTL:
+            ClusterManager._refresh_clusters_cache()
+
+        # signature 索引已包含 tx_type + main_route + inner_route
+        # 取出的 candidates 必然 tx_type/main_route/inner_route 一致
+        candidates = ClusterManager._sig_index.get(features.signature, [])
+
+        # # 仅保留 user_count > 10 的簇组
+        # candidates = [c for c in candidates if c.get_user_count() > 10]
+
+        # if not candidates:
+        #     return None
+
+        # programs 保序比较（signature 不含 program_ids 顺序）
+        for c in candidates:
+            if compare_programs_order(c.base_programs, features.programs):
+                logger.debug(f"[cluster:manager] Tx {features.sig[:8]}... 匹配簇组 {c.name[:8]}... (signature+programs)")
+                return (c, "signature+programs 匹配")
+
+        return None
     
     async def get_all_clusters(self) -> List[ClusterData]:
         """获取所有簇组"""

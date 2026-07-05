@@ -2,30 +2,22 @@
 
 Redis 数据结构：
   cluster:data:{cluster_name}  # Hash，存储簇组完整信息
-  cluster:index               # 有序集合，按 tx_count 排序，用于快速查询
+  cluster:index               # 有序集合，按 created_at 排序，用于快速查询
 
-簇组 Hash 字段：
+簇组 Hash 字段（精简版）：
   - name: 簇组名称（首个钱包地址）
   - folder: 所属文件夹（默认空）
   - enabled: "true"/"false"
   - cluster_type: "undefined"/"retail"/"dealer"
   - judgment_type: "system"/"manual"
-  - base_cu: 基准 CU 消耗
-  - base_cu_offset: CU 偏移量
-  - base_program_count: 基准程序ID数量
-  - base_program_offset: 程序ID偏移量
-  - base_main_instruction_count: 基准主指令数量
-  - base_main_offset: 主指令偏移量
-  - base_inner_instruction_count: 基准内部指令数量
-  - base_inner_offset: 内部指令偏移量
-  - base_programs: JSON，完整程序ID列表（含地址）
-  - base_main_instructions: JSON，完整主指令列表
-  - base_inner_instructions: JSON，完整内部指令列表
-  - txs: JSON，Tx签名列表
-  - users: JSON，钱包地址列表
-  - tx_count: 总Tx数
-  - user_count: 总用户数
+  - base_transaction_type: 交易类型（BUY/SELL）
+  - base_programs: JSON，程序ID列表（保序）
+  - base_main_route: 主指令路由字符串（programId 顺序）
+  - base_inner_route: 内部指令路由字符串（(stackHeight,programId) 顺序）
+  - base_signature: 16 字节 hash（用于快速匹配）
   - created_at: 创建时间戳
+
+用户数（user_count）通过 SCAN user:* 实时计算，不再持久化。
 """
 import json
 import logging
@@ -93,8 +85,17 @@ CLUSTER_INDEX_KEY = "cluster:index"
 # ──────────────────────────────────────────────────────────
 
 class ClusterData:
-    """簇组数据结构"""
-    
+    """簇组数据结构（精简版）
+
+    匹配完全由 signature + programs 保序决定：
+    - base_signature: 16 字节 hash（tx_type + main_route + inner_route）
+    - base_main_route: 主指令路由字符串
+    - base_inner_route: 内部指令路由字符串
+    - base_programs: 程序 ID 列表（保序）
+
+    其他历史字段（base_cu / *_count / *_offset）已移除，不再保留。
+    """
+
     def __init__(
         self,
         name: str,
@@ -102,18 +103,11 @@ class ClusterData:
         enabled: bool = True,
         cluster_type: str = "unknown",  # unknown/retail/dealer
         judgment_type: str = "system",    # system/manual
-        base_cu: int = 0,
-        base_cu_offset: int = 0,
-        base_program_count: int = 0,
-        base_program_offset: int = 0,
-        base_main_instruction_count: int = 0,
-        base_main_offset: int = 0,
-        base_inner_instruction_count: int = 0,
-        base_inner_offset: int = 0,
         base_transaction_type: str = "",
         base_programs: List[str] = None,
-        base_main_instructions: List[Dict] = None,
-        base_inner_instructions: List[Dict] = None,
+        base_main_route: str = "",
+        base_inner_route: str = "",
+        base_signature: str = "",
         created_at: float = None,
     ):
         self.name = name
@@ -121,25 +115,13 @@ class ClusterData:
         self.enabled = enabled
         self.cluster_type = cluster_type
         self.judgment_type = judgment_type
-        self.base_cu = base_cu
-        self.base_cu_offset = base_cu_offset
-        self.base_program_count = base_program_count
-        self.base_program_offset = base_program_offset
-        self.base_main_instruction_count = base_main_instruction_count
-        self.base_main_offset = base_main_offset
-        self.base_inner_instruction_count = base_inner_instruction_count
-        self.base_inner_offset = base_inner_offset
         self.base_transaction_type = base_transaction_type
         self.base_programs = base_programs or []
-        self.base_main_instructions = base_main_instructions or []
-        self.base_inner_instructions = base_inner_instructions or []
+        self.base_main_route = base_main_route
+        self.base_inner_route = base_inner_route
+        self.base_signature = base_signature
         self.created_at = created_at or 0
-        # 以下字段不再持久化到 Redis，保留为 0 兼容旧代码
-        self.txs: List[str] = []
-        self.users: List[str] = []
-        self.tx_count: int = 0
-        self.user_count: int = 0
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典"""
         return {
@@ -148,44 +130,44 @@ class ClusterData:
             "enabled": "true" if self.enabled else "false",
             "cluster_type": self.cluster_type,
             "judgment_type": self.judgment_type,
-            "base_cu": str(self.base_cu),
-            "base_cu_offset": str(self.base_cu_offset),
-            "base_program_count": str(self.base_program_count),
-            "base_program_offset": str(self.base_program_offset),
-            "base_main_instruction_count": str(self.base_main_instruction_count),
-            "base_main_offset": str(self.base_main_offset),
-            "base_inner_instruction_count": str(self.base_inner_instruction_count),
-            "base_inner_offset": str(self.base_inner_offset),
             "base_transaction_type": self.base_transaction_type,
             "base_programs": json.dumps(self.base_programs),
-            "base_main_instructions": json.dumps(self.base_main_instructions),
-            "base_inner_instructions": json.dumps(self.base_inner_instructions),
+            "base_main_route": self.base_main_route,
+            "base_inner_route": self.base_inner_route,
+            "base_signature": self.base_signature,
             "created_at": str(self.created_at),
         }
-    
+
     @classmethod
     def from_dict(cls, data: Dict[str, str]) -> "ClusterData":
-        """从字典创建"""
+        """从字典创建（兼容旧字段：旧字段一律忽略）"""
         return cls(
             name=data.get("name", ""),
             folder=data.get("folder", ""),
             enabled=data.get("enabled", "true") == "true",
             cluster_type=data.get("cluster_type", "undefined"),
             judgment_type=data.get("judgment_type", "system"),
-            base_cu=int(data.get("base_cu", "0")),
-            base_cu_offset=int(data.get("base_cu_offset", "0")),
-            base_program_count=int(data.get("base_program_count", "0")),
-            base_program_offset=int(data.get("base_program_offset", "0")),
-            base_main_instruction_count=int(data.get("base_main_instruction_count", "0")),
-            base_main_offset=int(data.get("base_main_offset", "0")),
-            base_inner_instruction_count=int(data.get("base_inner_instruction_count", "0")),
-            base_inner_offset=int(data.get("base_inner_offset", "0")),
             base_transaction_type=data.get("base_transaction_type", ""),
             base_programs=json.loads(data.get("base_programs", "[]")),
-            base_main_instructions=json.loads(data.get("base_main_instructions", "[]")),
-            base_inner_instructions=json.loads(data.get("base_inner_instructions", "[]")),
+            base_main_route=data.get("base_main_route", ""),
+            base_inner_route=data.get("base_inner_route", ""),
+            base_signature=data.get("base_signature", ""),
             created_at=float(data.get("created_at", "0")),
         )
+
+    def get_user_count(self) -> int:
+        """实时计算当前簇组下的用户数（从 user:{addr}.cluster_name 查询）。"""
+        try:
+            from app.services.cluster.redis_keys import _get_sync_redis
+            r = _get_sync_redis()
+            count = 0
+            for key in r.scan_iter(match="user:*", count=500):
+                data = r.hgetall(key)
+                if data.get("cluster_name") == self.name:
+                    count += 1
+            return count
+        except Exception:
+            return 0
 
 
 # ──────────────────────────────────────────────────────────

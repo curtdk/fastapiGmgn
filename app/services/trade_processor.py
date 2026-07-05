@@ -17,6 +17,46 @@ _trade_queue: asyncio.Queue = None
 _consumer_task: Optional[asyncio.Task] = None
 _mint: str = ""
 
+# 启动时单例（在 start_consumer 中初始化）
+_global_manager = None  # ClusterManager 单例
+_global_settings = None  # ClusterSettings 单例
+_metrics_keys: dict = {}  # mint -> "metrics:{mint}" 缓存
+
+
+def get_global_settings():
+    """获取 ClusterSettings 单例（启动时初始化 1 次）。"""
+    global _global_settings
+    if _global_settings is None:
+        from app.services.cluster.settings import get_cluster_settings
+        from app.utils.database import SessionLocal
+        db = SessionLocal()
+        try:
+            _global_settings = get_cluster_settings(db)
+        finally:
+            db.close()
+    return _global_settings
+
+
+def get_global_manager():
+    """获取 ClusterManager 单例（启动时初始化 1 次）。"""
+    global _global_manager
+    if _global_manager is None:
+        from app.services.cluster.manager import create_manager
+        from app.utils.database import SessionLocal
+        db = SessionLocal()
+        try:
+            _global_manager = create_manager(db)
+        finally:
+            db.close()
+    return _global_manager
+
+
+def get_metrics_key(mint: str) -> str:
+    """获取 metrics Redis key（按 mint 缓存）。"""
+    if mint not in _metrics_keys:
+        _metrics_keys[mint] = f"metrics:{mint}"
+    return _metrics_keys[mint]
+
 
 # ──────────────────────────────────────────────────────────
 # Redis 辅助方法
@@ -110,28 +150,40 @@ async def get_trader_state_with_sig(redis, mint: str, address: str, sig: str) ->
     处理流程：
         1. C002-C005 + C006 统一检测（通过 _check_local_dealer_conditions）
         2. 返回 { state, broadcasts, cluster_info }
+
+    SELL 交易直接跳过 C006 检测（簇组只由 BUY 创建/匹配）。
     """
     from app.utils.database import SessionLocal
     from app.services.dealer_detector import _check_local_dealer_conditions
-    
+
     if not redis:
         return {"state": _default_trader_state(), "broadcasts": [], "cluster_info": None, "new_cluster_broadcast": None}
-    
+
     try:
         key = user_key(address)
         state = await redis.hgetall(key)
         broadcasts = []
         cluster_info = None
         new_cluster_broadcast = None
-        
+
+        # 读取交易类型，判断是否需要走 C006
+        tx_for_type = await tx_redis.get_tx(sig)
+        tx_type_actual = (tx_for_type or {}).get("transaction_type", "")
+
         if not state:
             state = _default_trader_state()
             # 新用户：尝试本地快速判断庄家（C002-C006）
-            tx_detail = await tx_redis.get_tx(sig)
-            if tx_detail:
+            tx_detail = tx_for_type
+            if tx_detail and tx_type_actual == "BUY":
                 db = SessionLocal()
                 try:
-                    detected_status, conditions, cluster_info, new_cluster_broadcast = _check_local_dealer_conditions(tx_detail, state, db, mint)
+                    # features 提取只 1 次，传给 C006（避免重复解析 main/inner JSON）
+                    from app.services.cluster.matcher import extract_features_from_tx_detail
+                    features = extract_features_from_tx_detail(tx_detail)
+                    detected_status, conditions, cluster_info, new_cluster_broadcast = _check_local_dealer_conditions(
+                        tx_detail, state, db, mint,
+                        features=features,
+                    )
                     state["conditions"] = conditions
                     state["status"] = detected_status
                     state["status_source"] = "system"
@@ -147,7 +199,7 @@ async def get_trader_state_with_sig(redis, mint: str, address: str, sig: str) ->
                 finally:
                     db.close()
             # 本地判断不是庄家或无交易详情：入队等待 C001 检测
-            await _enqueue_dealer_check(address, mint, sig)
+            # await _enqueue_dealer_check(address, mint, sig)
         else:
             # 读取 status 和 conditions
             status = state.get("status", "unknown")
@@ -309,7 +361,7 @@ async def clear_mint_redis(mint: str):
     
     try:
         # 只删除 metrics:{mint}
-        metrics_key = await _get_metrics_key(mint)
+        metrics_key = get_metrics_key(mint)
         await redis.delete(metrics_key)
         logger.info(f"[清理] 删除指标 key: {metrics_key}")
         
@@ -440,6 +492,10 @@ async def _calculate_index(
         if not address:
             return {}
 
+        # ── TRANSFER 交易直接跳过 ──
+        if tx_type == "TRANSFER":
+            return {}
+
         # ── C002-C005 + C006 庄家检测（统一入口） ──
         # 获取用户状态（内部包含 C002-C005 本地检测 + C006 簇组检测）
         result = await get_trader_state_with_sig(redis, mint, address, sig)
@@ -454,7 +510,7 @@ async def _calculate_index(
         trace(mint, sig, "④ 庄家判定", f"结果={trader_status}, 条件={tracer_conditions}")
         
         is_dealer = (state.get("status") == "dealer")
-        metrics_key = await _get_metrics_key(mint)
+        metrics_key = get_metrics_key(mint)
         
         # ========== 共用：持仓数据读取（从 user:{mint}:{address} 读取） ==========
         from app.services.cluster.redis_keys import user_mint_key
@@ -798,8 +854,12 @@ async def start_consumer(mint: str):
     """历史 tx 处理完后，启动消费者消化队列"""
     global _consumer_task, _mint
     _mint = mint
+    # 启动时初始化全局单例（启动 1 次，进程内复用）
+    get_global_settings()
+    get_global_manager()
+    get_metrics_key(mint)  # 预热 metrics key 缓存
     _consumer_task = asyncio.create_task(_consumer_loop(mint))
-    logger.info(f"[消费者] 已启动 mint={mint}")
+    logger.info(f"[消费者] 已启动 mint={mint}（单例已初始化）")
 
 
 async def _consumer_loop(mint: str):
@@ -973,7 +1033,7 @@ async def run_full_calculation(db: Session, mint: str):
 
 async def reset_processor(mint: str, db: Session):
     """关闭按钮触发：清理指定 mint 的状态"""
-    global _trade_queue, _consumer_task, _mint
+    global _trade_queue, _consumer_task, _mint, _global_manager, _global_settings, _metrics_keys
 
     logger.info(f"[重置] 开始清理 mint={mint}")
 
@@ -1018,11 +1078,16 @@ async def reset_processor(mint: str, db: Session):
         _consumer_task = None
         _mint = ""
 
+        # 5.1 清空启动时单例（mint 切换时下次 start_consumer 会重建）
+        _global_manager = None
+        _global_settings = None
+        _metrics_keys = {}
+
         # 6. 清理 C007 dev 缓存
         from app.services.dealer_detector import _c007_dev_cache
         _c007_dev_cache.pop(mint, None)
 
-        logger.info(f"[重置] 清理完成 mint={mint}")
+        logger.info(f"[重置] 清理完成 mint={mint}（含单例）")
     except Exception as e:
         logger.error(f"[重置] 清理异常 mint={mint[:8]}...: {e}", exc_info=True)
 
