@@ -1385,9 +1385,12 @@ function renderUserTable() {
   for (var addr in userData) {
     if (userData.hasOwnProperty(addr)) {
       var u = userData[addr];
+      // 防御：把无效的 status（undefined/null/"undefined"）归一化为 unknown
+      // 防止脏数据导致筛选失效
+      var normStatus = (u.status === 'undefined' || !u.status) ? 'unknown' : u.status;
       if (userStatusFilter === 'retail_unknown') {
-        if (u.status !== 'retail' && u.status !== 'unknown') continue;
-      } else if (userStatusFilter !== 'all' && u.status !== userStatusFilter) {
+        if (normStatus !== 'retail' && normStatus !== 'unknown') continue;
+      } else if (userStatusFilter !== 'all' && normStatus !== userStatusFilter) {
         continue;
       }
       users.push(u);
