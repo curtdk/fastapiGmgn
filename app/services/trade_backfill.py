@@ -60,6 +60,14 @@ class TradeBackfill:
         try:
             # 1. 检查是否跳过 WS 等待模式（测试用）
             skip_ws_wait = get_int_setting(self.db, "backfill_skip_ws_wait", 0)
+
+            # 同步给 trade_processor：决定 backfill 期间是否广播
+            try:
+                from app.services.trade_processor import set_backfill_broadcast_mode
+                set_backfill_broadcast_mode(skip_ws_wait)
+                logger.info(f"[回填] 广播模式: {skip_ws_wait} ({'测试模式-全部广播' if skip_ws_wait == 2 else '正式模式-不广播'})")
+            except Exception as e:
+                logger.warning(f"[回填] 设置广播模式失败（可忽略）: {e}")
             
             if skip_ws_wait:
                 if skip_ws_wait == 2:

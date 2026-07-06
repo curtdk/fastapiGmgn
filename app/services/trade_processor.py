@@ -22,6 +22,29 @@ _global_manager = None  # ClusterManager 单例
 _global_settings = None  # ClusterSettings 单例
 _metrics_keys: dict = {}  # mint -> "metrics:{mint}" 缓存
 
+# 当前 backfill 模式（0=正式不发广播，2=测试发全部广播）
+# 由 trade_backfill.run() 启动时设置
+_backfill_broadcast_mode: int = 0
+
+
+def set_backfill_broadcast_mode(mode: int):
+    """设置 backfill 期间广播模式（0=不广播，2=全部广播）
+
+    由 trade_backfill.run() 在启动时调用，避免后端再去查 DB。
+    """
+    global _backfill_broadcast_mode
+    _backfill_broadcast_mode = mode
+
+
+def get_backfill_broadcast_mode() -> int:
+    """获取当前 backfill 广播模式"""
+    return _backfill_broadcast_mode
+
+
+def _should_broadcast_during_backfill() -> bool:
+    """backfill 期间是否应该广播（测试模式 = True）"""
+    return _backfill_broadcast_mode == 2
+
 
 def get_global_settings():
     """获取 ClusterSettings 单例（启动时初始化 1 次）。"""
@@ -724,8 +747,10 @@ async def _calculate_index(
         rpc_count = await redis.zcard(f"txlist:rpc_fill:{mint}")
         ws_count = await redis.zcard(f"txlist:ws:{mint}")
 
-        # backfill 期间不发广播（避免前端 DOM 堆积 + TCP backpressure 阻塞 send_text）
-        if mint not in _backfilling_mints:
+        # 广播策略：
+        # - 正式模式（skip=0）：backfill 期间不广播（避免前端 DOM 堆积）
+        # - 测试模式（skip=2）：backfill 期间也广播（方便调试看数据）
+        if mint not in _backfilling_mints or _should_broadcast_during_backfill():
             await ws_manager.broadcast(mint, {
                 "type": "trade",
                 "data": {

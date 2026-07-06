@@ -73,6 +73,13 @@
       <input type="text" id="mintInput" class="form-control" placeholder="输入 Token Mint 地址" />
       <button id="startBtn" class="btn btn-primary" onclick="startMonitor()">开始</button>
       <button id="stopBtn" class="btn btn-danger" onclick="stopMonitor()">关闭</button>
+      <!-- Backfill 模式切换：正式（不广播） / 测试（全部广播） -->
+      <div style="display:inline-flex; align-items:center; gap:6px; margin-left:10px;">
+        <span style="font-size:12px; color:#666;">Backfill 模式:</span>
+        <button id="modeProdBtn" class="btn btn-sm btn-outline-secondary" onclick="switchBackfillMode(0)" title="正式模式：backfill 期间不广播">正式</button>
+        <button id="modeTestBtn" class="btn btn-sm btn-outline-warning" onclick="switchBackfillMode(2)" title="测试模式：backfill 期间也广播（看数据用）">测试</button>
+        <span id="modeBadge" style="font-size:11px; color:#888; padding:2px 6px; border:1px solid #ddd; border-radius:3px;">加载中</span>
+      </div>
       <span id="statusBadge" class="status-badge status-IDLE">状态: 未启动</span>
       <span id="statusMsg" style="font-size:13px; color:#666;"></span>
       <button id="currencyToggle" class="btn btn-outline-secondary btn-sm" onclick="toggleCurrency()">SOL → USDT</button>
@@ -691,12 +698,19 @@ function connectWS() {
       } else {
         if (msg.type === 'status') updateStatus(msg.data);
         else if (msg.type === 'error') alert('错误: ' + (msg.data.message || '未知'));
-        else if (msg.type === 'user_status') handleUserStatus(msg.data);
+        else if (msg.type === 'user_status') {
+          handleUserStatus(msg.data);
+          // cluster_api 推送时可能带 metrics（顶部指数同步刷新）
+          if (msg.metrics) updateMetrics(msg.metrics);
+        }
         else if (msg.type === 'cluster_matched') handleClusterMatched(msg.data);
         else if (msg.type === 'cluster_created') handleClusterMatched(msg.data);
         else if (msg.type === 'backfill_start') _showBackfill(msg.data.total || 0);
         else if (msg.type === 'backfill_progress') _updateBackfill(msg.data.count, msg.data.total);
-        else if (msg.type === 'backfill_done') _finishBackfill(msg.data.count, msg.data);
+        else if (msg.type === 'backfill_done') {
+          _finishBackfill(msg.data.count, msg.data);
+          fetchUsers();  // ★ backfill 完成后重新拉取用户列表（之前 fetchUsers 是 start 时调用的，backfill 还没跑完）
+        }
       }
     } catch (e) { console.error('WS 消息解析失败:', e); }
   };
@@ -825,6 +839,61 @@ async function stopMonitor() {
     addStrategyLog('⏹️ 监控已停止，可修改参数后重新启用策略');
   } catch (e) { console.error('停止失败:', e); }
 }
+
+// ===== Backfill 模式切换（正式/测试） =====
+async function loadBackfillMode() {
+  try {
+    const resp = await fetch('/admin/api/settings/backfill-mode');
+    const data = await resp.json();
+    updateModeUI(data.mode, data.description);
+  } catch (e) {
+    console.error('加载 backfill 模式失败:', e);
+    document.getElementById('modeBadge').textContent = '加载失败';
+  }
+}
+
+async function switchBackfillMode(mode) {
+  if (mode !== 0 && mode !== 2) return;
+  try {
+    const resp = await fetch('/admin/api/settings/backfill-mode', {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ mode: mode }),
+    });
+    const data = await resp.json();
+    if (data.error) { alert('切换失败: ' + data.error); return; }
+    updateModeUI(data.mode, data.description);
+    console.log('Backfill 模式已切换:', data.message);
+    // 提示用户需要重启 mint 才生效
+    if (currentMint) {
+      alert('已切换到 ' + (mode === 2 ? '测试' : '正式') + ' 模式\n注意：当前 mint 还在运行，需要关闭后重新"开始"才生效');
+    }
+  } catch (e) {
+    console.error('切换 backfill 模式失败:', e);
+    alert('切换失败: ' + e.message);
+  }
+}
+
+function updateModeUI(mode, description) {
+  const badge = document.getElementById('modeBadge');
+  const prodBtn = document.getElementById('modeProdBtn');
+  const testBtn = document.getElementById('modeTestBtn');
+  badge.textContent = description || (mode === 2 ? '测试模式' : '正式模式');
+  badge.style.color = mode === 2 ? '#d97706' : '#374151';
+  badge.style.background = mode === 2 ? '#fef3c7' : '#f3f4f6';
+  badge.style.borderColor = mode === 2 ? '#fbbf24' : '#d1d5db';
+  // 高亮当前模式按钮
+  if (mode === 2) {
+    prodBtn.classList.remove('btn-primary'); prodBtn.classList.add('btn-outline-secondary');
+    testBtn.classList.remove('btn-outline-warning'); testBtn.classList.add('btn-warning');
+  } else {
+    prodBtn.classList.remove('btn-outline-secondary'); prodBtn.classList.add('btn-primary');
+    testBtn.classList.remove('btn-warning'); testBtn.classList.add('btn-outline-warning');
+  }
+}
+
+// 页面加载时拉取当前模式
+loadBackfillMode();
 
 // 策略控制
 async function toggleStrategy() {
@@ -1195,24 +1264,33 @@ function handleUserStatus(data) {
   const sig = data.sig;
   const tbody = document.getElementById('tradeBody');
   const rows = tbody.querySelectorAll('tr');
-  
+
   rows.forEach(row => {
     const addrCell = row.cells[1];
     if (!addrCell) return;
     const rowAddr = addrCell.getAttribute('title') || '';
     if (rowAddr !== address) return;
     const tagCell = row.querySelector('.wallet-tag');
-    
+
     if (status === 'dealer') {
       // 根据 showDealer 开关决定显示还是隐藏
       row.style.display = showDealer ? '' : 'none';
+      if (tagCell) {
+        tagCell.textContent = '庄家';
+        tagCell.style.background = '#ffe3e3';
+        tagCell.style.color = '#c92a2a';
+      }
     } else if (status === 'retail' && tagCell) {
       tagCell.textContent = '散户';
       tagCell.style.background = '#d3f9d8';
       tagCell.style.color = '#2f9e44';
+    } else if (status === 'unknown' && tagCell) {
+      tagCell.textContent = '未定义';
+      tagCell.style.background = '#e9ecef';
+      tagCell.style.color = '#495057';
     }
   });
-  
+
   // 更新用户列表
   upsertUserRow(data);
 }
@@ -1257,7 +1335,7 @@ async function saveClusterType() {
     await fetch('/admin/api/clusters/' + encodeURIComponent(currentClusterName) + '/type', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ cluster_type: type, judgment_type: 'manual' }),
+      body: JSON.stringify({ cluster_type: type, judgment_type: 'manual', mint: currentMint || '' }),
     });
     const modalEl = document.getElementById('clusterTypeModal');
     const modal = bootstrap.Modal.getInstance(modalEl);
@@ -1400,17 +1478,16 @@ async function saveUserStatus() {
     var resp = await fetch('/admin/api/users/' + encodeURIComponent(currentUserAddress) + '/status', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: status, status_source: statusSource })
+      body: JSON.stringify({
+        status: status,
+        status_source: statusSource,
+        mint: currentMint || ''
+      })
     });
     if (!resp.ok) { var err = await resp.json(); alert('修改失败: ' + (err.error || resp.status)); return; }
     var modalEl = document.getElementById('userStatusModal');
     bootstrap.Modal.getInstance(modalEl).hide();
-    // 前端立即更新
-    if (userData[currentUserAddress]) {
-      userData[currentUserAddress].status = status;
-      userData[currentUserAddress].status_source = statusSource;
-      renderUserTable();
-    }
+    // 后端会发 WS user_status 推送（带 metrics），前端不要手动覆盖 userData
     alert('用户状态已更新为: ' + (status === 'dealer' ? '庄家' : status === 'retail' ? '散户' : '未定义') + ' (' + (isSystem ? '系统判定' : '手动锁定') + ')');
   } catch (e) { alert('更新失败: ' + e); }
 }
@@ -1471,22 +1548,22 @@ async function saveClusterDetailType() {
   var type = document.getElementById('cdmClusterTypeSelect').value;
   var isSystem = document.getElementById('cdmClusterSystemJudgment').checked;
   var judgmentType = isSystem ? 'system' : 'manual';
-  
+
   try {
+    // 必须传 mint，否则后端不会传播簇类型到用户（用户的 status 不会变）
     var resp = await fetch('/admin/api/clusters/' + encodeURIComponent(currentCdmClusterName) + '/type', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ cluster_type: type, judgment_type: judgmentType })
+      body: JSON.stringify({
+        cluster_type: type,
+        judgment_type: judgmentType,
+        mint: currentMint || ''
+      })
     });
     if (!resp.ok) { var err = await resp.json(); alert('修改失败: ' + (err.error || resp.status)); return; }
-    
-    // 更新 userData 中所有同簇组用户的 cluster_type
-    for (var addr in userData) {
-      if (userData.hasOwnProperty(addr) && userData[addr].cluster_name === currentCdmClusterName) {
-        userData[addr].cluster_type = type;
-      }
-    }
-    renderUserTable();
+
+    // 后端 WS 会推送 user_status（带最新 status + metrics），前端不要手动覆盖 userData
+    // 只显示提示即可
     alert('簇组类型已更新为: ' + (type === 'dealer' ? '庄家' : type === 'retail' ? '散户' : '未定义') + ' (' + (isSystem ? '系统判定' : '手动锁定') + ')');
   } catch (e) { alert('更新失败: ' + e); }
 }

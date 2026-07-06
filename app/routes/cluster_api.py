@@ -263,34 +263,83 @@ async def api_get_cluster_users_detail(name: str, mint: str = ""):
 
 @router.put("/api/users/{address}/status")
 async def api_set_user_status(address: str, request: Request):
-    """手动修改用户状态（标记为 manual，不受簇组自动覆盖）"""
-    from app.services.trade_processor import save_trader_state, user_key
-    from app.services.cluster.redis_keys import _get_redis
+    """手动修改用户状态（标记为 manual，不受簇组自动覆盖）
+
+    如果传 mint，会调 exclude_dealer / include_retail 调整指标并广播 WS。
+    """
+    from app.services.trade_processor import (
+        save_trader_state, user_key, exclude_dealer, include_retail,
+        _get_redis as _tp_get_redis, _get_metrics_key,
+    )
+    from app.services.cluster.redis_keys import _get_redis, user_mint_key
+    from app.websocket.manager import ws_manager
     from urllib.parse import unquote
     import json
-    
+
     address = unquote(address)
     body = await request.json()
     new_status = body.get("status", "")
     new_status_source = body.get("status_source", "manual")  # 默认手动锁定
-    
+    mint = body.get("mint", "") or ""
+
     if new_status not in ("dealer", "retail", "unknown"):
         return JSONResponse({"error": "无效状态，可选: dealer/retail/unknown"}, status_code=400)
-    
+
     redis = await _get_redis()
     key = user_key(address)
     state = await redis.hgetall(key) or {}
-    
+    old_status = state.get("status", "unknown")
+
     state["status"] = new_status
     state["status_source"] = new_status_source
     state["conditions"] = state.get("conditions", "[]")
-    
+
     await redis.hset(key, mapping={
         "status": new_status,
         "status_source": new_status_source,
         "conditions": state.get("conditions", "[]"),
     })
-    
+
+    # 如果传了 mint，根据状态切换调 exclude_dealer / include_retail 调整指标
+    if mint:
+        try:
+            if new_status == "dealer" and old_status != "dealer":
+                # retail/unknown → dealer：排除
+                await exclude_dealer(mint, address)
+            elif old_status == "dealer" and new_status != "dealer":
+                # dealer → retail/unknown：恢复
+                await include_retail(mint, address)
+        except Exception as e:
+            logger.error(f"[用户状态] 调整指标失败: {e}", exc_info=True)
+
+        # 发 WS user_status 推送（带 metrics）让前端顶部指数同步刷新
+        try:
+            redis_async = await _tp_get_redis()
+            metrics_data = await redis_async.hgetall(await _get_metrics_key(mint)) if redis_async else {}
+            current_bet = float(metrics_data.get("total_bet", "0") or 0)
+            realized_profit = float(metrics_data.get("realized_profit", "0") or 0)
+            await ws_manager.broadcast(mint, {
+                "type": "user_status",
+                "data": {
+                    "address": address,
+                    "status": new_status,
+                    "status_source": new_status_source,
+                    "conditions": json.loads(state.get("conditions", "[]")) if state.get("conditions") else [],
+                    "cluster_name": state.get("cluster_name", ""),
+                    "cluster_type": state.get("cluster_type", "unknown"),
+                    "cluster_tx_count": 0,
+                    "cluster_user_count": 0,
+                },
+                "metrics": {
+                    "current_bet": current_bet,
+                    "realized_profit": realized_profit,
+                    "current_cost": current_bet - realized_profit,
+                    "trade_count": int(float(metrics_data.get("trade_count", "0") or 0)),
+                }
+            })
+        except Exception as e:
+            logger.warning(f"[用户状态] WS 广播失败（可忽略）: {e}")
+
     logger.info(f"[用户状态] {address[:8]}... 修改为 {new_status} (source={new_status_source})")
     return JSONResponse({"message": "已更新", "address": address, "status": new_status, "status_source": new_status_source})
 
@@ -406,18 +455,21 @@ async def propagate_cluster_type_to_users(
             data = sync_redis.hgetall(key)
             if data.get("cluster_name") != cluster_name:
                 continue
-            # 只处理 system 判定的（手动锁定的保留）
-            if data.get("status_source", "system") != "system":
+            # 跳过 per-mint key（用 : 分隔的 key 中，segment > 2 的不是 global user key）
+            if key.count(":") > 1:
                 continue
             # 提取 address
             address = key.split(":", 1)[1] if ":" in key else key.replace("user:", "")
 
             try:
+                # 簇组类型传播：不管原 status_source 是 system 还是 manual
+                # 都强制跟随 cluster（簇组是 source of truth）
+                # 因为 exclude_dealer / include_retail 内部会重新写 status + status_source
+
                 # 新簇类型是 dealer → 排除 dealer_excluded 标记
                 if new_type == "dealer":
-                    if data.get("status_source") == "system":
-                        await exclude_dealer(mint, address)
-                        logger.info(f"[簇类型传播] {address[:8]}... → dealer")
+                    await exclude_dealer(mint, address)
+                    logger.info(f"[簇类型传播] {address[:8]}... → dealer")
 
                 # 旧类型是 dealer，新类型非 dealer → 标记为 retail
                 elif old_type == "dealer" and new_type != "dealer":
@@ -426,9 +478,9 @@ async def propagate_cluster_type_to_users(
 
                 # 推 user_status 给前端
                 if ws_broadcast:
-                    from app.services.trade_processor import user_key
+                    from app.services.trade_processor import user_key, _get_redis as _tp_get_redis, _get_metrics_key
                     from app.services.cluster.redis_keys import user_mint_key
-                    redis_async = await _get_redis()
+                    redis_async = await _tp_get_redis()
                     new_state = await redis_async.hgetall(user_key(address)) if redis_async else {}
                     mint_data = await redis_async.hgetall(user_mint_key(mint, address)) if redis_async else {}
                     if new_state:
@@ -437,6 +489,15 @@ async def propagate_cluster_type_to_users(
                             conditions_list = json.loads(new_state.get("conditions", "[]"))
                         except Exception:
                             conditions_list = []
+                        # 读最新 metrics（让前端顶部指数立刻刷新）
+                        metrics_data = await redis_async.hgetall(await _get_metrics_key(mint)) if redis_async else {}
+                        try:
+                            current_bet = float(metrics_data.get("total_bet", "0") or 0)
+                            realized_profit = float(metrics_data.get("realized_profit", "0") or 0)
+                            current_cost = current_bet - realized_profit
+                            trade_count = int(float(metrics_data.get("trade_count", "0") or 0))
+                        except Exception:
+                            current_bet = realized_profit = current_cost = trade_count = 0
                         # 持仓字段在 per-mint key 里，要从 mint_data 取
                         await ws_manager.broadcast(mint, {
                             "type": "user_status",
@@ -454,6 +515,13 @@ async def propagate_cluster_type_to_users(
                                 "total_buy_amount": float(mint_data.get("totalBuyAmount", "0") or 0),
                                 "total_sell_amount": float(mint_data.get("totalSellAmount", "0") or 0),
                                 "total_sell_principal": float(mint_data.get("totalSellPrincipal", "0") or 0),
+                            },
+                            # 顶部指数同步推送（前端可立即刷新）
+                            "metrics": {
+                                "current_bet": current_bet,
+                                "realized_profit": realized_profit,
+                                "current_cost": current_cost,
+                                "trade_count": trade_count,
                             }
                         })
 
@@ -466,3 +534,61 @@ async def propagate_cluster_type_to_users(
     except Exception as e:
         logger.error(f"[簇类型传播] 失败: {e}", exc_info=True)
         return 0
+
+
+@router.get("/api/settings/backfill-mode")
+async def api_get_backfill_mode():
+    """获取当前 backfill 模式（0=正式，2=测试）
+
+    前端页面用来显示当前模式。
+    """
+    from app.utils.database import SessionLocal
+    from app.services.settings_service import get_setting
+    db = SessionLocal()
+    try:
+        val = get_setting(db, "backfill_skip_ws_wait") or "0"
+        try:
+            mode = int(val)
+        except (ValueError, TypeError):
+            mode = 0
+        return JSONResponse({
+            "mode": mode,
+            "is_test_mode": mode == 2,
+            "description": "测试模式 (backfill 期间也广播)" if mode == 2 else "正式模式 (backfill 期间不广播)",
+        })
+    finally:
+        db.close()
+
+
+@router.put("/api/settings/backfill-mode")
+async def api_set_backfill_mode(request: Request):
+    """切换 backfill 模式（0=正式，2=测试）
+
+    注意：模式只对**下一次** backfill 生效（设置在 DB，启动时由 trade_backfill 读）。
+    """
+    from app.utils.database import SessionLocal
+    from app.services.settings_service import update_setting
+    db = SessionLocal()
+    try:
+        body = await request.json()
+        new_mode = int(body.get("mode", 0))
+        if new_mode not in (0, 2):
+            return JSONResponse({"error": "mode 只能是 0 或 2"}, status_code=400)
+        update_setting(db, "backfill_skip_ws_wait", str(new_mode))
+        # 同步更新进程内缓存（仅影响后续 backfill）
+        try:
+            from app.services.trade_processor import set_backfill_broadcast_mode
+            set_backfill_broadcast_mode(new_mode)
+        except Exception:
+            pass
+        return JSONResponse({
+            "mode": new_mode,
+            "is_test_mode": new_mode == 2,
+            "description": "测试模式 (backfill 期间也广播)" if new_mode == 2 else "正式模式 (backfill 期间不广播)",
+            "message": f"已切换到{'测试' if new_mode == 2 else '正式'}模式（下次启动 mint 时生效）",
+        })
+    except Exception as e:
+        logger.error(f"[backfill 模式] 切换失败: {e}", exc_info=True)
+        return JSONResponse({"error": str(e)}, status_code=500)
+    finally:
+        db.close()
