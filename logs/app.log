@@ -15825,3 +15825,1190 @@ AttributeError: 'ClientConnection' object has no attribute 'recv_messages'
 2026-07-06 10:02:05,062 - app.services.trade_stream - INFO - [实时流] 停止: 75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump
 2026-07-06 10:02:05,064 - main - INFO - [清理] metrics:75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump + 4 个 user key 已清除
 2026-07-06 10:02:05,069 - app.websocket.manager - INFO - [WS] 断开连接: mint=75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump
+2026-07-06 10:12:45,012 - app.services.dealer_detector - INFO - [庄家判定] 已关闭
+2026-07-06 10:12:45,014 - app.services.cluster.redis_keys - INFO - [cluster:redis] Redis 已关闭
+2026-07-06 10:12:45,014 - main - INFO - 服务已关闭
+2026-07-06 10:12:56,020 - main - INFO - Admin user already exists
+2026-07-06 10:12:56,046 - app.services.settings_service - INFO - 默认设置初始化完成
+2026-07-06 10:12:56,067 - app.services.dealer_detector - INFO - [庄家判定] Redis 连接成功
+2026-07-06 10:12:56,068 - app.services.dealer_detector - INFO - [庄家判定] 队列已就绪，等待首次触发
+2026-07-06 10:12:56,070 - app.services.cluster.redis_keys - INFO - [cluster:redis] Redis 连接成功
+2026-07-06 10:12:56,071 - main - INFO - 服务已启动
+2026-07-06 10:12:56,124 - app.services.settings_service - INFO - 默认设置初始化完成
+2026-07-06 10:13:37,542 - app.services.trade_stream - INFO - [实时流] 启动: 75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump
+2026-07-06 10:13:37,545 - app.services.trade_backfill - INFO - [回填] 模式2：从 Redis 读取已有交易，不调 API
+2026-07-06 10:13:37,578 - app.websocket.manager - INFO - [WS] 新连接: mint=75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump, 当前连接数=1
+2026-07-06 10:13:37,597 - app.services.cluster.redis_keys - INFO - [cluster:redis:sync] 同步 Redis 连接已创建
+2026-07-06 10:13:37,602 - app.services.tx_redis - INFO - [tx_redis] Redis 连接成功
+2026-07-06 10:13:37,608 - app.services.trade_processor - INFO - [全量计算] 开始计算 mint=75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump
+2026-07-06 10:13:37,610 - app.services.trade_processor - INFO - [全量计算] 共 6 条历史交易待处理 (ws 实时由消费者处理)
+2026-07-06 10:13:37,626 - app.services.trade_processor - INFO - ======================================================
+2026-07-06 10:13:37,626 - app.services.trade_processor - INFO - 📊 [指数计算] mint=75ckspwx... sig=5hxndyJdkBmviCbB63DqEij37FKFCJQGbvrxMRDvAABCio2mzzXbx12k83VdYCsh5cdjCaPchKQCT1cxbrxpps1U type=BUY address=4PH34Vb4...
+2026-07-06 10:13:37,626 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:13:37,627 - app.services.trade_processor - INFO - ① 庄家判定: status=retail, is_dealer=False, conditions=['C006']
+2026-07-06 10:13:37,627 - app.services.trade_processor - INFO - ② 交易前用户持仓: holdingQty=30877697.777999  holdingCost=0.910203  avgPrice=0.000000029478
+2026-07-06 10:13:37,628 - app.services.trade_processor - INFO -    totalBuyAmount=0.910203  totalSellAmount=0.000000  totalSellPrincipal=0.000000
+2026-07-06 10:13:37,628 - app.services.trade_processor - INFO -    old_holding_cost=0.910203  old_realized=0.000000
+2026-07-06 10:13:37,628 - app.services.trade_processor - INFO - ③ 用户指数 [BUY]: buy_qty=30877697.777999  buy_amount=0.910203 SOL
+2026-07-06 10:13:37,628 - app.services.trade_processor - INFO -    holdingQty:   30877697.777999 → 61755395.555998
+2026-07-06 10:13:37,629 - app.services.trade_processor - INFO -    holdingCost:  0.910203 → 1.820407
+2026-07-06 10:13:37,629 - app.services.trade_processor - INFO -    avgPrice:     0.000000029478 → 0.000000029478
+2026-07-06 10:13:37,633 - app.services.trade_processor - INFO - ⑥ 全局 total_holdingQty(含庄家): 36561116.958911 → 67438814.736910
+2026-07-06 10:13:37,634 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:13:37,634 - app.services.trade_processor - INFO - ④ delta: delta_bet=0.910203 (=new_holding_cost 1.820407 - old 0.910203)
+2026-07-06 10:13:37,634 - app.services.trade_processor - INFO -    delta_profit=0.000000 (=new_realized 0.000000 - old 0.000000)
+2026-07-06 10:13:37,636 - app.services.trade_processor - INFO - ⑤ 全局散户指数 [更新]: total_bet 1.085654 → 1.995858, realized_profit -0.000002 → -0.000002
+2026-07-06 10:13:37,647 - app.services.trade_processor - INFO - ======================================================
+2026-07-06 10:13:37,648 - app.services.trade_processor - INFO - 📊 [指数计算] mint=75ckspwx... sig=4EYVV6FZPSP9AGWrvr9Tfx8dfu93yyCTiXUL8KZQT49c6gxAMucxyDd61bfgiW6LfRpnc5UqgyYK6VH2jzYYVpLu type=BUY address=2YUAXALq...
+2026-07-06 10:13:37,648 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:13:37,648 - app.services.trade_processor - INFO - ① 庄家判定: status=retail, is_dealer=False, conditions=['C006']
+2026-07-06 10:13:37,649 - app.services.trade_processor - INFO - ② 交易前用户持仓: holdingQty=4032865.404634  holdingCost=0.123475  avgPrice=0.000000030617
+2026-07-06 10:13:37,649 - app.services.trade_processor - INFO -    totalBuyAmount=0.123475  totalSellAmount=0.000000  totalSellPrincipal=0.000000
+2026-07-06 10:13:37,649 - app.services.trade_processor - INFO -    old_holding_cost=0.123475  old_realized=0.000000
+2026-07-06 10:13:37,649 - app.services.trade_processor - INFO - ③ 用户指数 [BUY]: buy_qty=4032865.404634  buy_amount=0.123475 SOL
+2026-07-06 10:13:37,650 - app.services.trade_processor - INFO -    holdingQty:   4032865.404634 → 8065730.809268
+2026-07-06 10:13:37,650 - app.services.trade_processor - INFO -    holdingCost:  0.123475 → 0.246950
+2026-07-06 10:13:37,650 - app.services.trade_processor - INFO -    avgPrice:     0.000000030617 → 0.000000030617
+2026-07-06 10:13:37,653 - app.services.trade_processor - INFO - ⑥ 全局 total_holdingQty(含庄家): 67438814.736910 → 71471680.141544
+2026-07-06 10:13:37,653 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:13:37,653 - app.services.trade_processor - INFO - ④ delta: delta_bet=0.123475 (=new_holding_cost 0.246950 - old 0.123475)
+2026-07-06 10:13:37,653 - app.services.trade_processor - INFO -    delta_profit=0.000000 (=new_realized 0.000000 - old 0.000000)
+2026-07-06 10:13:37,655 - app.services.trade_processor - INFO - ⑤ 全局散户指数 [更新]: total_bet 1.995858 → 2.119333, realized_profit -0.000002 → -0.000002
+2026-07-06 10:13:37,662 - app.services.trade_processor - INFO - ======================================================
+2026-07-06 10:13:37,662 - app.services.trade_processor - INFO - 📊 [指数计算] mint=75ckspwx... sig=8gcturi5CXfBqPuB8kFtwcmErCdhedFDFwXFFMxCBjTiqFZu48dRs21JyGfi13oXLTgea9c7pZaKXudQ5vLifx9 type=BUY address=DvgGZQba...
+2026-07-06 10:13:37,663 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:13:37,663 - app.services.trade_processor - INFO - ① 庄家判定: status=retail, is_dealer=False, conditions=['C006']
+2026-07-06 10:13:37,663 - app.services.trade_processor - INFO - ② 交易前用户持仓: holdingQty=0.000000  holdingCost=0.000000  avgPrice=0.000000000000
+2026-07-06 10:13:37,663 - app.services.trade_processor - INFO -    totalBuyAmount=0.002139  totalSellAmount=0.002137  totalSellPrincipal=0.002139
+2026-07-06 10:13:37,664 - app.services.trade_processor - INFO -    old_holding_cost=0.000000  old_realized=-0.000002
+2026-07-06 10:13:37,664 - app.services.trade_processor - INFO - ③ 用户指数 [BUY]: buy_qty=3306.293910  buy_amount=0.002139 SOL
+2026-07-06 10:13:37,664 - app.services.trade_processor - INFO -    holdingQty:   0.000000 → 3306.293910
+2026-07-06 10:13:37,664 - app.services.trade_processor - INFO -    holdingCost:  0.000000 → 0.002139
+2026-07-06 10:13:37,665 - app.services.trade_processor - INFO -    avgPrice:     0.000000000000 → 0.000000646943
+2026-07-06 10:13:37,667 - app.services.trade_processor - INFO - ⑥ 全局 total_holdingQty(含庄家): 71471680.141544 → 71474986.435454
+2026-07-06 10:13:37,667 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:13:37,668 - app.services.trade_processor - INFO - ④ delta: delta_bet=0.002139 (=new_holding_cost 0.002139 - old 0.000000)
+2026-07-06 10:13:37,668 - app.services.trade_processor - INFO -    delta_profit=0.000000 (=new_realized -0.000002 - old -0.000002)
+2026-07-06 10:13:37,670 - app.services.trade_processor - INFO - ⑤ 全局散户指数 [更新]: total_bet 2.119333 → 2.121472, realized_profit -0.000002 → -0.000002
+2026-07-06 10:13:37,676 - app.services.trade_processor - INFO - ======================================================
+2026-07-06 10:13:37,677 - app.services.trade_processor - INFO - 📊 [指数计算] mint=75ckspwx... sig=3qh1fJkKPExqt56hpHSKbW5CszNqAs57uxvjtrF4Gb76M3i687v7swKJtAT99cXd58VLMLNjpiKNQAdV4hUhcnV8 type=BUY address=CMjRBjRW...
+2026-07-06 10:13:37,677 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:13:37,677 - app.services.trade_processor - INFO - ① 庄家判定: status=retail, is_dealer=False, conditions=['C006']
+2026-07-06 10:13:37,678 - app.services.trade_processor - INFO - ② 交易前用户持仓: holdingQty=1650553.776278  holdingCost=0.051976  avgPrice=0.000000031490
+2026-07-06 10:13:37,678 - app.services.trade_processor - INFO -    totalBuyAmount=0.051976  totalSellAmount=0.000000  totalSellPrincipal=0.000000
+2026-07-06 10:13:37,678 - app.services.trade_processor - INFO -    old_holding_cost=0.051976  old_realized=0.000000
+2026-07-06 10:13:37,678 - app.services.trade_processor - INFO - ③ 用户指数 [BUY]: buy_qty=1650553.776278  buy_amount=0.051976 SOL
+2026-07-06 10:13:37,678 - app.services.trade_processor - INFO -    holdingQty:   1650553.776278 → 3301107.552556
+2026-07-06 10:13:37,679 - app.services.trade_processor - INFO -    holdingCost:  0.051976 → 0.103952
+2026-07-06 10:13:37,679 - app.services.trade_processor - INFO -    avgPrice:     0.000000031490 → 0.000000031490
+2026-07-06 10:13:37,682 - app.services.trade_processor - INFO - ⑥ 全局 total_holdingQty(含庄家): 71474986.435454 → 73125540.211732
+2026-07-06 10:13:37,682 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:13:37,682 - app.services.trade_processor - INFO - ④ delta: delta_bet=0.051976 (=new_holding_cost 0.103952 - old 0.051976)
+2026-07-06 10:13:37,682 - app.services.trade_processor - INFO -    delta_profit=0.000000 (=new_realized 0.000000 - old 0.000000)
+2026-07-06 10:13:37,684 - app.services.trade_processor - INFO - ⑤ 全局散户指数 [更新]: total_bet 2.121472 → 2.173448, realized_profit -0.000002 → -0.000002
+2026-07-06 10:13:37,691 - app.services.trade_processor - INFO - ======================================================
+2026-07-06 10:13:37,691 - app.services.trade_processor - INFO - 📊 [指数计算] mint=75ckspwx... sig=eELktS8wzAcZjgfUkuDzBskBY6pq3m4c4497gjCzwbEJE1ay85h98qa1keHa6aqnhLeKXK9UHDwW3GahkcUmvLG type=SELL address=DvgGZQba...
+2026-07-06 10:13:37,691 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:13:37,691 - app.services.trade_processor - INFO - ① 庄家判定: status=retail, is_dealer=False, conditions=['C006']
+2026-07-06 10:13:37,692 - app.services.trade_processor - INFO - ② 交易前用户持仓: holdingQty=3306.293910  holdingCost=0.002139  avgPrice=0.000000646943
+2026-07-06 10:13:37,692 - app.services.trade_processor - INFO -    totalBuyAmount=0.004278  totalSellAmount=0.002137  totalSellPrincipal=0.002139
+2026-07-06 10:13:37,692 - app.services.trade_processor - INFO -    old_holding_cost=0.002139  old_realized=-0.000002
+2026-07-06 10:13:37,692 - app.services.trade_processor - INFO - ③ 用户指数 [SELL]: sell_qty=3306.293910  sell_amount=0.002137 SOL  sell_principal=0.002139(=sell_qty×avgPrice)
+2026-07-06 10:13:37,692 - app.services.trade_processor - INFO -    落袋收益(realized)=-0.000002 SOL
+2026-07-06 10:13:37,693 - app.services.trade_processor - INFO -    holdingQty:   3306.293910 → 0.000000
+2026-07-06 10:13:37,693 - app.services.trade_processor - INFO -    holdingCost:  0.002139 → 0.000000
+2026-07-06 10:13:37,693 - app.services.trade_processor - INFO -    avgPrice:     0.000000646943 → 0.000000000000
+2026-07-06 10:13:37,696 - app.services.trade_processor - INFO - ⑥ 全局 total_holdingQty(含庄家): 73125540.211732 → 73122233.917822
+2026-07-06 10:13:37,696 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:13:37,696 - app.services.trade_processor - INFO - ④ delta: delta_bet=-0.002139 (=new_holding_cost 0.000000 - old 0.002139)
+2026-07-06 10:13:37,697 - app.services.trade_processor - INFO -    delta_profit=-0.000002 (=new_realized -0.000004 - old -0.000002)
+2026-07-06 10:13:37,699 - app.services.trade_processor - INFO - ⑤ 全局散户指数 [更新]: total_bet 2.173448 → 2.171309, realized_profit -0.000002 → -0.000004
+2026-07-06 10:13:37,703 - app.services.trade_processor - INFO - [全量计算] 完成 mint=75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump
+2026-07-06 10:13:37,714 - app.services.trade_processor - INFO - [消费者] 已启动 mint=75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump（单例已初始化）
+2026-07-06 10:13:37,715 - app.services.trade_processor - INFO - [消费者] 开始消化队列 mint=75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump
+2026-07-06 10:13:37,715 - app.services.trade_processor - ERROR - [消费者] 队列未初始化，退出
+2026-07-06 10:13:38,367 - app.services.trade_stream - INFO - [实时流] 已发送订阅请求: 75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump
+2026-07-06 10:13:38,518 - app.services.trade_stream - INFO - [实时流] 订阅确认: {"jsonrpc":"2.0","id":1,"result":14533792}
+2026-07-06 10:13:57,120 - app.services.trade_backfill - INFO - [回填] 收到停止信号
+2026-07-06 10:13:57,278 - app.services.trade_stream - WARNING - [实时流] 连接断开，尝试重连...
+2026-07-06 10:13:57,278 - app.services.trade_stream - INFO - [实时流] 停止: 75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump
+2026-07-06 10:13:57,284 - main - INFO - [清理] metrics:75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump + 4 个 user key 已清除
+2026-07-06 10:13:57,291 - app.websocket.manager - INFO - [WS] 断开连接: mint=75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump
+2026-07-06 10:13:59,185 - app.services.trade_stream - INFO - [实时流] 启动: 75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump
+2026-07-06 10:13:59,186 - app.services.trade_backfill - INFO - [回填] 模式2：从 Redis 读取已有交易，不调 API
+2026-07-06 10:13:59,204 - app.websocket.manager - INFO - [WS] 新连接: mint=75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump, 当前连接数=1
+2026-07-06 10:13:59,219 - app.services.trade_processor - INFO - [全量计算] 开始计算 mint=75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump
+2026-07-06 10:13:59,223 - app.services.trade_processor - INFO - [全量计算] 共 6 条历史交易待处理 (ws 实时由消费者处理)
+2026-07-06 10:13:59,228 - app.services.trade_processor - INFO - ======================================================
+2026-07-06 10:13:59,229 - app.services.trade_processor - INFO - 📊 [指数计算] mint=75ckspwx... sig=5hxndyJdkBmviCbB63DqEij37FKFCJQGbvrxMRDvAABCio2mzzXbx12k83VdYCsh5cdjCaPchKQCT1cxbrxpps1U type=BUY address=4PH34Vb4...
+2026-07-06 10:13:59,229 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:13:59,229 - app.services.trade_processor - INFO - ① 庄家判定: status=retail, is_dealer=False, conditions=['C006']
+2026-07-06 10:13:59,230 - app.services.trade_processor - INFO - ② 交易前用户持仓: holdingQty=0.000000  holdingCost=0.000000  avgPrice=0.000000000000
+2026-07-06 10:13:59,230 - app.services.trade_processor - INFO -    totalBuyAmount=0.000000  totalSellAmount=0.000000  totalSellPrincipal=0.000000
+2026-07-06 10:13:59,231 - app.services.trade_processor - INFO -    old_holding_cost=0.000000  old_realized=0.000000
+2026-07-06 10:13:59,231 - app.services.trade_processor - INFO - ③ 用户指数 [BUY]: buy_qty=30877697.777999  buy_amount=0.910203 SOL
+2026-07-06 10:13:59,232 - app.services.trade_processor - INFO -    holdingQty:   0.000000 → 30877697.777999
+2026-07-06 10:13:59,232 - app.services.trade_processor - INFO -    holdingCost:  0.000000 → 0.910203
+2026-07-06 10:13:59,233 - app.services.trade_processor - INFO -    avgPrice:     0.000000000000 → 0.000000029478
+2026-07-06 10:13:59,236 - app.services.trade_processor - INFO - ⑥ 全局 total_holdingQty(含庄家): 0.000000 → 30877697.777999
+2026-07-06 10:13:59,237 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:13:59,237 - app.services.trade_processor - INFO - ④ delta: delta_bet=0.910203 (=new_holding_cost 0.910203 - old 0.000000)
+2026-07-06 10:13:59,238 - app.services.trade_processor - INFO -    delta_profit=0.000000 (=new_realized 0.000000 - old 0.000000)
+2026-07-06 10:13:59,240 - app.services.trade_processor - INFO - ⑤ 全局散户指数 [更新]: total_bet 0.000000 → 0.910203, realized_profit 0.000000 → 0.000000
+2026-07-06 10:13:59,248 - app.services.trade_processor - INFO - ======================================================
+2026-07-06 10:13:59,249 - app.services.trade_processor - INFO - 📊 [指数计算] mint=75ckspwx... sig=4EYVV6FZPSP9AGWrvr9Tfx8dfu93yyCTiXUL8KZQT49c6gxAMucxyDd61bfgiW6LfRpnc5UqgyYK6VH2jzYYVpLu type=BUY address=2YUAXALq...
+2026-07-06 10:13:59,249 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:13:59,249 - app.services.trade_processor - INFO - ① 庄家判定: status=retail, is_dealer=False, conditions=['C006']
+2026-07-06 10:13:59,250 - app.services.trade_processor - INFO - ② 交易前用户持仓: holdingQty=0.000000  holdingCost=0.000000  avgPrice=0.000000000000
+2026-07-06 10:13:59,250 - app.services.trade_processor - INFO -    totalBuyAmount=0.000000  totalSellAmount=0.000000  totalSellPrincipal=0.000000
+2026-07-06 10:13:59,250 - app.services.trade_processor - INFO -    old_holding_cost=0.000000  old_realized=0.000000
+2026-07-06 10:13:59,251 - app.services.trade_processor - INFO - ③ 用户指数 [BUY]: buy_qty=4032865.404634  buy_amount=0.123475 SOL
+2026-07-06 10:13:59,251 - app.services.trade_processor - INFO -    holdingQty:   0.000000 → 4032865.404634
+2026-07-06 10:13:59,252 - app.services.trade_processor - INFO -    holdingCost:  0.000000 → 0.123475
+2026-07-06 10:13:59,252 - app.services.trade_processor - INFO -    avgPrice:     0.000000000000 → 0.000000030617
+2026-07-06 10:13:59,255 - app.services.trade_processor - INFO - ⑥ 全局 total_holdingQty(含庄家): 30877697.777999 → 34910563.182633
+2026-07-06 10:13:59,255 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:13:59,256 - app.services.trade_processor - INFO - ④ delta: delta_bet=0.123475 (=new_holding_cost 0.123475 - old 0.000000)
+2026-07-06 10:13:59,256 - app.services.trade_processor - INFO -    delta_profit=0.000000 (=new_realized 0.000000 - old 0.000000)
+2026-07-06 10:13:59,258 - app.services.trade_processor - INFO - ⑤ 全局散户指数 [更新]: total_bet 0.910203 → 1.033678, realized_profit 0.000000 → 0.000000
+2026-07-06 10:13:59,264 - app.services.trade_processor - INFO - ======================================================
+2026-07-06 10:13:59,264 - app.services.trade_processor - INFO - 📊 [指数计算] mint=75ckspwx... sig=8gcturi5CXfBqPuB8kFtwcmErCdhedFDFwXFFMxCBjTiqFZu48dRs21JyGfi13oXLTgea9c7pZaKXudQ5vLifx9 type=BUY address=DvgGZQba...
+2026-07-06 10:13:59,265 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:13:59,265 - app.services.trade_processor - INFO - ① 庄家判定: status=retail, is_dealer=False, conditions=['C006']
+2026-07-06 10:13:59,265 - app.services.trade_processor - INFO - ② 交易前用户持仓: holdingQty=0.000000  holdingCost=0.000000  avgPrice=0.000000000000
+2026-07-06 10:13:59,266 - app.services.trade_processor - INFO -    totalBuyAmount=0.000000  totalSellAmount=0.000000  totalSellPrincipal=0.000000
+2026-07-06 10:13:59,266 - app.services.trade_processor - INFO -    old_holding_cost=0.000000  old_realized=0.000000
+2026-07-06 10:13:59,266 - app.services.trade_processor - INFO - ③ 用户指数 [BUY]: buy_qty=3306.293910  buy_amount=0.002139 SOL
+2026-07-06 10:13:59,267 - app.services.trade_processor - INFO -    holdingQty:   0.000000 → 3306.293910
+2026-07-06 10:13:59,267 - app.services.trade_processor - INFO -    holdingCost:  0.000000 → 0.002139
+2026-07-06 10:13:59,267 - app.services.trade_processor - INFO -    avgPrice:     0.000000000000 → 0.000000646943
+2026-07-06 10:13:59,270 - app.services.trade_processor - INFO - ⑥ 全局 total_holdingQty(含庄家): 34910563.182633 → 34913869.476543
+2026-07-06 10:13:59,270 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:13:59,270 - app.services.trade_processor - INFO - ④ delta: delta_bet=0.002139 (=new_holding_cost 0.002139 - old 0.000000)
+2026-07-06 10:13:59,271 - app.services.trade_processor - INFO -    delta_profit=0.000000 (=new_realized 0.000000 - old 0.000000)
+2026-07-06 10:13:59,273 - app.services.trade_processor - INFO - ⑤ 全局散户指数 [更新]: total_bet 1.033678 → 1.035817, realized_profit 0.000000 → 0.000000
+2026-07-06 10:13:59,279 - app.services.trade_processor - INFO - ======================================================
+2026-07-06 10:13:59,280 - app.services.trade_processor - INFO - 📊 [指数计算] mint=75ckspwx... sig=3qh1fJkKPExqt56hpHSKbW5CszNqAs57uxvjtrF4Gb76M3i687v7swKJtAT99cXd58VLMLNjpiKNQAdV4hUhcnV8 type=BUY address=CMjRBjRW...
+2026-07-06 10:13:59,280 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:13:59,281 - app.services.trade_processor - INFO - ① 庄家判定: status=retail, is_dealer=False, conditions=['C006']
+2026-07-06 10:13:59,281 - app.services.trade_processor - INFO - ② 交易前用户持仓: holdingQty=0.000000  holdingCost=0.000000  avgPrice=0.000000000000
+2026-07-06 10:13:59,281 - app.services.trade_processor - INFO -    totalBuyAmount=0.000000  totalSellAmount=0.000000  totalSellPrincipal=0.000000
+2026-07-06 10:13:59,281 - app.services.trade_processor - INFO -    old_holding_cost=0.000000  old_realized=0.000000
+2026-07-06 10:13:59,282 - app.services.trade_processor - INFO - ③ 用户指数 [BUY]: buy_qty=1650553.776278  buy_amount=0.051976 SOL
+2026-07-06 10:13:59,282 - app.services.trade_processor - INFO -    holdingQty:   0.000000 → 1650553.776278
+2026-07-06 10:13:59,282 - app.services.trade_processor - INFO -    holdingCost:  0.000000 → 0.051976
+2026-07-06 10:13:59,282 - app.services.trade_processor - INFO -    avgPrice:     0.000000000000 → 0.000000031490
+2026-07-06 10:13:59,285 - app.services.trade_processor - INFO - ⑥ 全局 total_holdingQty(含庄家): 34913869.476543 → 36564423.252821
+2026-07-06 10:13:59,285 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:13:59,286 - app.services.trade_processor - INFO - ④ delta: delta_bet=0.051976 (=new_holding_cost 0.051976 - old 0.000000)
+2026-07-06 10:13:59,286 - app.services.trade_processor - INFO -    delta_profit=0.000000 (=new_realized 0.000000 - old 0.000000)
+2026-07-06 10:13:59,288 - app.services.trade_processor - INFO - ⑤ 全局散户指数 [更新]: total_bet 1.035817 → 1.087793, realized_profit 0.000000 → 0.000000
+2026-07-06 10:13:59,295 - app.services.trade_processor - INFO - ======================================================
+2026-07-06 10:13:59,295 - app.services.trade_processor - INFO - 📊 [指数计算] mint=75ckspwx... sig=eELktS8wzAcZjgfUkuDzBskBY6pq3m4c4497gjCzwbEJE1ay85h98qa1keHa6aqnhLeKXK9UHDwW3GahkcUmvLG type=SELL address=DvgGZQba...
+2026-07-06 10:13:59,295 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:13:59,296 - app.services.trade_processor - INFO - ① 庄家判定: status=retail, is_dealer=False, conditions=['C006']
+2026-07-06 10:13:59,296 - app.services.trade_processor - INFO - ② 交易前用户持仓: holdingQty=3306.293910  holdingCost=0.002139  avgPrice=0.000000646943
+2026-07-06 10:13:59,296 - app.services.trade_processor - INFO -    totalBuyAmount=0.002139  totalSellAmount=0.000000  totalSellPrincipal=0.000000
+2026-07-06 10:13:59,296 - app.services.trade_processor - INFO -    old_holding_cost=0.002139  old_realized=0.000000
+2026-07-06 10:13:59,297 - app.services.trade_processor - INFO - ③ 用户指数 [SELL]: sell_qty=3306.293910  sell_amount=0.002137 SOL  sell_principal=0.002139(=sell_qty×avgPrice)
+2026-07-06 10:13:59,297 - app.services.trade_processor - INFO -    落袋收益(realized)=-0.000002 SOL
+2026-07-06 10:13:59,297 - app.services.trade_processor - INFO -    holdingQty:   3306.293910 → 0.000000
+2026-07-06 10:13:59,297 - app.services.trade_processor - INFO -    holdingCost:  0.002139 → 0.000000
+2026-07-06 10:13:59,298 - app.services.trade_processor - INFO -    avgPrice:     0.000000646943 → 0.000000000000
+2026-07-06 10:13:59,300 - app.services.trade_processor - INFO - ⑥ 全局 total_holdingQty(含庄家): 36564423.252821 → 36561116.958911
+2026-07-06 10:13:59,300 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:13:59,301 - app.services.trade_processor - INFO - ④ delta: delta_bet=-0.002139 (=new_holding_cost 0.000000 - old 0.002139)
+2026-07-06 10:13:59,301 - app.services.trade_processor - INFO -    delta_profit=-0.000002 (=new_realized -0.000002 - old 0.000000)
+2026-07-06 10:13:59,303 - app.services.trade_processor - INFO - ⑤ 全局散户指数 [更新]: total_bet 1.087793 → 1.085654, realized_profit 0.000000 → -0.000002
+2026-07-06 10:13:59,307 - app.services.trade_processor - INFO - [全量计算] 完成 mint=75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump
+2026-07-06 10:13:59,311 - app.services.trade_processor - INFO - [消费者] 已启动 mint=75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump（单例已初始化）
+2026-07-06 10:13:59,312 - app.services.trade_processor - INFO - [消费者] 开始消化队列 mint=75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump
+2026-07-06 10:13:59,312 - app.services.trade_processor - ERROR - [消费者] 队列未初始化，退出
+2026-07-06 10:14:00,015 - app.services.trade_stream - INFO - [实时流] 已发送订阅请求: 75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump
+2026-07-06 10:14:00,163 - app.services.trade_stream - INFO - [实时流] 订阅确认: {"jsonrpc":"2.0","id":1,"result":12785943}
+2026-07-06 10:14:06,499 - app.services.trade_backfill - INFO - [回填] 收到停止信号
+2026-07-06 10:14:06,655 - app.services.trade_stream - WARNING - [实时流] 连接断开，尝试重连...
+2026-07-06 10:14:06,655 - app.services.trade_stream - INFO - [实时流] 停止: 75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump
+2026-07-06 10:14:06,660 - main - INFO - [清理] metrics:75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump + 4 个 user key 已清除
+2026-07-06 10:14:06,664 - app.websocket.manager - INFO - [WS] 断开连接: mint=75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump
+2026-07-06 10:14:13,314 - app.services.trade_stream - INFO - [实时流] 启动: 75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump
+2026-07-06 10:14:13,315 - app.services.trade_backfill - INFO - [回填] 模式2：从 Redis 读取已有交易，不调 API
+2026-07-06 10:14:13,325 - app.websocket.manager - INFO - [WS] 新连接: mint=75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump, 当前连接数=1
+2026-07-06 10:14:13,337 - app.services.trade_processor - INFO - [全量计算] 开始计算 mint=75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump
+2026-07-06 10:14:13,340 - app.services.trade_processor - INFO - [全量计算] 共 6 条历史交易待处理 (ws 实时由消费者处理)
+2026-07-06 10:14:13,344 - app.services.trade_processor - INFO - ======================================================
+2026-07-06 10:14:13,345 - app.services.trade_processor - INFO - 📊 [指数计算] mint=75ckspwx... sig=5hxndyJdkBmviCbB63DqEij37FKFCJQGbvrxMRDvAABCio2mzzXbx12k83VdYCsh5cdjCaPchKQCT1cxbrxpps1U type=BUY address=4PH34Vb4...
+2026-07-06 10:14:13,345 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:14:13,345 - app.services.trade_processor - INFO - ① 庄家判定: status=retail, is_dealer=False, conditions=['C006']
+2026-07-06 10:14:13,345 - app.services.trade_processor - INFO - ② 交易前用户持仓: holdingQty=0.000000  holdingCost=0.000000  avgPrice=0.000000000000
+2026-07-06 10:14:13,346 - app.services.trade_processor - INFO -    totalBuyAmount=0.000000  totalSellAmount=0.000000  totalSellPrincipal=0.000000
+2026-07-06 10:14:13,346 - app.services.trade_processor - INFO -    old_holding_cost=0.000000  old_realized=0.000000
+2026-07-06 10:14:13,347 - app.services.trade_processor - INFO - ③ 用户指数 [BUY]: buy_qty=30877697.777999  buy_amount=0.910203 SOL
+2026-07-06 10:14:13,347 - app.services.trade_processor - INFO -    holdingQty:   0.000000 → 30877697.777999
+2026-07-06 10:14:13,347 - app.services.trade_processor - INFO -    holdingCost:  0.000000 → 0.910203
+2026-07-06 10:14:13,347 - app.services.trade_processor - INFO -    avgPrice:     0.000000000000 → 0.000000029478
+2026-07-06 10:14:13,352 - app.services.trade_processor - INFO - ⑥ 全局 total_holdingQty(含庄家): 0.000000 → 30877697.777999
+2026-07-06 10:14:13,352 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:14:13,352 - app.services.trade_processor - INFO - ④ delta: delta_bet=0.910203 (=new_holding_cost 0.910203 - old 0.000000)
+2026-07-06 10:14:13,352 - app.services.trade_processor - INFO -    delta_profit=0.000000 (=new_realized 0.000000 - old 0.000000)
+2026-07-06 10:14:13,354 - app.services.trade_processor - INFO - ⑤ 全局散户指数 [更新]: total_bet 0.000000 → 0.910203, realized_profit 0.000000 → 0.000000
+2026-07-06 10:14:13,363 - app.services.trade_processor - INFO - ======================================================
+2026-07-06 10:14:13,364 - app.services.trade_processor - INFO - 📊 [指数计算] mint=75ckspwx... sig=4EYVV6FZPSP9AGWrvr9Tfx8dfu93yyCTiXUL8KZQT49c6gxAMucxyDd61bfgiW6LfRpnc5UqgyYK6VH2jzYYVpLu type=BUY address=2YUAXALq...
+2026-07-06 10:14:13,364 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:14:13,364 - app.services.trade_processor - INFO - ① 庄家判定: status=retail, is_dealer=False, conditions=['C006']
+2026-07-06 10:14:13,364 - app.services.trade_processor - INFO - ② 交易前用户持仓: holdingQty=0.000000  holdingCost=0.000000  avgPrice=0.000000000000
+2026-07-06 10:14:13,365 - app.services.trade_processor - INFO -    totalBuyAmount=0.000000  totalSellAmount=0.000000  totalSellPrincipal=0.000000
+2026-07-06 10:14:13,365 - app.services.trade_processor - INFO -    old_holding_cost=0.000000  old_realized=0.000000
+2026-07-06 10:14:13,365 - app.services.trade_processor - INFO - ③ 用户指数 [BUY]: buy_qty=4032865.404634  buy_amount=0.123475 SOL
+2026-07-06 10:14:13,366 - app.services.trade_processor - INFO -    holdingQty:   0.000000 → 4032865.404634
+2026-07-06 10:14:13,366 - app.services.trade_processor - INFO -    holdingCost:  0.000000 → 0.123475
+2026-07-06 10:14:13,366 - app.services.trade_processor - INFO -    avgPrice:     0.000000000000 → 0.000000030617
+2026-07-06 10:14:13,369 - app.services.trade_processor - INFO - ⑥ 全局 total_holdingQty(含庄家): 30877697.777999 → 34910563.182633
+2026-07-06 10:14:13,370 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:14:13,370 - app.services.trade_processor - INFO - ④ delta: delta_bet=0.123475 (=new_holding_cost 0.123475 - old 0.000000)
+2026-07-06 10:14:13,371 - app.services.trade_processor - INFO -    delta_profit=0.000000 (=new_realized 0.000000 - old 0.000000)
+2026-07-06 10:14:13,373 - app.services.trade_processor - INFO - ⑤ 全局散户指数 [更新]: total_bet 0.910203 → 1.033678, realized_profit 0.000000 → 0.000000
+2026-07-06 10:14:13,380 - app.services.trade_processor - INFO - ======================================================
+2026-07-06 10:14:13,380 - app.services.trade_processor - INFO - 📊 [指数计算] mint=75ckspwx... sig=8gcturi5CXfBqPuB8kFtwcmErCdhedFDFwXFFMxCBjTiqFZu48dRs21JyGfi13oXLTgea9c7pZaKXudQ5vLifx9 type=BUY address=DvgGZQba...
+2026-07-06 10:14:13,380 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:14:13,381 - app.services.trade_processor - INFO - ① 庄家判定: status=retail, is_dealer=False, conditions=['C006']
+2026-07-06 10:14:13,381 - app.services.trade_processor - INFO - ② 交易前用户持仓: holdingQty=0.000000  holdingCost=0.000000  avgPrice=0.000000000000
+2026-07-06 10:14:13,381 - app.services.trade_processor - INFO -    totalBuyAmount=0.000000  totalSellAmount=0.000000  totalSellPrincipal=0.000000
+2026-07-06 10:14:13,382 - app.services.trade_processor - INFO -    old_holding_cost=0.000000  old_realized=0.000000
+2026-07-06 10:14:13,382 - app.services.trade_processor - INFO - ③ 用户指数 [BUY]: buy_qty=3306.293910  buy_amount=0.002139 SOL
+2026-07-06 10:14:13,382 - app.services.trade_processor - INFO -    holdingQty:   0.000000 → 3306.293910
+2026-07-06 10:14:13,383 - app.services.trade_processor - INFO -    holdingCost:  0.000000 → 0.002139
+2026-07-06 10:14:13,383 - app.services.trade_processor - INFO -    avgPrice:     0.000000000000 → 0.000000646943
+2026-07-06 10:14:13,386 - app.services.trade_processor - INFO - ⑥ 全局 total_holdingQty(含庄家): 34910563.182633 → 34913869.476543
+2026-07-06 10:14:13,387 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:14:13,387 - app.services.trade_processor - INFO - ④ delta: delta_bet=0.002139 (=new_holding_cost 0.002139 - old 0.000000)
+2026-07-06 10:14:13,387 - app.services.trade_processor - INFO -    delta_profit=0.000000 (=new_realized 0.000000 - old 0.000000)
+2026-07-06 10:14:13,389 - app.services.trade_processor - INFO - ⑤ 全局散户指数 [更新]: total_bet 1.033678 → 1.035817, realized_profit 0.000000 → 0.000000
+2026-07-06 10:14:13,396 - app.services.trade_processor - INFO - ======================================================
+2026-07-06 10:14:13,396 - app.services.trade_processor - INFO - 📊 [指数计算] mint=75ckspwx... sig=3qh1fJkKPExqt56hpHSKbW5CszNqAs57uxvjtrF4Gb76M3i687v7swKJtAT99cXd58VLMLNjpiKNQAdV4hUhcnV8 type=BUY address=CMjRBjRW...
+2026-07-06 10:14:13,397 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:14:13,397 - app.services.trade_processor - INFO - ① 庄家判定: status=retail, is_dealer=False, conditions=['C006']
+2026-07-06 10:14:13,397 - app.services.trade_processor - INFO - ② 交易前用户持仓: holdingQty=0.000000  holdingCost=0.000000  avgPrice=0.000000000000
+2026-07-06 10:14:13,398 - app.services.trade_processor - INFO -    totalBuyAmount=0.000000  totalSellAmount=0.000000  totalSellPrincipal=0.000000
+2026-07-06 10:14:13,398 - app.services.trade_processor - INFO -    old_holding_cost=0.000000  old_realized=0.000000
+2026-07-06 10:14:13,398 - app.services.trade_processor - INFO - ③ 用户指数 [BUY]: buy_qty=1650553.776278  buy_amount=0.051976 SOL
+2026-07-06 10:14:13,398 - app.services.trade_processor - INFO -    holdingQty:   0.000000 → 1650553.776278
+2026-07-06 10:14:13,399 - app.services.trade_processor - INFO -    holdingCost:  0.000000 → 0.051976
+2026-07-06 10:14:13,399 - app.services.trade_processor - INFO -    avgPrice:     0.000000000000 → 0.000000031490
+2026-07-06 10:14:13,402 - app.services.trade_processor - INFO - ⑥ 全局 total_holdingQty(含庄家): 34913869.476543 → 36564423.252821
+2026-07-06 10:14:13,402 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:14:13,402 - app.services.trade_processor - INFO - ④ delta: delta_bet=0.051976 (=new_holding_cost 0.051976 - old 0.000000)
+2026-07-06 10:14:13,403 - app.services.trade_processor - INFO -    delta_profit=0.000000 (=new_realized 0.000000 - old 0.000000)
+2026-07-06 10:14:13,405 - app.services.trade_processor - INFO - ⑤ 全局散户指数 [更新]: total_bet 1.035817 → 1.087793, realized_profit 0.000000 → 0.000000
+2026-07-06 10:14:13,412 - app.services.trade_processor - INFO - ======================================================
+2026-07-06 10:14:13,412 - app.services.trade_processor - INFO - 📊 [指数计算] mint=75ckspwx... sig=eELktS8wzAcZjgfUkuDzBskBY6pq3m4c4497gjCzwbEJE1ay85h98qa1keHa6aqnhLeKXK9UHDwW3GahkcUmvLG type=SELL address=DvgGZQba...
+2026-07-06 10:14:13,412 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:14:13,413 - app.services.trade_processor - INFO - ① 庄家判定: status=retail, is_dealer=False, conditions=['C006']
+2026-07-06 10:14:13,413 - app.services.trade_processor - INFO - ② 交易前用户持仓: holdingQty=3306.293910  holdingCost=0.002139  avgPrice=0.000000646943
+2026-07-06 10:14:13,413 - app.services.trade_processor - INFO -    totalBuyAmount=0.002139  totalSellAmount=0.000000  totalSellPrincipal=0.000000
+2026-07-06 10:14:13,414 - app.services.trade_processor - INFO -    old_holding_cost=0.002139  old_realized=0.000000
+2026-07-06 10:14:13,414 - app.services.trade_processor - INFO - ③ 用户指数 [SELL]: sell_qty=3306.293910  sell_amount=0.002137 SOL  sell_principal=0.002139(=sell_qty×avgPrice)
+2026-07-06 10:14:13,414 - app.services.trade_processor - INFO -    落袋收益(realized)=-0.000002 SOL
+2026-07-06 10:14:13,414 - app.services.trade_processor - INFO -    holdingQty:   3306.293910 → 0.000000
+2026-07-06 10:14:13,415 - app.services.trade_processor - INFO -    holdingCost:  0.002139 → 0.000000
+2026-07-06 10:14:13,415 - app.services.trade_processor - INFO -    avgPrice:     0.000000646943 → 0.000000000000
+2026-07-06 10:14:13,418 - app.services.trade_processor - INFO - ⑥ 全局 total_holdingQty(含庄家): 36564423.252821 → 36561116.958911
+2026-07-06 10:14:13,418 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:14:13,418 - app.services.trade_processor - INFO - ④ delta: delta_bet=-0.002139 (=new_holding_cost 0.000000 - old 0.002139)
+2026-07-06 10:14:13,418 - app.services.trade_processor - INFO -    delta_profit=-0.000002 (=new_realized -0.000002 - old 0.000000)
+2026-07-06 10:14:13,421 - app.services.trade_processor - INFO - ⑤ 全局散户指数 [更新]: total_bet 1.087793 → 1.085654, realized_profit 0.000000 → -0.000002
+2026-07-06 10:14:13,424 - app.services.trade_processor - INFO - [全量计算] 完成 mint=75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump
+2026-07-06 10:14:13,428 - app.services.trade_processor - INFO - [消费者] 已启动 mint=75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump（单例已初始化）
+2026-07-06 10:14:13,429 - app.services.trade_processor - INFO - [消费者] 开始消化队列 mint=75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump
+2026-07-06 10:14:13,429 - app.services.trade_processor - ERROR - [消费者] 队列未初始化，退出
+2026-07-06 10:14:14,149 - app.services.trade_stream - INFO - [实时流] 已发送订阅请求: 75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump
+2026-07-06 10:14:14,300 - app.services.trade_stream - INFO - [实时流] 订阅确认: {"jsonrpc":"2.0","id":1,"result":12786452}
+2026-07-06 10:15:19,639 - app.services.trade_stream - WARNING - [实时流] 连接断开，尝试重连...
+2026-07-06 10:15:23,508 - app.services.trade_stream - INFO - [实时流] 已发送订阅请求: 75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump
+2026-07-06 10:15:23,659 - app.services.trade_stream - INFO - [实时流] 订阅确认: {"jsonrpc":"2.0","id":1,"result":14539156}
+2026-07-06 10:15:36,868 - app.routes.cluster_api - INFO - [用户状态] CMjRBjRW... 修改为 dealer (source=manual)
+2026-07-06 10:16:18,930 - app.services.trade_backfill - INFO - [回填] 收到停止信号
+2026-07-06 10:16:19,085 - app.services.trade_stream - WARNING - [实时流] 连接断开，尝试重连...
+2026-07-06 10:16:19,086 - app.services.trade_stream - INFO - [实时流] 停止: 75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump
+2026-07-06 10:16:19,092 - main - INFO - [清理] metrics:75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump + 4 个 user key 已清除
+2026-07-06 10:16:19,095 - app.websocket.manager - INFO - [WS] 断开连接: mint=75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump
+2026-07-06 10:16:20,566 - app.services.trade_stream - INFO - [实时流] 启动: 75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump
+2026-07-06 10:16:20,568 - app.services.trade_backfill - INFO - [回填] 模式2：从 Redis 读取已有交易，不调 API
+2026-07-06 10:16:20,592 - app.websocket.manager - INFO - [WS] 新连接: mint=75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump, 当前连接数=1
+2026-07-06 10:16:20,601 - app.services.trade_processor - INFO - [全量计算] 开始计算 mint=75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump
+2026-07-06 10:16:20,604 - app.services.trade_processor - INFO - [全量计算] 共 6 条历史交易待处理 (ws 实时由消费者处理)
+2026-07-06 10:16:20,609 - app.services.trade_processor - INFO - ======================================================
+2026-07-06 10:16:20,609 - app.services.trade_processor - INFO - 📊 [指数计算] mint=75ckspwx... sig=5hxndyJdkBmviCbB63DqEij37FKFCJQGbvrxMRDvAABCio2mzzXbx12k83VdYCsh5cdjCaPchKQCT1cxbrxpps1U type=BUY address=4PH34Vb4...
+2026-07-06 10:16:20,610 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:16:20,610 - app.services.trade_processor - INFO - ① 庄家判定: status=retail, is_dealer=False, conditions=['C006']
+2026-07-06 10:16:20,612 - app.services.trade_processor - INFO - ② 交易前用户持仓: holdingQty=0.000000  holdingCost=0.000000  avgPrice=0.000000000000
+2026-07-06 10:16:20,613 - app.services.trade_processor - INFO -    totalBuyAmount=0.000000  totalSellAmount=0.000000  totalSellPrincipal=0.000000
+2026-07-06 10:16:20,613 - app.services.trade_processor - INFO -    old_holding_cost=0.000000  old_realized=0.000000
+2026-07-06 10:16:20,614 - app.services.trade_processor - INFO - ③ 用户指数 [BUY]: buy_qty=30877697.777999  buy_amount=0.910203 SOL
+2026-07-06 10:16:20,614 - app.services.trade_processor - INFO -    holdingQty:   0.000000 → 30877697.777999
+2026-07-06 10:16:20,614 - app.services.trade_processor - INFO -    holdingCost:  0.000000 → 0.910203
+2026-07-06 10:16:20,615 - app.services.trade_processor - INFO -    avgPrice:     0.000000000000 → 0.000000029478
+2026-07-06 10:16:20,618 - app.services.trade_processor - INFO - ⑥ 全局 total_holdingQty(含庄家): 0.000000 → 30877697.777999
+2026-07-06 10:16:20,619 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:16:20,619 - app.services.trade_processor - INFO - ④ delta: delta_bet=0.910203 (=new_holding_cost 0.910203 - old 0.000000)
+2026-07-06 10:16:20,619 - app.services.trade_processor - INFO -    delta_profit=0.000000 (=new_realized 0.000000 - old 0.000000)
+2026-07-06 10:16:20,622 - app.services.trade_processor - INFO - ⑤ 全局散户指数 [更新]: total_bet 0.000000 → 0.910203, realized_profit 0.000000 → 0.000000
+2026-07-06 10:16:20,629 - app.services.trade_processor - INFO - ======================================================
+2026-07-06 10:16:20,630 - app.services.trade_processor - INFO - 📊 [指数计算] mint=75ckspwx... sig=4EYVV6FZPSP9AGWrvr9Tfx8dfu93yyCTiXUL8KZQT49c6gxAMucxyDd61bfgiW6LfRpnc5UqgyYK6VH2jzYYVpLu type=BUY address=2YUAXALq...
+2026-07-06 10:16:20,630 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:16:20,630 - app.services.trade_processor - INFO - ① 庄家判定: status=retail, is_dealer=False, conditions=['C006']
+2026-07-06 10:16:20,630 - app.services.trade_processor - INFO - ② 交易前用户持仓: holdingQty=0.000000  holdingCost=0.000000  avgPrice=0.000000000000
+2026-07-06 10:16:20,630 - app.services.trade_processor - INFO -    totalBuyAmount=0.000000  totalSellAmount=0.000000  totalSellPrincipal=0.000000
+2026-07-06 10:16:20,631 - app.services.trade_processor - INFO -    old_holding_cost=0.000000  old_realized=0.000000
+2026-07-06 10:16:20,631 - app.services.trade_processor - INFO - ③ 用户指数 [BUY]: buy_qty=4032865.404634  buy_amount=0.123475 SOL
+2026-07-06 10:16:20,631 - app.services.trade_processor - INFO -    holdingQty:   0.000000 → 4032865.404634
+2026-07-06 10:16:20,632 - app.services.trade_processor - INFO -    holdingCost:  0.000000 → 0.123475
+2026-07-06 10:16:20,632 - app.services.trade_processor - INFO -    avgPrice:     0.000000000000 → 0.000000030617
+2026-07-06 10:16:20,635 - app.services.trade_processor - INFO - ⑥ 全局 total_holdingQty(含庄家): 30877697.777999 → 34910563.182633
+2026-07-06 10:16:20,636 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:16:20,636 - app.services.trade_processor - INFO - ④ delta: delta_bet=0.123475 (=new_holding_cost 0.123475 - old 0.000000)
+2026-07-06 10:16:20,636 - app.services.trade_processor - INFO -    delta_profit=0.000000 (=new_realized 0.000000 - old 0.000000)
+2026-07-06 10:16:20,638 - app.services.trade_processor - INFO - ⑤ 全局散户指数 [更新]: total_bet 0.910203 → 1.033678, realized_profit 0.000000 → 0.000000
+2026-07-06 10:16:20,645 - app.services.trade_processor - INFO - ======================================================
+2026-07-06 10:16:20,646 - app.services.trade_processor - INFO - 📊 [指数计算] mint=75ckspwx... sig=8gcturi5CXfBqPuB8kFtwcmErCdhedFDFwXFFMxCBjTiqFZu48dRs21JyGfi13oXLTgea9c7pZaKXudQ5vLifx9 type=BUY address=DvgGZQba...
+2026-07-06 10:16:20,646 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:16:20,646 - app.services.trade_processor - INFO - ① 庄家判定: status=retail, is_dealer=False, conditions=['C006']
+2026-07-06 10:16:20,647 - app.services.trade_processor - INFO - ② 交易前用户持仓: holdingQty=0.000000  holdingCost=0.000000  avgPrice=0.000000000000
+2026-07-06 10:16:20,647 - app.services.trade_processor - INFO -    totalBuyAmount=0.000000  totalSellAmount=0.000000  totalSellPrincipal=0.000000
+2026-07-06 10:16:20,647 - app.services.trade_processor - INFO -    old_holding_cost=0.000000  old_realized=0.000000
+2026-07-06 10:16:20,647 - app.services.trade_processor - INFO - ③ 用户指数 [BUY]: buy_qty=3306.293910  buy_amount=0.002139 SOL
+2026-07-06 10:16:20,648 - app.services.trade_processor - INFO -    holdingQty:   0.000000 → 3306.293910
+2026-07-06 10:16:20,648 - app.services.trade_processor - INFO -    holdingCost:  0.000000 → 0.002139
+2026-07-06 10:16:20,648 - app.services.trade_processor - INFO -    avgPrice:     0.000000000000 → 0.000000646943
+2026-07-06 10:16:20,651 - app.services.trade_processor - INFO - ⑥ 全局 total_holdingQty(含庄家): 34910563.182633 → 34913869.476543
+2026-07-06 10:16:20,651 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:16:20,651 - app.services.trade_processor - INFO - ④ delta: delta_bet=0.002139 (=new_holding_cost 0.002139 - old 0.000000)
+2026-07-06 10:16:20,652 - app.services.trade_processor - INFO -    delta_profit=0.000000 (=new_realized 0.000000 - old 0.000000)
+2026-07-06 10:16:20,654 - app.services.trade_processor - INFO - ⑤ 全局散户指数 [更新]: total_bet 1.033678 → 1.035817, realized_profit 0.000000 → 0.000000
+2026-07-06 10:16:20,660 - app.services.trade_processor - INFO - ======================================================
+2026-07-06 10:16:20,661 - app.services.trade_processor - INFO - 📊 [指数计算] mint=75ckspwx... sig=3qh1fJkKPExqt56hpHSKbW5CszNqAs57uxvjtrF4Gb76M3i687v7swKJtAT99cXd58VLMLNjpiKNQAdV4hUhcnV8 type=BUY address=CMjRBjRW...
+2026-07-06 10:16:20,661 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:16:20,661 - app.services.trade_processor - INFO - ① 庄家判定: status=dealer, is_dealer=True, conditions=['C006']
+2026-07-06 10:16:20,661 - app.services.trade_processor - INFO - ② 交易前用户持仓: holdingQty=0.000000  holdingCost=0.000000  avgPrice=0.000000000000
+2026-07-06 10:16:20,662 - app.services.trade_processor - INFO -    totalBuyAmount=0.000000  totalSellAmount=0.000000  totalSellPrincipal=0.000000
+2026-07-06 10:16:20,662 - app.services.trade_processor - INFO -    old_holding_cost=0.000000  old_realized=0.000000
+2026-07-06 10:16:20,662 - app.services.trade_processor - INFO - ③ 用户指数 [BUY]: buy_qty=1650553.776278  buy_amount=0.051976 SOL
+2026-07-06 10:16:20,662 - app.services.trade_processor - INFO -    holdingQty:   0.000000 → 1650553.776278
+2026-07-06 10:16:20,662 - app.services.trade_processor - INFO -    holdingCost:  0.000000 → 0.051976
+2026-07-06 10:16:20,663 - app.services.trade_processor - INFO -    avgPrice:     0.000000000000 → 0.000000031490
+2026-07-06 10:16:20,666 - app.services.trade_processor - INFO - ⑥ 全局 total_holdingQty(含庄家): 34913869.476543 → 36564423.252821
+2026-07-06 10:16:20,666 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:16:20,666 - app.services.trade_processor - INFO - ④ delta: delta_bet=0.051976 (=new_holding_cost 0.051976 - old 0.000000)
+2026-07-06 10:16:20,666 - app.services.trade_processor - INFO -    delta_profit=0.000000 (=new_realized 0.000000 - old 0.000000)
+2026-07-06 10:16:20,668 - app.services.trade_processor - INFO - ⑤ 全局散户指数 [跳过-庄家]: total_bet=1.035817(不变), realized_profit=0.000000(不变), dealerExcluded=
+2026-07-06 10:16:20,671 - app.services.trade_processor - INFO - [指标调整] sign=-1 CMjRBjRW... holdingCost=0.051976 user_realized=0.000000
+2026-07-06 10:16:20,671 - app.services.trade_processor - INFO - [庄家排除] CMjRBjRW... 已从汇总中排除
+2026-07-06 10:16:20,671 - app.services.trade_processor - INFO -    ⚠ 首次排除庄家，执行 exclude_dealer()
+2026-07-06 10:16:20,677 - app.services.trade_processor - INFO - ======================================================
+2026-07-06 10:16:20,678 - app.services.trade_processor - INFO - 📊 [指数计算] mint=75ckspwx... sig=eELktS8wzAcZjgfUkuDzBskBY6pq3m4c4497gjCzwbEJE1ay85h98qa1keHa6aqnhLeKXK9UHDwW3GahkcUmvLG type=SELL address=DvgGZQba...
+2026-07-06 10:16:20,678 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:16:20,678 - app.services.trade_processor - INFO - ① 庄家判定: status=retail, is_dealer=False, conditions=['C006']
+2026-07-06 10:16:20,679 - app.services.trade_processor - INFO - ② 交易前用户持仓: holdingQty=3306.293910  holdingCost=0.002139  avgPrice=0.000000646943
+2026-07-06 10:16:20,679 - app.services.trade_processor - INFO -    totalBuyAmount=0.002139  totalSellAmount=0.000000  totalSellPrincipal=0.000000
+2026-07-06 10:16:20,679 - app.services.trade_processor - INFO -    old_holding_cost=0.002139  old_realized=0.000000
+2026-07-06 10:16:20,681 - app.services.trade_processor - INFO - ③ 用户指数 [SELL]: sell_qty=3306.293910  sell_amount=0.002137 SOL  sell_principal=0.002139(=sell_qty×avgPrice)
+2026-07-06 10:16:20,681 - app.services.trade_processor - INFO -    落袋收益(realized)=-0.000002 SOL
+2026-07-06 10:16:20,682 - app.services.trade_processor - INFO -    holdingQty:   3306.293910 → 0.000000
+2026-07-06 10:16:20,682 - app.services.trade_processor - INFO -    holdingCost:  0.002139 → 0.000000
+2026-07-06 10:16:20,682 - app.services.trade_processor - INFO -    avgPrice:     0.000000646943 → 0.000000000000
+2026-07-06 10:16:20,685 - app.services.trade_processor - INFO - ⑥ 全局 total_holdingQty(含庄家): 36564423.252821 → 36561116.958911
+2026-07-06 10:16:20,686 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:16:20,686 - app.services.trade_processor - INFO - ④ delta: delta_bet=-0.002139 (=new_holding_cost 0.000000 - old 0.002139)
+2026-07-06 10:16:20,686 - app.services.trade_processor - INFO -    delta_profit=-0.000002 (=new_realized -0.000002 - old 0.000000)
+2026-07-06 10:16:20,689 - app.services.trade_processor - INFO - ⑤ 全局散户指数 [更新]: total_bet 0.983842 → 0.981703, realized_profit 0.000000 → -0.000002
+2026-07-06 10:16:20,693 - app.services.trade_processor - INFO - [全量计算] 完成 mint=75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump
+2026-07-06 10:16:20,697 - app.services.trade_processor - INFO - [消费者] 已启动 mint=75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump（单例已初始化）
+2026-07-06 10:16:20,697 - app.services.trade_processor - INFO - [消费者] 开始消化队列 mint=75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump
+2026-07-06 10:16:20,697 - app.services.trade_processor - ERROR - [消费者] 队列未初始化，退出
+2026-07-06 10:16:21,447 - app.services.trade_stream - INFO - [实时流] 已发送订阅请求: 75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump
+2026-07-06 10:16:21,605 - app.services.trade_stream - INFO - [实时流] 订阅确认: {"jsonrpc":"2.0","id":1,"result":12792784}
+2026-07-06 10:16:47,636 - app.services.trade_backfill - INFO - [回填] 收到停止信号
+2026-07-06 10:16:47,798 - app.services.trade_stream - WARNING - [实时流] 连接断开，尝试重连...
+2026-07-06 10:16:47,799 - app.services.trade_stream - INFO - [实时流] 停止: 75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump
+2026-07-06 10:16:47,803 - main - INFO - [清理] metrics:75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump + 4 个 user key 已清除
+2026-07-06 10:16:47,807 - app.websocket.manager - INFO - [WS] 断开连接: mint=75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump
+2026-07-06 10:16:49,035 - app.services.trade_stream - INFO - [实时流] 启动: 75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump
+2026-07-06 10:16:49,036 - app.services.trade_backfill - INFO - [回填] 模式2：从 Redis 读取已有交易，不调 API
+2026-07-06 10:16:49,046 - app.websocket.manager - INFO - [WS] 新连接: mint=75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump, 当前连接数=1
+2026-07-06 10:16:49,048 - app.services.trade_processor - INFO - [全量计算] 开始计算 mint=75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump
+2026-07-06 10:16:49,058 - app.services.trade_processor - INFO - [全量计算] 共 6 条历史交易待处理 (ws 实时由消费者处理)
+2026-07-06 10:16:49,063 - app.services.trade_processor - INFO - ======================================================
+2026-07-06 10:16:49,063 - app.services.trade_processor - INFO - 📊 [指数计算] mint=75ckspwx... sig=5hxndyJdkBmviCbB63DqEij37FKFCJQGbvrxMRDvAABCio2mzzXbx12k83VdYCsh5cdjCaPchKQCT1cxbrxpps1U type=BUY address=4PH34Vb4...
+2026-07-06 10:16:49,064 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:16:49,064 - app.services.trade_processor - INFO - ① 庄家判定: status=retail, is_dealer=False, conditions=['C006']
+2026-07-06 10:16:49,065 - app.services.trade_processor - INFO - ② 交易前用户持仓: holdingQty=0.000000  holdingCost=0.000000  avgPrice=0.000000000000
+2026-07-06 10:16:49,065 - app.services.trade_processor - INFO -    totalBuyAmount=0.000000  totalSellAmount=0.000000  totalSellPrincipal=0.000000
+2026-07-06 10:16:49,066 - app.services.trade_processor - INFO -    old_holding_cost=0.000000  old_realized=0.000000
+2026-07-06 10:16:49,066 - app.services.trade_processor - INFO - ③ 用户指数 [BUY]: buy_qty=30877697.777999  buy_amount=0.910203 SOL
+2026-07-06 10:16:49,067 - app.services.trade_processor - INFO -    holdingQty:   0.000000 → 30877697.777999
+2026-07-06 10:16:49,067 - app.services.trade_processor - INFO -    holdingCost:  0.000000 → 0.910203
+2026-07-06 10:16:49,067 - app.services.trade_processor - INFO -    avgPrice:     0.000000000000 → 0.000000029478
+2026-07-06 10:16:49,070 - app.services.trade_processor - INFO - ⑥ 全局 total_holdingQty(含庄家): 0.000000 → 30877697.777999
+2026-07-06 10:16:49,071 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:16:49,071 - app.services.trade_processor - INFO - ④ delta: delta_bet=0.910203 (=new_holding_cost 0.910203 - old 0.000000)
+2026-07-06 10:16:49,072 - app.services.trade_processor - INFO -    delta_profit=0.000000 (=new_realized 0.000000 - old 0.000000)
+2026-07-06 10:16:49,074 - app.services.trade_processor - INFO - ⑤ 全局散户指数 [更新]: total_bet 0.000000 → 0.910203, realized_profit 0.000000 → 0.000000
+2026-07-06 10:16:49,082 - app.services.trade_processor - INFO - ======================================================
+2026-07-06 10:16:49,082 - app.services.trade_processor - INFO - 📊 [指数计算] mint=75ckspwx... sig=4EYVV6FZPSP9AGWrvr9Tfx8dfu93yyCTiXUL8KZQT49c6gxAMucxyDd61bfgiW6LfRpnc5UqgyYK6VH2jzYYVpLu type=BUY address=2YUAXALq...
+2026-07-06 10:16:49,082 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:16:49,083 - app.services.trade_processor - INFO - ① 庄家判定: status=retail, is_dealer=False, conditions=['C006']
+2026-07-06 10:16:49,083 - app.services.trade_processor - INFO - ② 交易前用户持仓: holdingQty=0.000000  holdingCost=0.000000  avgPrice=0.000000000000
+2026-07-06 10:16:49,083 - app.services.trade_processor - INFO -    totalBuyAmount=0.000000  totalSellAmount=0.000000  totalSellPrincipal=0.000000
+2026-07-06 10:16:49,083 - app.services.trade_processor - INFO -    old_holding_cost=0.000000  old_realized=0.000000
+2026-07-06 10:16:49,084 - app.services.trade_processor - INFO - ③ 用户指数 [BUY]: buy_qty=4032865.404634  buy_amount=0.123475 SOL
+2026-07-06 10:16:49,084 - app.services.trade_processor - INFO -    holdingQty:   0.000000 → 4032865.404634
+2026-07-06 10:16:49,085 - app.services.trade_processor - INFO -    holdingCost:  0.000000 → 0.123475
+2026-07-06 10:16:49,085 - app.services.trade_processor - INFO -    avgPrice:     0.000000000000 → 0.000000030617
+2026-07-06 10:16:49,088 - app.services.trade_processor - INFO - ⑥ 全局 total_holdingQty(含庄家): 30877697.777999 → 34910563.182633
+2026-07-06 10:16:49,088 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:16:49,088 - app.services.trade_processor - INFO - ④ delta: delta_bet=0.123475 (=new_holding_cost 0.123475 - old 0.000000)
+2026-07-06 10:16:49,088 - app.services.trade_processor - INFO -    delta_profit=0.000000 (=new_realized 0.000000 - old 0.000000)
+2026-07-06 10:16:49,091 - app.services.trade_processor - INFO - ⑤ 全局散户指数 [更新]: total_bet 0.910203 → 1.033678, realized_profit 0.000000 → 0.000000
+2026-07-06 10:16:49,097 - app.services.trade_processor - INFO - ======================================================
+2026-07-06 10:16:49,098 - app.services.trade_processor - INFO - 📊 [指数计算] mint=75ckspwx... sig=8gcturi5CXfBqPuB8kFtwcmErCdhedFDFwXFFMxCBjTiqFZu48dRs21JyGfi13oXLTgea9c7pZaKXudQ5vLifx9 type=BUY address=DvgGZQba...
+2026-07-06 10:16:49,098 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:16:49,099 - app.services.trade_processor - INFO - ① 庄家判定: status=retail, is_dealer=False, conditions=['C006']
+2026-07-06 10:16:49,099 - app.services.trade_processor - INFO - ② 交易前用户持仓: holdingQty=0.000000  holdingCost=0.000000  avgPrice=0.000000000000
+2026-07-06 10:16:49,099 - app.services.trade_processor - INFO -    totalBuyAmount=0.000000  totalSellAmount=0.000000  totalSellPrincipal=0.000000
+2026-07-06 10:16:49,100 - app.services.trade_processor - INFO -    old_holding_cost=0.000000  old_realized=0.000000
+2026-07-06 10:16:49,100 - app.services.trade_processor - INFO - ③ 用户指数 [BUY]: buy_qty=3306.293910  buy_amount=0.002139 SOL
+2026-07-06 10:16:49,100 - app.services.trade_processor - INFO -    holdingQty:   0.000000 → 3306.293910
+2026-07-06 10:16:49,100 - app.services.trade_processor - INFO -    holdingCost:  0.000000 → 0.002139
+2026-07-06 10:16:49,101 - app.services.trade_processor - INFO -    avgPrice:     0.000000000000 → 0.000000646943
+2026-07-06 10:16:49,103 - app.services.trade_processor - INFO - ⑥ 全局 total_holdingQty(含庄家): 34910563.182633 → 34913869.476543
+2026-07-06 10:16:49,104 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:16:49,104 - app.services.trade_processor - INFO - ④ delta: delta_bet=0.002139 (=new_holding_cost 0.002139 - old 0.000000)
+2026-07-06 10:16:49,104 - app.services.trade_processor - INFO -    delta_profit=0.000000 (=new_realized 0.000000 - old 0.000000)
+2026-07-06 10:16:49,107 - app.services.trade_processor - INFO - ⑤ 全局散户指数 [更新]: total_bet 1.033678 → 1.035817, realized_profit 0.000000 → 0.000000
+2026-07-06 10:16:49,114 - app.services.trade_processor - INFO - ======================================================
+2026-07-06 10:16:49,114 - app.services.trade_processor - INFO - 📊 [指数计算] mint=75ckspwx... sig=3qh1fJkKPExqt56hpHSKbW5CszNqAs57uxvjtrF4Gb76M3i687v7swKJtAT99cXd58VLMLNjpiKNQAdV4hUhcnV8 type=BUY address=CMjRBjRW...
+2026-07-06 10:16:49,115 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:16:49,115 - app.services.trade_processor - INFO - ① 庄家判定: status=dealer, is_dealer=True, conditions=['C006']
+2026-07-06 10:16:49,115 - app.services.trade_processor - INFO - ② 交易前用户持仓: holdingQty=0.000000  holdingCost=0.000000  avgPrice=0.000000000000
+2026-07-06 10:16:49,116 - app.services.trade_processor - INFO -    totalBuyAmount=0.000000  totalSellAmount=0.000000  totalSellPrincipal=0.000000
+2026-07-06 10:16:49,116 - app.services.trade_processor - INFO -    old_holding_cost=0.000000  old_realized=0.000000
+2026-07-06 10:16:49,116 - app.services.trade_processor - INFO - ③ 用户指数 [BUY]: buy_qty=1650553.776278  buy_amount=0.051976 SOL
+2026-07-06 10:16:49,116 - app.services.trade_processor - INFO -    holdingQty:   0.000000 → 1650553.776278
+2026-07-06 10:16:49,116 - app.services.trade_processor - INFO -    holdingCost:  0.000000 → 0.051976
+2026-07-06 10:16:49,117 - app.services.trade_processor - INFO -    avgPrice:     0.000000000000 → 0.000000031490
+2026-07-06 10:16:49,120 - app.services.trade_processor - INFO - ⑥ 全局 total_holdingQty(含庄家): 34913869.476543 → 36564423.252821
+2026-07-06 10:16:49,120 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:16:49,121 - app.services.trade_processor - INFO - ④ delta: delta_bet=0.051976 (=new_holding_cost 0.051976 - old 0.000000)
+2026-07-06 10:16:49,121 - app.services.trade_processor - INFO -    delta_profit=0.000000 (=new_realized 0.000000 - old 0.000000)
+2026-07-06 10:16:49,122 - app.services.trade_processor - INFO - ⑤ 全局散户指数 [跳过-庄家]: total_bet=1.035817(不变), realized_profit=0.000000(不变), dealerExcluded=
+2026-07-06 10:16:49,124 - app.services.trade_processor - INFO - [指标调整] sign=-1 CMjRBjRW... holdingCost=0.051976 user_realized=0.000000
+2026-07-06 10:16:49,125 - app.services.trade_processor - INFO - [庄家排除] CMjRBjRW... 已从汇总中排除
+2026-07-06 10:16:49,125 - app.services.trade_processor - INFO -    ⚠ 首次排除庄家，执行 exclude_dealer()
+2026-07-06 10:16:49,133 - app.services.trade_processor - INFO - ======================================================
+2026-07-06 10:16:49,133 - app.services.trade_processor - INFO - 📊 [指数计算] mint=75ckspwx... sig=eELktS8wzAcZjgfUkuDzBskBY6pq3m4c4497gjCzwbEJE1ay85h98qa1keHa6aqnhLeKXK9UHDwW3GahkcUmvLG type=SELL address=DvgGZQba...
+2026-07-06 10:16:49,133 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:16:49,134 - app.services.trade_processor - INFO - ① 庄家判定: status=retail, is_dealer=False, conditions=['C006']
+2026-07-06 10:16:49,134 - app.services.trade_processor - INFO - ② 交易前用户持仓: holdingQty=3306.293910  holdingCost=0.002139  avgPrice=0.000000646943
+2026-07-06 10:16:49,134 - app.services.trade_processor - INFO -    totalBuyAmount=0.002139  totalSellAmount=0.000000  totalSellPrincipal=0.000000
+2026-07-06 10:16:49,134 - app.services.trade_processor - INFO -    old_holding_cost=0.002139  old_realized=0.000000
+2026-07-06 10:16:49,135 - app.services.trade_processor - INFO - ③ 用户指数 [SELL]: sell_qty=3306.293910  sell_amount=0.002137 SOL  sell_principal=0.002139(=sell_qty×avgPrice)
+2026-07-06 10:16:49,135 - app.services.trade_processor - INFO -    落袋收益(realized)=-0.000002 SOL
+2026-07-06 10:16:49,136 - app.services.trade_processor - INFO -    holdingQty:   3306.293910 → 0.000000
+2026-07-06 10:16:49,136 - app.services.trade_processor - INFO -    holdingCost:  0.002139 → 0.000000
+2026-07-06 10:16:49,136 - app.services.trade_processor - INFO -    avgPrice:     0.000000646943 → 0.000000000000
+2026-07-06 10:16:49,139 - app.services.trade_processor - INFO - ⑥ 全局 total_holdingQty(含庄家): 36564423.252821 → 36561116.958911
+2026-07-06 10:16:49,140 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:16:49,140 - app.services.trade_processor - INFO - ④ delta: delta_bet=-0.002139 (=new_holding_cost 0.000000 - old 0.002139)
+2026-07-06 10:16:49,140 - app.services.trade_processor - INFO -    delta_profit=-0.000002 (=new_realized -0.000002 - old 0.000000)
+2026-07-06 10:16:49,143 - app.services.trade_processor - INFO - ⑤ 全局散户指数 [更新]: total_bet 0.983842 → 0.981703, realized_profit 0.000000 → -0.000002
+2026-07-06 10:16:49,146 - app.services.trade_processor - INFO - [全量计算] 完成 mint=75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump
+2026-07-06 10:16:49,150 - app.services.trade_processor - INFO - [消费者] 已启动 mint=75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump（单例已初始化）
+2026-07-06 10:16:49,150 - app.services.trade_processor - INFO - [消费者] 开始消化队列 mint=75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump
+2026-07-06 10:16:49,151 - app.services.trade_processor - ERROR - [消费者] 队列未初始化，退出
+2026-07-06 10:16:49,817 - app.services.trade_stream - INFO - [实时流] 已发送订阅请求: 75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump
+2026-07-06 10:16:49,964 - app.services.trade_stream - INFO - [实时流] 订阅确认: {"jsonrpc":"2.0","id":1,"result":14543556}
+2026-07-06 10:19:57,272 - app.services.trade_backfill - INFO - [回填] 收到停止信号
+2026-07-06 10:19:57,432 - app.services.trade_stream - WARNING - [实时流] 连接断开，尝试重连...
+2026-07-06 10:19:57,434 - app.services.trade_stream - INFO - [实时流] 停止: 75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump
+2026-07-06 10:20:06,071 - main - INFO - [清理] metrics:75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump + 4 个 user key 已清除
+2026-07-06 10:20:06,073 - app.websocket.manager - INFO - [WS] 断开连接: mint=75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump
+2026-07-06 10:22:18,688 - app.services.dealer_detector - INFO - [庄家判定] 已关闭
+2026-07-06 10:22:18,691 - app.services.cluster.redis_keys - INFO - [cluster:redis] Redis 已关闭
+2026-07-06 10:22:18,692 - main - INFO - 服务已关闭
+2026-07-06 10:22:23,247 - main - INFO - Admin user already exists
+2026-07-06 10:22:23,276 - app.services.settings_service - INFO - 默认设置初始化完成
+2026-07-06 10:22:23,300 - app.services.dealer_detector - INFO - [庄家判定] Redis 连接成功
+2026-07-06 10:22:23,300 - app.services.dealer_detector - INFO - [庄家判定] 队列已就绪，等待首次触发
+2026-07-06 10:22:23,303 - app.services.cluster.redis_keys - INFO - [cluster:redis] Redis 连接成功
+2026-07-06 10:22:23,303 - main - INFO - 服务已启动
+2026-07-06 10:22:23,328 - app.services.settings_service - INFO - 默认设置初始化完成
+2026-07-06 10:26:47,817 - app.services.trade_stream - INFO - [实时流] 启动: 75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump
+2026-07-06 10:27:00,926 - app.services.trade_backfill - INFO - [回填] 模式2：从 Redis 读取已有交易，不调 API
+2026-07-06 10:27:01,976 - app.websocket.manager - INFO - [WS] 新连接: mint=75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump, 当前连接数=1
+2026-07-06 10:27:01,998 - app.services.cluster.redis_keys - INFO - [cluster:redis:sync] 同步 Redis 连接已创建
+2026-07-06 10:27:02,005 - app.services.tx_redis - INFO - [tx_redis] Redis 连接成功
+2026-07-06 10:27:18,519 - app.services.trade_processor - INFO - [全量计算] 开始计算 mint=75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump
+2026-07-06 10:27:22,374 - app.services.trade_stream - ERROR - [实时流] 异常: timed out during opening handshake
+Traceback (most recent call last):
+  File "/Users/curtdk/.openclaw/workspace/fastapiGmgn/venv/lib/python3.9/site-packages/websockets/asyncio/client.py", line 541, in __await_impl__
+    self.connection = await self.create_connection()
+  File "/Users/curtdk/.openclaw/workspace/fastapiGmgn/venv/lib/python3.9/site-packages/websockets/asyncio/client.py", line 453, in create_connection
+    new_transport = await loop.start_tls(
+  File "uvloop/loop.pyx", line 1639, in start_tls
+  File "uvloop/loop.pyx", line 1632, in uvloop.loop.Loop.start_tls
+asyncio.exceptions.CancelledError
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/curtdk/.openclaw/workspace/fastapiGmgn/venv/lib/python3.9/site-packages/websockets/asyncio/client.py", line 574, in __await_impl__
+    raise SecurityError(f"more than {MAX_REDIRECTS} redirects")
+  File "/Users/curtdk/.openclaw/workspace/fastapiGmgn/venv/lib/python3.9/site-packages/websockets/asyncio/async_timeout.py", line 181, in __aexit__
+    self._do_exit(exc_type)
+  File "/Users/curtdk/.openclaw/workspace/fastapiGmgn/venv/lib/python3.9/site-packages/websockets/asyncio/async_timeout.py", line 268, in _do_exit
+    raise asyncio.TimeoutError
+asyncio.exceptions.TimeoutError
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/Users/curtdk/.openclaw/workspace/fastapiGmgn/app/services/trade_stream.py", line 72, in _stream_loop
+    async with websockets.connect(url) as ws:
+  File "/Users/curtdk/.openclaw/workspace/fastapiGmgn/venv/lib/python3.9/site-packages/websockets/asyncio/client.py", line 587, in __aenter__
+    return await self
+  File "/Users/curtdk/.openclaw/workspace/fastapiGmgn/venv/lib/python3.9/site-packages/websockets/asyncio/client.py", line 578, in __await_impl__
+    raise TimeoutError("timed out during opening handshake") from exc
+asyncio.exceptions.TimeoutError: timed out during opening handshake
+2026-07-06 10:27:31,034 - app.services.trade_processor - INFO - [全量计算] 共 6 条历史交易待处理 (ws 实时由消费者处理)
+2026-07-06 10:27:35,337 - asyncio - ERROR - Exception in callback <bound method Connection.connection_lost of <websockets.asyncio.client.ClientConnection object at 0x109eab9a0>>
+handle: <Handle Connection.connection_lost>
+Traceback (most recent call last):
+  File "uvloop/cbhandles.pyx", line 63, in uvloop.loop.Handle._run
+  File "/Users/curtdk/.openclaw/workspace/fastapiGmgn/venv/lib/python3.9/site-packages/websockets/asyncio/connection.py", line 1018, in connection_lost
+    self.recv_messages.close()
+AttributeError: 'ClientConnection' object has no attribute 'recv_messages'
+2026-07-06 10:27:37,050 - app.services.trade_processor - INFO - ======================================================
+2026-07-06 10:27:37,051 - app.services.trade_processor - INFO - 📊 [指数计算] mint=75ckspwx... sig=5hxndyJdkBmviCbB63DqEij37FKFCJQGbvrxMRDvAABCio2mzzXbx12k83VdYCsh5cdjCaPchKQCT1cxbrxpps1U type=BUY address=4PH34Vb4...
+2026-07-06 10:27:37,052 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:27:37,052 - app.services.trade_processor - INFO - ① 庄家判定: status=retail, is_dealer=False, conditions=['C006']
+2026-07-06 10:27:37,053 - app.services.trade_processor - INFO - ② 交易前用户持仓: holdingQty=30877697.777999  holdingCost=0.910203  avgPrice=0.000000029478
+2026-07-06 10:27:37,054 - app.services.trade_processor - INFO -    totalBuyAmount=0.910203  totalSellAmount=0.000000  totalSellPrincipal=0.000000
+2026-07-06 10:27:37,055 - app.services.trade_processor - INFO -    old_holding_cost=0.910203  old_realized=0.000000
+2026-07-06 10:27:37,055 - app.services.trade_processor - INFO - ③ 用户指数 [BUY]: buy_qty=30877697.777999  buy_amount=0.910203 SOL
+2026-07-06 10:27:37,056 - app.services.trade_processor - INFO -    holdingQty:   30877697.777999 → 61755395.555998
+2026-07-06 10:27:37,056 - app.services.trade_processor - INFO -    holdingCost:  0.910203 → 1.820407
+2026-07-06 10:27:37,057 - app.services.trade_processor - INFO -    avgPrice:     0.000000029478 → 0.000000029478
+2026-07-06 10:27:37,063 - app.services.trade_processor - INFO - ⑥ 全局 total_holdingQty(含庄家): 36561116.958911 → 67438814.736910
+2026-07-06 10:27:37,064 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:27:37,064 - app.services.trade_processor - INFO - ④ delta: delta_bet=0.910203 (=new_holding_cost 1.820407 - old 0.910203)
+2026-07-06 10:27:37,065 - app.services.trade_processor - INFO -    delta_profit=0.000000 (=new_realized 0.000000 - old 0.000000)
+2026-07-06 10:27:37,068 - app.services.trade_processor - INFO - ⑤ 全局散户指数 [更新]: total_bet 0.981703 → 1.891906, realized_profit -0.000002 → -0.000002
+2026-07-06 10:27:45,285 - app.services.trade_processor - INFO - ======================================================
+2026-07-06 10:27:45,286 - app.services.trade_processor - INFO - 📊 [指数计算] mint=75ckspwx... sig=4EYVV6FZPSP9AGWrvr9Tfx8dfu93yyCTiXUL8KZQT49c6gxAMucxyDd61bfgiW6LfRpnc5UqgyYK6VH2jzYYVpLu type=BUY address=2YUAXALq...
+2026-07-06 10:27:45,286 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:27:45,286 - app.services.trade_processor - INFO - ① 庄家判定: status=retail, is_dealer=False, conditions=['C006']
+2026-07-06 10:27:45,287 - app.services.trade_processor - INFO - ② 交易前用户持仓: holdingQty=4032865.404634  holdingCost=0.123475  avgPrice=0.000000030617
+2026-07-06 10:27:45,287 - app.services.trade_processor - INFO -    totalBuyAmount=0.123475  totalSellAmount=0.000000  totalSellPrincipal=0.000000
+2026-07-06 10:27:45,287 - app.services.trade_processor - INFO -    old_holding_cost=0.123475  old_realized=0.000000
+2026-07-06 10:27:45,288 - app.services.trade_processor - INFO - ③ 用户指数 [BUY]: buy_qty=4032865.404634  buy_amount=0.123475 SOL
+2026-07-06 10:27:45,288 - app.services.trade_processor - INFO -    holdingQty:   4032865.404634 → 8065730.809268
+2026-07-06 10:27:45,288 - app.services.trade_processor - INFO -    holdingCost:  0.123475 → 0.246950
+2026-07-06 10:27:45,288 - app.services.trade_processor - INFO -    avgPrice:     0.000000030617 → 0.000000030617
+2026-07-06 10:27:45,292 - app.services.trade_processor - INFO - ⑥ 全局 total_holdingQty(含庄家): 67438814.736910 → 71471680.141544
+2026-07-06 10:27:45,292 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:27:45,292 - app.services.trade_processor - INFO - ④ delta: delta_bet=0.123475 (=new_holding_cost 0.246950 - old 0.123475)
+2026-07-06 10:27:45,293 - app.services.trade_processor - INFO -    delta_profit=0.000000 (=new_realized 0.000000 - old 0.000000)
+2026-07-06 10:27:45,294 - app.services.trade_processor - INFO - ⑤ 全局散户指数 [更新]: total_bet 1.891906 → 2.015381, realized_profit -0.000002 → -0.000002
+2026-07-06 10:27:45,301 - app.services.trade_processor - INFO - ======================================================
+2026-07-06 10:27:45,302 - app.services.trade_processor - INFO - 📊 [指数计算] mint=75ckspwx... sig=8gcturi5CXfBqPuB8kFtwcmErCdhedFDFwXFFMxCBjTiqFZu48dRs21JyGfi13oXLTgea9c7pZaKXudQ5vLifx9 type=BUY address=DvgGZQba...
+2026-07-06 10:27:45,302 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:27:45,302 - app.services.trade_processor - INFO - ① 庄家判定: status=retail, is_dealer=False, conditions=['C006']
+2026-07-06 10:27:45,303 - app.services.trade_processor - INFO - ② 交易前用户持仓: holdingQty=0.000000  holdingCost=0.000000  avgPrice=0.000000000000
+2026-07-06 10:27:45,303 - app.services.trade_processor - INFO -    totalBuyAmount=0.002139  totalSellAmount=0.002137  totalSellPrincipal=0.002139
+2026-07-06 10:27:45,304 - app.services.trade_processor - INFO -    old_holding_cost=0.000000  old_realized=-0.000002
+2026-07-06 10:27:45,304 - app.services.trade_processor - INFO - ③ 用户指数 [BUY]: buy_qty=3306.293910  buy_amount=0.002139 SOL
+2026-07-06 10:27:45,305 - app.services.trade_processor - INFO -    holdingQty:   0.000000 → 3306.293910
+2026-07-06 10:27:45,305 - app.services.trade_processor - INFO -    holdingCost:  0.000000 → 0.002139
+2026-07-06 10:27:45,305 - app.services.trade_processor - INFO -    avgPrice:     0.000000000000 → 0.000000646943
+2026-07-06 10:27:45,308 - app.services.trade_processor - INFO - ⑥ 全局 total_holdingQty(含庄家): 71471680.141544 → 71474986.435454
+2026-07-06 10:27:45,308 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:27:45,309 - app.services.trade_processor - INFO - ④ delta: delta_bet=0.002139 (=new_holding_cost 0.002139 - old 0.000000)
+2026-07-06 10:27:45,309 - app.services.trade_processor - INFO -    delta_profit=0.000000 (=new_realized -0.000002 - old -0.000002)
+2026-07-06 10:27:45,311 - app.services.trade_processor - INFO - ⑤ 全局散户指数 [更新]: total_bet 2.015381 → 2.017520, realized_profit -0.000002 → -0.000002
+2026-07-06 10:27:45,318 - app.services.trade_processor - INFO - ======================================================
+2026-07-06 10:27:45,319 - app.services.trade_processor - INFO - 📊 [指数计算] mint=75ckspwx... sig=3qh1fJkKPExqt56hpHSKbW5CszNqAs57uxvjtrF4Gb76M3i687v7swKJtAT99cXd58VLMLNjpiKNQAdV4hUhcnV8 type=BUY address=CMjRBjRW...
+2026-07-06 10:27:45,319 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:27:45,319 - app.services.trade_processor - INFO - ① 庄家判定: status=dealer, is_dealer=True, conditions=['C006']
+2026-07-06 10:27:45,320 - app.services.trade_processor - INFO - ② 交易前用户持仓: holdingQty=1650553.776278  holdingCost=0.051976  avgPrice=0.000000031490
+2026-07-06 10:27:45,320 - app.services.trade_processor - INFO -    totalBuyAmount=0.051976  totalSellAmount=0.000000  totalSellPrincipal=0.000000
+2026-07-06 10:27:45,320 - app.services.trade_processor - INFO -    old_holding_cost=0.051976  old_realized=0.000000
+2026-07-06 10:27:45,320 - app.services.trade_processor - INFO - ③ 用户指数 [BUY]: buy_qty=1650553.776278  buy_amount=0.051976 SOL
+2026-07-06 10:27:45,321 - app.services.trade_processor - INFO -    holdingQty:   1650553.776278 → 3301107.552556
+2026-07-06 10:27:45,321 - app.services.trade_processor - INFO -    holdingCost:  0.051976 → 0.103952
+2026-07-06 10:27:45,321 - app.services.trade_processor - INFO -    avgPrice:     0.000000031490 → 0.000000031490
+2026-07-06 10:27:45,324 - app.services.trade_processor - INFO - ⑥ 全局 total_holdingQty(含庄家): 71474986.435454 → 73125540.211732
+2026-07-06 10:27:45,325 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:27:45,325 - app.services.trade_processor - INFO - ④ delta: delta_bet=0.051976 (=new_holding_cost 0.103952 - old 0.051976)
+2026-07-06 10:27:45,325 - app.services.trade_processor - INFO -    delta_profit=0.000000 (=new_realized 0.000000 - old 0.000000)
+2026-07-06 10:27:45,326 - app.services.trade_processor - INFO - ⑤ 全局散户指数 [跳过-庄家]: total_bet=2.017520(不变), realized_profit=-0.000002(不变), dealerExcluded=true
+2026-07-06 10:27:45,326 - app.services.trade_processor - INFO -    已排除过庄家，跳过
+2026-07-06 10:27:45,333 - app.services.trade_processor - INFO - ======================================================
+2026-07-06 10:27:45,333 - app.services.trade_processor - INFO - 📊 [指数计算] mint=75ckspwx... sig=eELktS8wzAcZjgfUkuDzBskBY6pq3m4c4497gjCzwbEJE1ay85h98qa1keHa6aqnhLeKXK9UHDwW3GahkcUmvLG type=SELL address=DvgGZQba...
+2026-07-06 10:27:45,334 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:27:45,334 - app.services.trade_processor - INFO - ① 庄家判定: status=retail, is_dealer=False, conditions=['C006']
+2026-07-06 10:27:45,334 - app.services.trade_processor - INFO - ② 交易前用户持仓: holdingQty=3306.293910  holdingCost=0.002139  avgPrice=0.000000646943
+2026-07-06 10:27:45,334 - app.services.trade_processor - INFO -    totalBuyAmount=0.004278  totalSellAmount=0.002137  totalSellPrincipal=0.002139
+2026-07-06 10:27:45,334 - app.services.trade_processor - INFO -    old_holding_cost=0.002139  old_realized=-0.000002
+2026-07-06 10:27:45,335 - app.services.trade_processor - INFO - ③ 用户指数 [SELL]: sell_qty=3306.293910  sell_amount=0.002137 SOL  sell_principal=0.002139(=sell_qty×avgPrice)
+2026-07-06 10:27:45,335 - app.services.trade_processor - INFO -    落袋收益(realized)=-0.000002 SOL
+2026-07-06 10:27:45,335 - app.services.trade_processor - INFO -    holdingQty:   3306.293910 → 0.000000
+2026-07-06 10:27:45,335 - app.services.trade_processor - INFO -    holdingCost:  0.002139 → 0.000000
+2026-07-06 10:27:45,336 - app.services.trade_processor - INFO -    avgPrice:     0.000000646943 → 0.000000000000
+2026-07-06 10:27:45,339 - app.services.trade_processor - INFO - ⑥ 全局 total_holdingQty(含庄家): 73125540.211732 → 73122233.917822
+2026-07-06 10:27:45,339 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:27:45,339 - app.services.trade_processor - INFO - ④ delta: delta_bet=-0.002139 (=new_holding_cost 0.000000 - old 0.002139)
+2026-07-06 10:27:45,340 - app.services.trade_processor - INFO -    delta_profit=-0.000002 (=new_realized -0.000004 - old -0.000002)
+2026-07-06 10:27:45,342 - app.services.trade_processor - INFO - ⑤ 全局散户指数 [更新]: total_bet 2.017520 → 2.015381, realized_profit -0.000002 → -0.000004
+2026-07-06 10:28:01,984 - app.services.trade_processor - INFO - [全量计算] 完成 mint=75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump
+2026-07-06 10:28:04,760 - asyncio - ERROR - Error calling eof_received()
+protocol: <uvloop.loop.SSLProtocol object at 0x109e8c880>
+transport: <TCPTransport closed=False reading=False 0xb950d1510>
+Traceback (most recent call last):
+  File "uvloop/loop.pyx", line 1632, in uvloop.loop.Loop.start_tls
+asyncio.exceptions.CancelledError
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "uvloop/sslproto.pyx", line 809, in uvloop.loop.SSLProtocol._call_eof_received
+  File "uvloop/loop.pyx", line 101, in uvloop.loop.run_in_context
+  File "/Users/curtdk/.openclaw/workspace/fastapiGmgn/venv/lib/python3.9/site-packages/websockets/asyncio/connection.py", line 1109, in eof_received
+    self.send_data()
+  File "/Users/curtdk/.openclaw/workspace/fastapiGmgn/venv/lib/python3.9/site-packages/websockets/asyncio/connection.py", line 972, in send_data
+    if self.transport.can_write_eof():
+AttributeError: 'ClientConnection' object has no attribute 'transport'
+2026-07-06 10:28:04,772 - app.services.trade_stream - ERROR - [实时流] 异常: cannot switch state from 0 to 4
+Traceback (most recent call last):
+  File "uvloop/loop.pyx", line 1632, in uvloop.loop.Loop.start_tls
+asyncio.exceptions.CancelledError
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/curtdk/.openclaw/workspace/fastapiGmgn/app/services/trade_stream.py", line 72, in _stream_loop
+    async with websockets.connect(url) as ws:
+  File "/Users/curtdk/.openclaw/workspace/fastapiGmgn/venv/lib/python3.9/site-packages/websockets/asyncio/client.py", line 587, in __aenter__
+    return await self
+  File "/Users/curtdk/.openclaw/workspace/fastapiGmgn/venv/lib/python3.9/site-packages/websockets/asyncio/client.py", line 541, in __await_impl__
+    self.connection = await self.create_connection()
+  File "/Users/curtdk/.openclaw/workspace/fastapiGmgn/venv/lib/python3.9/site-packages/websockets/asyncio/client.py", line 453, in create_connection
+    new_transport = await loop.start_tls(
+  File "uvloop/loop.pyx", line 1636, in start_tls
+  File "uvloop/sslproto.pyx", line 51, in uvloop.loop._SSLProtocolTransport.close
+  File "uvloop/sslproto.pyx", line 574, in uvloop.loop.SSLProtocol._start_shutdown
+  File "uvloop/sslproto.pyx", line 617, in uvloop.loop.SSLProtocol._do_flush
+  File "uvloop/sslproto.pyx", line 456, in uvloop.loop.SSLProtocol._set_state
+RuntimeError: cannot switch state from 0 to 4
+2026-07-06 10:28:32,591 - asyncio - ERROR - Exception in callback <bound method Connection.connection_lost of <websockets.asyncio.client.ClientConnection object at 0x109ee9df0>>
+handle: <Handle Connection.connection_lost>
+Traceback (most recent call last):
+  File "uvloop/cbhandles.pyx", line 63, in uvloop.loop.Handle._run
+  File "/Users/curtdk/.openclaw/workspace/fastapiGmgn/venv/lib/python3.9/site-packages/websockets/asyncio/connection.py", line 1018, in connection_lost
+    self.recv_messages.close()
+AttributeError: 'ClientConnection' object has no attribute 'recv_messages'
+2026-07-06 10:28:48,461 - app.services.trade_stream - ERROR - [实时流] 异常: timed out during opening handshake
+Traceback (most recent call last):
+  File "/Users/curtdk/.openclaw/workspace/fastapiGmgn/venv/lib/python3.9/site-packages/websockets/asyncio/client.py", line 541, in __await_impl__
+    self.connection = await self.create_connection()
+  File "/Users/curtdk/.openclaw/workspace/fastapiGmgn/venv/lib/python3.9/site-packages/websockets/asyncio/client.py", line 440, in create_connection
+    transport = await connect_http_proxy(
+  File "/Users/curtdk/.openclaw/workspace/fastapiGmgn/venv/lib/python3.9/site-packages/websockets/asyncio/client.py", line 806, in connect_http_proxy
+    transport, protocol = await asyncio.get_running_loop().create_connection(
+  File "uvloop/loop.pyx", line 2033, in create_connection
+  File "uvloop/loop.pyx", line 2020, in uvloop.loop.Loop.create_connection
+asyncio.exceptions.CancelledError
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/curtdk/.openclaw/workspace/fastapiGmgn/venv/lib/python3.9/site-packages/websockets/asyncio/client.py", line 574, in __await_impl__
+    raise SecurityError(f"more than {MAX_REDIRECTS} redirects")
+  File "/Users/curtdk/.openclaw/workspace/fastapiGmgn/venv/lib/python3.9/site-packages/websockets/asyncio/async_timeout.py", line 181, in __aexit__
+    self._do_exit(exc_type)
+  File "/Users/curtdk/.openclaw/workspace/fastapiGmgn/venv/lib/python3.9/site-packages/websockets/asyncio/async_timeout.py", line 268, in _do_exit
+    raise asyncio.TimeoutError
+asyncio.exceptions.TimeoutError
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/Users/curtdk/.openclaw/workspace/fastapiGmgn/app/services/trade_stream.py", line 72, in _stream_loop
+    async with websockets.connect(url) as ws:
+  File "/Users/curtdk/.openclaw/workspace/fastapiGmgn/venv/lib/python3.9/site-packages/websockets/asyncio/client.py", line 587, in __aenter__
+    return await self
+  File "/Users/curtdk/.openclaw/workspace/fastapiGmgn/venv/lib/python3.9/site-packages/websockets/asyncio/client.py", line 578, in __await_impl__
+    raise TimeoutError("timed out during opening handshake") from exc
+asyncio.exceptions.TimeoutError: timed out during opening handshake
+2026-07-06 10:28:48,487 - app.websocket.manager - INFO - [WS] 新连接: mint=75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump, 当前连接数=2
+2026-07-06 10:28:48,492 - app.websocket.manager - WARNING - [WS] 广播失败: 
+2026-07-06 10:28:48,493 - app.services.trade_processor - WARNING - [全量计算] 推送 backfill_done 失败（不影响业务）: Set changed size during iteration
+2026-07-06 10:28:48,494 - app.websocket.manager - WARNING - [WS] 广播失败: 
+2026-07-06 10:28:48,494 - app.websocket.manager - INFO - [WS] 断开连接: mint=75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump
+2026-07-06 10:28:58,474 - app.services.trade_processor - INFO - [消费者] 已启动 mint=75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump（单例已初始化）
+2026-07-06 10:29:02,749 - app.websocket.manager - WARNING - [WS] 广播失败: 
+2026-07-06 10:29:02,751 - app.services.trade_processor - INFO - [消费者] 开始消化队列 mint=75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump
+2026-07-06 10:29:06,398 - app.services.trade_processor - ERROR - [消费者] 队列未初始化，退出
+2026-07-06 10:29:07,230 - app.services.trade_stream - INFO - [实时流] 已发送订阅请求: 75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump
+2026-07-06 10:29:07,390 - app.services.trade_stream - INFO - [实时流] 订阅确认: {"jsonrpc":"2.0","id":1,"result":12825450}
+2026-07-06 10:29:31,142 - app.services.trade_backfill - INFO - [回填] 收到停止信号
+2026-07-06 10:29:31,308 - app.services.trade_stream - WARNING - [实时流] 连接断开，尝试重连...
+2026-07-06 10:29:31,309 - app.services.trade_stream - INFO - [实时流] 停止: 75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump
+2026-07-06 10:29:36,943 - main - INFO - [清理] metrics:75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump + 4 个 user key 已清除
+2026-07-06 10:29:36,945 - app.websocket.manager - INFO - [WS] 断开连接: mint=75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump
+2026-07-06 10:30:35,712 - app.services.trade_stream - INFO - [实时流] 启动: 75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump
+2026-07-06 10:30:41,788 - app.services.trade_backfill - INFO - [回填] 模式2：从 Redis 读取已有交易，不调 API
+2026-07-06 10:30:41,802 - app.websocket.manager - INFO - [WS] 新连接: mint=75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump, 当前连接数=1
+2026-07-06 10:30:43,016 - app.services.trade_processor - INFO - [全量计算] 开始计算 mint=75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump
+2026-07-06 10:30:43,026 - app.services.trade_processor - INFO - [全量计算] 共 6 条历史交易待处理 (ws 实时由消费者处理)
+2026-07-06 10:30:43,031 - app.services.trade_processor - INFO - ======================================================
+2026-07-06 10:30:43,031 - app.services.trade_processor - INFO - 📊 [指数计算] mint=75ckspwx... sig=5hxndyJdkBmviCbB63DqEij37FKFCJQGbvrxMRDvAABCio2mzzXbx12k83VdYCsh5cdjCaPchKQCT1cxbrxpps1U type=BUY address=4PH34Vb4...
+2026-07-06 10:30:43,031 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:30:43,032 - app.services.trade_processor - INFO - ① 庄家判定: status=retail, is_dealer=False, conditions=['C006']
+2026-07-06 10:30:43,032 - app.services.trade_processor - INFO - ② 交易前用户持仓: holdingQty=0.000000  holdingCost=0.000000  avgPrice=0.000000000000
+2026-07-06 10:30:43,032 - app.services.trade_processor - INFO -    totalBuyAmount=0.000000  totalSellAmount=0.000000  totalSellPrincipal=0.000000
+2026-07-06 10:30:43,033 - app.services.trade_processor - INFO -    old_holding_cost=0.000000  old_realized=0.000000
+2026-07-06 10:30:43,033 - app.services.trade_processor - INFO - ③ 用户指数 [BUY]: buy_qty=30877697.777999  buy_amount=0.910203 SOL
+2026-07-06 10:30:43,033 - app.services.trade_processor - INFO -    holdingQty:   0.000000 → 30877697.777999
+2026-07-06 10:30:43,033 - app.services.trade_processor - INFO -    holdingCost:  0.000000 → 0.910203
+2026-07-06 10:30:43,034 - app.services.trade_processor - INFO -    avgPrice:     0.000000000000 → 0.000000029478
+2026-07-06 10:30:43,037 - app.services.trade_processor - INFO - ⑥ 全局 total_holdingQty(含庄家): 0.000000 → 30877697.777999
+2026-07-06 10:30:43,038 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:30:43,038 - app.services.trade_processor - INFO - ④ delta: delta_bet=0.910203 (=new_holding_cost 0.910203 - old 0.000000)
+2026-07-06 10:30:43,038 - app.services.trade_processor - INFO -    delta_profit=0.000000 (=new_realized 0.000000 - old 0.000000)
+2026-07-06 10:30:43,040 - app.services.trade_processor - INFO - ⑤ 全局散户指数 [更新]: total_bet 0.000000 → 0.910203, realized_profit 0.000000 → 0.000000
+2026-07-06 10:30:43,049 - app.services.trade_processor - INFO - ======================================================
+2026-07-06 10:30:43,049 - app.services.trade_processor - INFO - 📊 [指数计算] mint=75ckspwx... sig=4EYVV6FZPSP9AGWrvr9Tfx8dfu93yyCTiXUL8KZQT49c6gxAMucxyDd61bfgiW6LfRpnc5UqgyYK6VH2jzYYVpLu type=BUY address=2YUAXALq...
+2026-07-06 10:30:43,050 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:30:43,050 - app.services.trade_processor - INFO - ① 庄家判定: status=retail, is_dealer=False, conditions=['C006']
+2026-07-06 10:30:43,050 - app.services.trade_processor - INFO - ② 交易前用户持仓: holdingQty=0.000000  holdingCost=0.000000  avgPrice=0.000000000000
+2026-07-06 10:30:43,050 - app.services.trade_processor - INFO -    totalBuyAmount=0.000000  totalSellAmount=0.000000  totalSellPrincipal=0.000000
+2026-07-06 10:30:43,051 - app.services.trade_processor - INFO -    old_holding_cost=0.000000  old_realized=0.000000
+2026-07-06 10:30:43,051 - app.services.trade_processor - INFO - ③ 用户指数 [BUY]: buy_qty=4032865.404634  buy_amount=0.123475 SOL
+2026-07-06 10:30:43,051 - app.services.trade_processor - INFO -    holdingQty:   0.000000 → 4032865.404634
+2026-07-06 10:30:43,051 - app.services.trade_processor - INFO -    holdingCost:  0.000000 → 0.123475
+2026-07-06 10:30:43,052 - app.services.trade_processor - INFO -    avgPrice:     0.000000000000 → 0.000000030617
+2026-07-06 10:30:43,055 - app.services.trade_processor - INFO - ⑥ 全局 total_holdingQty(含庄家): 30877697.777999 → 34910563.182633
+2026-07-06 10:30:43,055 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:30:43,056 - app.services.trade_processor - INFO - ④ delta: delta_bet=0.123475 (=new_holding_cost 0.123475 - old 0.000000)
+2026-07-06 10:30:43,056 - app.services.trade_processor - INFO -    delta_profit=0.000000 (=new_realized 0.000000 - old 0.000000)
+2026-07-06 10:30:43,058 - app.services.trade_processor - INFO - ⑤ 全局散户指数 [更新]: total_bet 0.910203 → 1.033678, realized_profit 0.000000 → 0.000000
+2026-07-06 10:30:43,064 - app.services.trade_processor - INFO - ======================================================
+2026-07-06 10:30:43,064 - app.services.trade_processor - INFO - 📊 [指数计算] mint=75ckspwx... sig=8gcturi5CXfBqPuB8kFtwcmErCdhedFDFwXFFMxCBjTiqFZu48dRs21JyGfi13oXLTgea9c7pZaKXudQ5vLifx9 type=BUY address=DvgGZQba...
+2026-07-06 10:30:43,065 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:30:43,065 - app.services.trade_processor - INFO - ① 庄家判定: status=retail, is_dealer=False, conditions=['C006']
+2026-07-06 10:30:43,065 - app.services.trade_processor - INFO - ② 交易前用户持仓: holdingQty=0.000000  holdingCost=0.000000  avgPrice=0.000000000000
+2026-07-06 10:30:43,065 - app.services.trade_processor - INFO -    totalBuyAmount=0.000000  totalSellAmount=0.000000  totalSellPrincipal=0.000000
+2026-07-06 10:30:43,066 - app.services.trade_processor - INFO -    old_holding_cost=0.000000  old_realized=0.000000
+2026-07-06 10:30:43,066 - app.services.trade_processor - INFO - ③ 用户指数 [BUY]: buy_qty=3306.293910  buy_amount=0.002139 SOL
+2026-07-06 10:30:43,066 - app.services.trade_processor - INFO -    holdingQty:   0.000000 → 3306.293910
+2026-07-06 10:30:43,066 - app.services.trade_processor - INFO -    holdingCost:  0.000000 → 0.002139
+2026-07-06 10:30:43,066 - app.services.trade_processor - INFO -    avgPrice:     0.000000000000 → 0.000000646943
+2026-07-06 10:30:43,070 - app.services.trade_processor - INFO - ⑥ 全局 total_holdingQty(含庄家): 34910563.182633 → 34913869.476543
+2026-07-06 10:30:43,070 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:30:43,071 - app.services.trade_processor - INFO - ④ delta: delta_bet=0.002139 (=new_holding_cost 0.002139 - old 0.000000)
+2026-07-06 10:30:43,071 - app.services.trade_processor - INFO -    delta_profit=0.000000 (=new_realized 0.000000 - old 0.000000)
+2026-07-06 10:30:43,073 - app.services.trade_processor - INFO - ⑤ 全局散户指数 [更新]: total_bet 1.033678 → 1.035817, realized_profit 0.000000 → 0.000000
+2026-07-06 10:30:43,079 - app.services.trade_processor - INFO - ======================================================
+2026-07-06 10:30:43,079 - app.services.trade_processor - INFO - 📊 [指数计算] mint=75ckspwx... sig=3qh1fJkKPExqt56hpHSKbW5CszNqAs57uxvjtrF4Gb76M3i687v7swKJtAT99cXd58VLMLNjpiKNQAdV4hUhcnV8 type=BUY address=CMjRBjRW...
+2026-07-06 10:30:43,080 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:30:43,080 - app.services.trade_processor - INFO - ① 庄家判定: status=dealer, is_dealer=True, conditions=['C006']
+2026-07-06 10:30:43,080 - app.services.trade_processor - INFO - ② 交易前用户持仓: holdingQty=0.000000  holdingCost=0.000000  avgPrice=0.000000000000
+2026-07-06 10:30:43,080 - app.services.trade_processor - INFO -    totalBuyAmount=0.000000  totalSellAmount=0.000000  totalSellPrincipal=0.000000
+2026-07-06 10:30:43,081 - app.services.trade_processor - INFO -    old_holding_cost=0.000000  old_realized=0.000000
+2026-07-06 10:30:43,081 - app.services.trade_processor - INFO - ③ 用户指数 [BUY]: buy_qty=1650553.776278  buy_amount=0.051976 SOL
+2026-07-06 10:30:43,081 - app.services.trade_processor - INFO -    holdingQty:   0.000000 → 1650553.776278
+2026-07-06 10:30:43,081 - app.services.trade_processor - INFO -    holdingCost:  0.000000 → 0.051976
+2026-07-06 10:30:43,082 - app.services.trade_processor - INFO -    avgPrice:     0.000000000000 → 0.000000031490
+2026-07-06 10:30:43,084 - app.services.trade_processor - INFO - ⑥ 全局 total_holdingQty(含庄家): 34913869.476543 → 36564423.252821
+2026-07-06 10:30:43,084 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:30:43,085 - app.services.trade_processor - INFO - ④ delta: delta_bet=0.051976 (=new_holding_cost 0.051976 - old 0.000000)
+2026-07-06 10:30:43,085 - app.services.trade_processor - INFO -    delta_profit=0.000000 (=new_realized 0.000000 - old 0.000000)
+2026-07-06 10:30:43,086 - app.services.trade_processor - INFO - ⑤ 全局散户指数 [跳过-庄家]: total_bet=1.035817(不变), realized_profit=0.000000(不变), dealerExcluded=
+2026-07-06 10:30:43,089 - app.services.trade_processor - INFO - [指标调整] sign=-1 CMjRBjRW... holdingCost=0.051976 user_realized=0.000000
+2026-07-06 10:30:43,089 - app.services.trade_processor - INFO - [庄家排除] CMjRBjRW... 已从汇总中排除
+2026-07-06 10:30:43,090 - app.services.trade_processor - INFO -    ⚠ 首次排除庄家，执行 exclude_dealer()
+2026-07-06 10:30:43,096 - app.services.trade_processor - INFO - ======================================================
+2026-07-06 10:30:43,096 - app.services.trade_processor - INFO - 📊 [指数计算] mint=75ckspwx... sig=eELktS8wzAcZjgfUkuDzBskBY6pq3m4c4497gjCzwbEJE1ay85h98qa1keHa6aqnhLeKXK9UHDwW3GahkcUmvLG type=SELL address=DvgGZQba...
+2026-07-06 10:30:43,096 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:30:43,097 - app.services.trade_processor - INFO - ① 庄家判定: status=retail, is_dealer=False, conditions=['C006']
+2026-07-06 10:30:43,097 - app.services.trade_processor - INFO - ② 交易前用户持仓: holdingQty=3306.293910  holdingCost=0.002139  avgPrice=0.000000646943
+2026-07-06 10:30:43,097 - app.services.trade_processor - INFO -    totalBuyAmount=0.002139  totalSellAmount=0.000000  totalSellPrincipal=0.000000
+2026-07-06 10:30:43,097 - app.services.trade_processor - INFO -    old_holding_cost=0.002139  old_realized=0.000000
+2026-07-06 10:30:43,098 - app.services.trade_processor - INFO - ③ 用户指数 [SELL]: sell_qty=3306.293910  sell_amount=0.002137 SOL  sell_principal=0.002139(=sell_qty×avgPrice)
+2026-07-06 10:30:43,098 - app.services.trade_processor - INFO -    落袋收益(realized)=-0.000002 SOL
+2026-07-06 10:30:43,098 - app.services.trade_processor - INFO -    holdingQty:   3306.293910 → 0.000000
+2026-07-06 10:30:43,099 - app.services.trade_processor - INFO -    holdingCost:  0.002139 → 0.000000
+2026-07-06 10:30:43,099 - app.services.trade_processor - INFO -    avgPrice:     0.000000646943 → 0.000000000000
+2026-07-06 10:30:43,102 - app.services.trade_processor - INFO - ⑥ 全局 total_holdingQty(含庄家): 36564423.252821 → 36561116.958911
+2026-07-06 10:30:43,102 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:30:43,103 - app.services.trade_processor - INFO - ④ delta: delta_bet=-0.002139 (=new_holding_cost 0.000000 - old 0.002139)
+2026-07-06 10:30:43,103 - app.services.trade_processor - INFO -    delta_profit=-0.000002 (=new_realized -0.000002 - old 0.000000)
+2026-07-06 10:30:43,105 - app.services.trade_processor - INFO - ⑤ 全局散户指数 [更新]: total_bet 0.983842 → 0.981703, realized_profit 0.000000 → -0.000002
+2026-07-06 10:31:03,875 - app.services.trade_processor - INFO - [全量计算] 完成 mint=75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump
+2026-07-06 10:31:06,228 - app.services.trade_stream - ERROR - [实时流] 异常: timed out during opening handshake
+Traceback (most recent call last):
+  File "/Users/curtdk/.openclaw/workspace/fastapiGmgn/venv/lib/python3.9/site-packages/websockets/asyncio/client.py", line 541, in __await_impl__
+    self.connection = await self.create_connection()
+  File "/Users/curtdk/.openclaw/workspace/fastapiGmgn/venv/lib/python3.9/site-packages/websockets/asyncio/client.py", line 453, in create_connection
+    new_transport = await loop.start_tls(
+  File "uvloop/loop.pyx", line 1639, in start_tls
+  File "uvloop/loop.pyx", line 1632, in uvloop.loop.Loop.start_tls
+asyncio.exceptions.CancelledError
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/curtdk/.openclaw/workspace/fastapiGmgn/venv/lib/python3.9/site-packages/websockets/asyncio/client.py", line 574, in __await_impl__
+    raise SecurityError(f"more than {MAX_REDIRECTS} redirects")
+  File "/Users/curtdk/.openclaw/workspace/fastapiGmgn/venv/lib/python3.9/site-packages/websockets/asyncio/async_timeout.py", line 181, in __aexit__
+    self._do_exit(exc_type)
+  File "/Users/curtdk/.openclaw/workspace/fastapiGmgn/venv/lib/python3.9/site-packages/websockets/asyncio/async_timeout.py", line 268, in _do_exit
+    raise asyncio.TimeoutError
+asyncio.exceptions.TimeoutError
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/Users/curtdk/.openclaw/workspace/fastapiGmgn/app/services/trade_stream.py", line 72, in _stream_loop
+    async with websockets.connect(url) as ws:
+  File "/Users/curtdk/.openclaw/workspace/fastapiGmgn/venv/lib/python3.9/site-packages/websockets/asyncio/client.py", line 587, in __aenter__
+    return await self
+  File "/Users/curtdk/.openclaw/workspace/fastapiGmgn/venv/lib/python3.9/site-packages/websockets/asyncio/client.py", line 578, in __await_impl__
+    raise TimeoutError("timed out during opening handshake") from exc
+asyncio.exceptions.TimeoutError: timed out during opening handshake
+2026-07-06 10:32:33,441 - asyncio - ERROR - Exception in callback <bound method Connection.connection_lost of <websockets.asyncio.client.ClientConnection object at 0x109f83820>>
+handle: <Handle Connection.connection_lost>
+Traceback (most recent call last):
+  File "uvloop/cbhandles.pyx", line 63, in uvloop.loop.Handle._run
+  File "/Users/curtdk/.openclaw/workspace/fastapiGmgn/venv/lib/python3.9/site-packages/websockets/asyncio/connection.py", line 1018, in connection_lost
+    self.recv_messages.close()
+AttributeError: 'ClientConnection' object has no attribute 'recv_messages'
+2026-07-06 10:32:33,469 - app.websocket.manager - WARNING - [WS] 广播失败: 
+2026-07-06 10:32:33,469 - app.websocket.manager - INFO - [WS] 断开连接: mint=75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump
+2026-07-06 10:32:33,470 - app.services.trade_processor - INFO - [消费者] 已启动 mint=75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump（单例已初始化）
+2026-07-06 10:32:33,471 - app.services.trade_processor - INFO - [消费者] 开始消化队列 mint=75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump
+2026-07-06 10:32:35,424 - app.services.trade_processor - ERROR - [消费者] 队列未初始化，退出
+2026-07-06 10:32:35,690 - app.services.trade_stream - INFO - [实时流] 已发送订阅请求: 75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump
+2026-07-06 10:32:35,796 - app.services.trade_stream - INFO - [实时流] 订阅确认: {"jsonrpc":"2.0","id":1,"result":12835842}
+2026-07-06 10:32:36,468 - app.websocket.manager - INFO - [WS] 新连接: mint=75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump, 当前连接数=1
+2026-07-06 10:35:19,896 - app.services.trade_stream - WARNING - [实时流] 连接断开，尝试重连...
+2026-07-06 10:35:23,304 - app.services.trade_stream - INFO - [实时流] 已发送订阅请求: 75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump
+2026-07-06 10:35:23,365 - app.services.trade_stream - INFO - [实时流] 订阅确认: {"jsonrpc":"2.0","id":1,"result":12842838}
+2026-07-06 10:36:44,262 - app.websocket.manager - INFO - [WS] 断开连接: mint=75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump
+2026-07-06 10:36:48,253 - app.services.trade_backfill - INFO - [回填] 收到停止信号
+2026-07-06 10:36:48,318 - app.services.trade_stream - WARNING - [实时流] 连接断开，尝试重连...
+2026-07-06 10:36:48,318 - app.services.trade_stream - INFO - [实时流] 停止: 75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump
+2026-07-06 10:36:48,319 - app.services.trade_processor - INFO - [重置] 开始清理 mint=75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump
+2026-07-06 10:36:48,319 - app.services.trade_processor - INFO - [重置] 清理完成 mint=75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump（含单例）
+2026-07-06 10:36:48,327 - app.services.trade_stream - INFO - [实时流] 启动: 75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump
+2026-07-06 10:37:01,729 - app.services.trade_backfill - INFO - [回填] 模式2：从 Redis 读取已有交易，不调 API
+2026-07-06 10:37:01,753 - app.websocket.manager - INFO - [WS] 新连接: mint=75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump, 当前连接数=1
+2026-07-06 10:37:01,760 - app.services.trade_processor - INFO - [全量计算] 开始计算 mint=75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump
+2026-07-06 10:37:01,771 - app.services.trade_processor - INFO - [全量计算] 共 6 条历史交易待处理 (ws 实时由消费者处理)
+2026-07-06 10:37:01,784 - app.services.trade_processor - INFO - ======================================================
+2026-07-06 10:37:01,785 - app.services.trade_processor - INFO - 📊 [指数计算] mint=75ckspwx... sig=5hxndyJdkBmviCbB63DqEij37FKFCJQGbvrxMRDvAABCio2mzzXbx12k83VdYCsh5cdjCaPchKQCT1cxbrxpps1U type=BUY address=4PH34Vb4...
+2026-07-06 10:37:01,785 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:37:01,785 - app.services.trade_processor - INFO - ① 庄家判定: status=retail, is_dealer=False, conditions=['C006']
+2026-07-06 10:37:01,786 - app.services.trade_processor - INFO - ② 交易前用户持仓: holdingQty=30877697.777999  holdingCost=0.910203  avgPrice=0.000000029478
+2026-07-06 10:37:01,786 - app.services.trade_processor - INFO -    totalBuyAmount=0.910203  totalSellAmount=0.000000  totalSellPrincipal=0.000000
+2026-07-06 10:37:01,786 - app.services.trade_processor - INFO -    old_holding_cost=0.910203  old_realized=0.000000
+2026-07-06 10:37:01,787 - app.services.trade_processor - INFO - ③ 用户指数 [BUY]: buy_qty=30877697.777999  buy_amount=0.910203 SOL
+2026-07-06 10:37:01,787 - app.services.trade_processor - INFO -    holdingQty:   30877697.777999 → 61755395.555998
+2026-07-06 10:37:01,787 - app.services.trade_processor - INFO -    holdingCost:  0.910203 → 1.820407
+2026-07-06 10:37:01,787 - app.services.trade_processor - INFO -    avgPrice:     0.000000029478 → 0.000000029478
+2026-07-06 10:37:01,795 - app.services.trade_processor - INFO - ⑥ 全局 total_holdingQty(含庄家): 36561116.958911 → 67438814.736910
+2026-07-06 10:37:01,795 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:37:01,795 - app.services.trade_processor - INFO - ④ delta: delta_bet=0.910203 (=new_holding_cost 1.820407 - old 0.910203)
+2026-07-06 10:37:01,795 - app.services.trade_processor - INFO -    delta_profit=0.000000 (=new_realized 0.000000 - old 0.000000)
+2026-07-06 10:37:01,797 - app.services.trade_processor - INFO - ⑤ 全局散户指数 [更新]: total_bet 0.981703 → 1.891906, realized_profit -0.000002 → -0.000002
+2026-07-06 10:37:01,806 - app.services.trade_processor - INFO - ======================================================
+2026-07-06 10:37:01,806 - app.services.trade_processor - INFO - 📊 [指数计算] mint=75ckspwx... sig=4EYVV6FZPSP9AGWrvr9Tfx8dfu93yyCTiXUL8KZQT49c6gxAMucxyDd61bfgiW6LfRpnc5UqgyYK6VH2jzYYVpLu type=BUY address=2YUAXALq...
+2026-07-06 10:37:01,806 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:37:01,807 - app.services.trade_processor - INFO - ① 庄家判定: status=retail, is_dealer=False, conditions=['C006']
+2026-07-06 10:37:01,807 - app.services.trade_processor - INFO - ② 交易前用户持仓: holdingQty=4032865.404634  holdingCost=0.123475  avgPrice=0.000000030617
+2026-07-06 10:37:01,808 - app.services.trade_processor - INFO -    totalBuyAmount=0.123475  totalSellAmount=0.000000  totalSellPrincipal=0.000000
+2026-07-06 10:37:01,808 - app.services.trade_processor - INFO -    old_holding_cost=0.123475  old_realized=0.000000
+2026-07-06 10:37:01,808 - app.services.trade_processor - INFO - ③ 用户指数 [BUY]: buy_qty=4032865.404634  buy_amount=0.123475 SOL
+2026-07-06 10:37:01,808 - app.services.trade_processor - INFO -    holdingQty:   4032865.404634 → 8065730.809268
+2026-07-06 10:37:01,809 - app.services.trade_processor - INFO -    holdingCost:  0.123475 → 0.246950
+2026-07-06 10:37:01,809 - app.services.trade_processor - INFO -    avgPrice:     0.000000030617 → 0.000000030617
+2026-07-06 10:37:01,814 - app.services.trade_processor - INFO - ⑥ 全局 total_holdingQty(含庄家): 67438814.736910 → 71471680.141544
+2026-07-06 10:37:01,814 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:37:01,814 - app.services.trade_processor - INFO - ④ delta: delta_bet=0.123475 (=new_holding_cost 0.246950 - old 0.123475)
+2026-07-06 10:37:01,814 - app.services.trade_processor - INFO -    delta_profit=0.000000 (=new_realized 0.000000 - old 0.000000)
+2026-07-06 10:37:01,816 - app.services.trade_processor - INFO - ⑤ 全局散户指数 [更新]: total_bet 1.891906 → 2.015381, realized_profit -0.000002 → -0.000002
+2026-07-06 10:37:01,824 - app.services.trade_processor - INFO - ======================================================
+2026-07-06 10:37:01,824 - app.services.trade_processor - INFO - 📊 [指数计算] mint=75ckspwx... sig=8gcturi5CXfBqPuB8kFtwcmErCdhedFDFwXFFMxCBjTiqFZu48dRs21JyGfi13oXLTgea9c7pZaKXudQ5vLifx9 type=BUY address=DvgGZQba...
+2026-07-06 10:37:01,824 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:37:01,824 - app.services.trade_processor - INFO - ① 庄家判定: status=retail, is_dealer=False, conditions=['C006']
+2026-07-06 10:37:01,825 - app.services.trade_processor - INFO - ② 交易前用户持仓: holdingQty=0.000000  holdingCost=0.000000  avgPrice=0.000000000000
+2026-07-06 10:37:01,825 - app.services.trade_processor - INFO -    totalBuyAmount=0.002139  totalSellAmount=0.002137  totalSellPrincipal=0.002139
+2026-07-06 10:37:01,825 - app.services.trade_processor - INFO -    old_holding_cost=0.000000  old_realized=-0.000002
+2026-07-06 10:37:01,825 - app.services.trade_processor - INFO - ③ 用户指数 [BUY]: buy_qty=3306.293910  buy_amount=0.002139 SOL
+2026-07-06 10:37:01,826 - app.services.trade_processor - INFO -    holdingQty:   0.000000 → 3306.293910
+2026-07-06 10:37:01,826 - app.services.trade_processor - INFO -    holdingCost:  0.000000 → 0.002139
+2026-07-06 10:37:01,826 - app.services.trade_processor - INFO -    avgPrice:     0.000000000000 → 0.000000646943
+2026-07-06 10:37:01,829 - app.services.trade_processor - INFO - ⑥ 全局 total_holdingQty(含庄家): 71471680.141544 → 71474986.435454
+2026-07-06 10:37:01,829 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:37:01,830 - app.services.trade_processor - INFO - ④ delta: delta_bet=0.002139 (=new_holding_cost 0.002139 - old 0.000000)
+2026-07-06 10:37:01,830 - app.services.trade_processor - INFO -    delta_profit=0.000000 (=new_realized -0.000002 - old -0.000002)
+2026-07-06 10:37:01,832 - app.services.trade_processor - INFO - ⑤ 全局散户指数 [更新]: total_bet 2.015381 → 2.017520, realized_profit -0.000002 → -0.000002
+2026-07-06 10:37:01,838 - app.services.trade_processor - INFO - ======================================================
+2026-07-06 10:37:01,838 - app.services.trade_processor - INFO - 📊 [指数计算] mint=75ckspwx... sig=3qh1fJkKPExqt56hpHSKbW5CszNqAs57uxvjtrF4Gb76M3i687v7swKJtAT99cXd58VLMLNjpiKNQAdV4hUhcnV8 type=BUY address=CMjRBjRW...
+2026-07-06 10:37:01,838 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:37:01,839 - app.services.trade_processor - INFO - ① 庄家判定: status=dealer, is_dealer=True, conditions=['C006']
+2026-07-06 10:37:01,839 - app.services.trade_processor - INFO - ② 交易前用户持仓: holdingQty=1650553.776278  holdingCost=0.051976  avgPrice=0.000000031490
+2026-07-06 10:37:01,839 - app.services.trade_processor - INFO -    totalBuyAmount=0.051976  totalSellAmount=0.000000  totalSellPrincipal=0.000000
+2026-07-06 10:37:01,840 - app.services.trade_processor - INFO -    old_holding_cost=0.051976  old_realized=0.000000
+2026-07-06 10:37:01,840 - app.services.trade_processor - INFO - ③ 用户指数 [BUY]: buy_qty=1650553.776278  buy_amount=0.051976 SOL
+2026-07-06 10:37:01,840 - app.services.trade_processor - INFO -    holdingQty:   1650553.776278 → 3301107.552556
+2026-07-06 10:37:01,841 - app.services.trade_processor - INFO -    holdingCost:  0.051976 → 0.103952
+2026-07-06 10:37:01,841 - app.services.trade_processor - INFO -    avgPrice:     0.000000031490 → 0.000000031490
+2026-07-06 10:37:01,844 - app.services.trade_processor - INFO - ⑥ 全局 total_holdingQty(含庄家): 71474986.435454 → 73125540.211732
+2026-07-06 10:37:01,845 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:37:01,845 - app.services.trade_processor - INFO - ④ delta: delta_bet=0.051976 (=new_holding_cost 0.103952 - old 0.051976)
+2026-07-06 10:37:01,845 - app.services.trade_processor - INFO -    delta_profit=0.000000 (=new_realized 0.000000 - old 0.000000)
+2026-07-06 10:37:01,847 - app.services.trade_processor - INFO - ⑤ 全局散户指数 [跳过-庄家]: total_bet=2.017520(不变), realized_profit=-0.000002(不变), dealerExcluded=true
+2026-07-06 10:37:01,847 - app.services.trade_processor - INFO -    已排除过庄家，跳过
+2026-07-06 10:37:01,853 - app.services.trade_processor - INFO - ======================================================
+2026-07-06 10:37:01,854 - app.services.trade_processor - INFO - 📊 [指数计算] mint=75ckspwx... sig=eELktS8wzAcZjgfUkuDzBskBY6pq3m4c4497gjCzwbEJE1ay85h98qa1keHa6aqnhLeKXK9UHDwW3GahkcUmvLG type=SELL address=DvgGZQba...
+2026-07-06 10:37:01,854 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:37:01,854 - app.services.trade_processor - INFO - ① 庄家判定: status=retail, is_dealer=False, conditions=['C006']
+2026-07-06 10:37:01,854 - app.services.trade_processor - INFO - ② 交易前用户持仓: holdingQty=3306.293910  holdingCost=0.002139  avgPrice=0.000000646943
+2026-07-06 10:37:01,855 - app.services.trade_processor - INFO -    totalBuyAmount=0.004278  totalSellAmount=0.002137  totalSellPrincipal=0.002139
+2026-07-06 10:37:01,855 - app.services.trade_processor - INFO -    old_holding_cost=0.002139  old_realized=-0.000002
+2026-07-06 10:37:01,855 - app.services.trade_processor - INFO - ③ 用户指数 [SELL]: sell_qty=3306.293910  sell_amount=0.002137 SOL  sell_principal=0.002139(=sell_qty×avgPrice)
+2026-07-06 10:37:01,855 - app.services.trade_processor - INFO -    落袋收益(realized)=-0.000002 SOL
+2026-07-06 10:37:01,856 - app.services.trade_processor - INFO -    holdingQty:   3306.293910 → 0.000000
+2026-07-06 10:37:01,856 - app.services.trade_processor - INFO -    holdingCost:  0.002139 → 0.000000
+2026-07-06 10:37:01,856 - app.services.trade_processor - INFO -    avgPrice:     0.000000646943 → 0.000000000000
+2026-07-06 10:37:01,859 - app.services.trade_processor - INFO - ⑥ 全局 total_holdingQty(含庄家): 73125540.211732 → 73122233.917822
+2026-07-06 10:37:01,860 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:37:01,860 - app.services.trade_processor - INFO - ④ delta: delta_bet=-0.002139 (=new_holding_cost 0.000000 - old 0.002139)
+2026-07-06 10:37:01,860 - app.services.trade_processor - INFO -    delta_profit=-0.000002 (=new_realized -0.000004 - old -0.000002)
+2026-07-06 10:37:01,863 - app.services.trade_processor - INFO - ⑤ 全局散户指数 [更新]: total_bet 2.017520 → 2.015381, realized_profit -0.000002 → -0.000004
+2026-07-06 10:37:01,866 - app.services.trade_processor - INFO - [全量计算] 完成 mint=75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump
+2026-07-06 10:37:01,878 - app.services.trade_processor - INFO - [消费者] 已启动 mint=75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump（单例已初始化）
+2026-07-06 10:37:01,878 - app.services.trade_processor - INFO - [消费者] 开始消化队列 mint=75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump
+2026-07-06 10:37:02,557 - app.services.trade_stream - INFO - [实时流] 已发送订阅请求: 75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump
+2026-07-06 10:37:02,713 - app.services.trade_stream - INFO - [实时流] 订阅确认: {"jsonrpc":"2.0","id":1,"result":12847736}
+2026-07-06 10:37:34,612 - app.routes.cluster_api - INFO - [用户状态] CMjRBjRW... 修改为 unknown (source=manual)
+2026-07-06 10:38:18,582 - app.routes.cluster_api - INFO - [用户状态] CMjRBjRW... 修改为 dealer (source=manual)
+2026-07-06 10:38:24,778 - app.routes.cluster_api - INFO - [用户状态] DvgGZQba... 修改为 dealer (source=manual)
+2026-07-06 10:38:34,376 - app.routes.cluster_api - INFO - [用户状态] DvgGZQba... 修改为 unknown (source=manual)
+2026-07-06 10:38:41,383 - app.routes.cluster_api - INFO - [用户状态] CMjRBjRW... 修改为 unknown (source=system)
+2026-07-06 10:39:11,541 - app.services.trade_backfill - INFO - [回填] 收到停止信号
+2026-07-06 10:39:11,705 - app.services.trade_stream - WARNING - [实时流] 连接断开，尝试重连...
+2026-07-06 10:39:11,706 - app.services.trade_stream - INFO - [实时流] 停止: 75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump
+2026-07-06 10:39:11,712 - main - INFO - [清理] metrics:75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump + 4 个 user key 已清除
+2026-07-06 10:39:11,718 - app.websocket.manager - INFO - [WS] 断开连接: mint=75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump
+2026-07-06 10:39:15,909 - app.services.trade_stream - INFO - [实时流] 启动: 75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump
+2026-07-06 10:39:15,911 - app.services.trade_backfill - INFO - [回填] 模式2：从 Redis 读取已有交易，不调 API
+2026-07-06 10:39:15,927 - app.websocket.manager - INFO - [WS] 新连接: mint=75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump, 当前连接数=1
+2026-07-06 10:39:15,940 - app.services.trade_processor - INFO - [全量计算] 开始计算 mint=75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump
+2026-07-06 10:39:15,943 - app.services.trade_processor - INFO - [全量计算] 共 6 条历史交易待处理 (ws 实时由消费者处理)
+2026-07-06 10:39:15,948 - app.services.trade_processor - INFO - ======================================================
+2026-07-06 10:39:15,948 - app.services.trade_processor - INFO - 📊 [指数计算] mint=75ckspwx... sig=5hxndyJdkBmviCbB63DqEij37FKFCJQGbvrxMRDvAABCio2mzzXbx12k83VdYCsh5cdjCaPchKQCT1cxbrxpps1U type=BUY address=4PH34Vb4...
+2026-07-06 10:39:15,948 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:39:15,949 - app.services.trade_processor - INFO - ① 庄家判定: status=retail, is_dealer=False, conditions=['C006']
+2026-07-06 10:39:15,949 - app.services.trade_processor - INFO - ② 交易前用户持仓: holdingQty=0.000000  holdingCost=0.000000  avgPrice=0.000000000000
+2026-07-06 10:39:15,949 - app.services.trade_processor - INFO -    totalBuyAmount=0.000000  totalSellAmount=0.000000  totalSellPrincipal=0.000000
+2026-07-06 10:39:15,950 - app.services.trade_processor - INFO -    old_holding_cost=0.000000  old_realized=0.000000
+2026-07-06 10:39:15,950 - app.services.trade_processor - INFO - ③ 用户指数 [BUY]: buy_qty=30877697.777999  buy_amount=0.910203 SOL
+2026-07-06 10:39:15,951 - app.services.trade_processor - INFO -    holdingQty:   0.000000 → 30877697.777999
+2026-07-06 10:39:15,951 - app.services.trade_processor - INFO -    holdingCost:  0.000000 → 0.910203
+2026-07-06 10:39:15,951 - app.services.trade_processor - INFO -    avgPrice:     0.000000000000 → 0.000000029478
+2026-07-06 10:39:15,955 - app.services.trade_processor - INFO - ⑥ 全局 total_holdingQty(含庄家): 0.000000 → 30877697.777999
+2026-07-06 10:39:15,955 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:39:15,955 - app.services.trade_processor - INFO - ④ delta: delta_bet=0.910203 (=new_holding_cost 0.910203 - old 0.000000)
+2026-07-06 10:39:15,956 - app.services.trade_processor - INFO -    delta_profit=0.000000 (=new_realized 0.000000 - old 0.000000)
+2026-07-06 10:39:15,958 - app.services.trade_processor - INFO - ⑤ 全局散户指数 [更新]: total_bet 0.000000 → 0.910203, realized_profit 0.000000 → 0.000000
+2026-07-06 10:39:15,966 - app.services.trade_processor - INFO - ======================================================
+2026-07-06 10:39:15,967 - app.services.trade_processor - INFO - 📊 [指数计算] mint=75ckspwx... sig=4EYVV6FZPSP9AGWrvr9Tfx8dfu93yyCTiXUL8KZQT49c6gxAMucxyDd61bfgiW6LfRpnc5UqgyYK6VH2jzYYVpLu type=BUY address=2YUAXALq...
+2026-07-06 10:39:15,967 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:39:15,967 - app.services.trade_processor - INFO - ① 庄家判定: status=retail, is_dealer=False, conditions=['C006']
+2026-07-06 10:39:15,968 - app.services.trade_processor - INFO - ② 交易前用户持仓: holdingQty=0.000000  holdingCost=0.000000  avgPrice=0.000000000000
+2026-07-06 10:39:15,968 - app.services.trade_processor - INFO -    totalBuyAmount=0.000000  totalSellAmount=0.000000  totalSellPrincipal=0.000000
+2026-07-06 10:39:15,968 - app.services.trade_processor - INFO -    old_holding_cost=0.000000  old_realized=0.000000
+2026-07-06 10:39:15,968 - app.services.trade_processor - INFO - ③ 用户指数 [BUY]: buy_qty=4032865.404634  buy_amount=0.123475 SOL
+2026-07-06 10:39:15,969 - app.services.trade_processor - INFO -    holdingQty:   0.000000 → 4032865.404634
+2026-07-06 10:39:15,969 - app.services.trade_processor - INFO -    holdingCost:  0.000000 → 0.123475
+2026-07-06 10:39:15,969 - app.services.trade_processor - INFO -    avgPrice:     0.000000000000 → 0.000000030617
+2026-07-06 10:39:15,973 - app.services.trade_processor - INFO - ⑥ 全局 total_holdingQty(含庄家): 30877697.777999 → 34910563.182633
+2026-07-06 10:39:15,973 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:39:15,973 - app.services.trade_processor - INFO - ④ delta: delta_bet=0.123475 (=new_holding_cost 0.123475 - old 0.000000)
+2026-07-06 10:39:15,973 - app.services.trade_processor - INFO -    delta_profit=0.000000 (=new_realized 0.000000 - old 0.000000)
+2026-07-06 10:39:15,976 - app.services.trade_processor - INFO - ⑤ 全局散户指数 [更新]: total_bet 0.910203 → 1.033678, realized_profit 0.000000 → 0.000000
+2026-07-06 10:39:15,983 - app.services.trade_processor - INFO - ======================================================
+2026-07-06 10:39:15,983 - app.services.trade_processor - INFO - 📊 [指数计算] mint=75ckspwx... sig=8gcturi5CXfBqPuB8kFtwcmErCdhedFDFwXFFMxCBjTiqFZu48dRs21JyGfi13oXLTgea9c7pZaKXudQ5vLifx9 type=BUY address=DvgGZQba...
+2026-07-06 10:39:15,983 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:39:15,984 - app.services.trade_processor - INFO - ① 庄家判定: status=unknown, is_dealer=False, conditions=['C006']
+2026-07-06 10:39:15,984 - app.services.trade_processor - INFO - ② 交易前用户持仓: holdingQty=0.000000  holdingCost=0.000000  avgPrice=0.000000000000
+2026-07-06 10:39:15,984 - app.services.trade_processor - INFO -    totalBuyAmount=0.000000  totalSellAmount=0.000000  totalSellPrincipal=0.000000
+2026-07-06 10:39:15,984 - app.services.trade_processor - INFO -    old_holding_cost=0.000000  old_realized=0.000000
+2026-07-06 10:39:15,985 - app.services.trade_processor - INFO - ③ 用户指数 [BUY]: buy_qty=3306.293910  buy_amount=0.002139 SOL
+2026-07-06 10:39:15,985 - app.services.trade_processor - INFO -    holdingQty:   0.000000 → 3306.293910
+2026-07-06 10:39:15,985 - app.services.trade_processor - INFO -    holdingCost:  0.000000 → 0.002139
+2026-07-06 10:39:15,985 - app.services.trade_processor - INFO -    avgPrice:     0.000000000000 → 0.000000646943
+2026-07-06 10:39:15,988 - app.services.trade_processor - INFO - ⑥ 全局 total_holdingQty(含庄家): 34910563.182633 → 34913869.476543
+2026-07-06 10:39:15,988 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:39:15,989 - app.services.trade_processor - INFO - ④ delta: delta_bet=0.002139 (=new_holding_cost 0.002139 - old 0.000000)
+2026-07-06 10:39:15,989 - app.services.trade_processor - INFO -    delta_profit=0.000000 (=new_realized 0.000000 - old 0.000000)
+2026-07-06 10:39:15,992 - app.services.trade_processor - INFO - ⑤ 全局散户指数 [更新]: total_bet 1.033678 → 1.035817, realized_profit 0.000000 → 0.000000
+2026-07-06 10:39:15,999 - app.services.trade_processor - INFO - [簇组同步] CMjRBjRW... 用户状态 unknown → dealer（簇组自动同步）
+2026-07-06 10:39:16,000 - app.services.trade_processor - INFO - ======================================================
+2026-07-06 10:39:16,001 - app.services.trade_processor - INFO - 📊 [指数计算] mint=75ckspwx... sig=3qh1fJkKPExqt56hpHSKbW5CszNqAs57uxvjtrF4Gb76M3i687v7swKJtAT99cXd58VLMLNjpiKNQAdV4hUhcnV8 type=BUY address=CMjRBjRW...
+2026-07-06 10:39:16,001 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:39:16,001 - app.services.trade_processor - INFO - ① 庄家判定: status=dealer, is_dealer=True, conditions=['C006']
+2026-07-06 10:39:16,001 - app.services.trade_processor - INFO - ② 交易前用户持仓: holdingQty=0.000000  holdingCost=0.000000  avgPrice=0.000000000000
+2026-07-06 10:39:16,002 - app.services.trade_processor - INFO -    totalBuyAmount=0.000000  totalSellAmount=0.000000  totalSellPrincipal=0.000000
+2026-07-06 10:39:16,002 - app.services.trade_processor - INFO -    old_holding_cost=0.000000  old_realized=0.000000
+2026-07-06 10:39:16,002 - app.services.trade_processor - INFO - ③ 用户指数 [BUY]: buy_qty=1650553.776278  buy_amount=0.051976 SOL
+2026-07-06 10:39:16,003 - app.services.trade_processor - INFO -    holdingQty:   0.000000 → 1650553.776278
+2026-07-06 10:39:16,003 - app.services.trade_processor - INFO -    holdingCost:  0.000000 → 0.051976
+2026-07-06 10:39:16,003 - app.services.trade_processor - INFO -    avgPrice:     0.000000000000 → 0.000000031490
+2026-07-06 10:39:16,006 - app.services.trade_processor - INFO - ⑥ 全局 total_holdingQty(含庄家): 34913869.476543 → 36564423.252821
+2026-07-06 10:39:16,007 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:39:16,007 - app.services.trade_processor - INFO - ④ delta: delta_bet=0.051976 (=new_holding_cost 0.051976 - old 0.000000)
+2026-07-06 10:39:16,008 - app.services.trade_processor - INFO -    delta_profit=0.000000 (=new_realized 0.000000 - old 0.000000)
+2026-07-06 10:39:16,009 - app.services.trade_processor - INFO - ⑤ 全局散户指数 [跳过-庄家]: total_bet=1.035817(不变), realized_profit=0.000000(不变), dealerExcluded=
+2026-07-06 10:39:16,013 - app.services.trade_processor - INFO - [指标调整] sign=-1 CMjRBjRW... holdingCost=0.051976 user_realized=0.000000
+2026-07-06 10:39:16,013 - app.services.trade_processor - INFO - [庄家排除] CMjRBjRW... 已从汇总中排除
+2026-07-06 10:39:16,013 - app.services.trade_processor - INFO -    ⚠ 首次排除庄家，执行 exclude_dealer()
+2026-07-06 10:39:16,021 - app.services.trade_processor - INFO - ======================================================
+2026-07-06 10:39:16,021 - app.services.trade_processor - INFO - 📊 [指数计算] mint=75ckspwx... sig=eELktS8wzAcZjgfUkuDzBskBY6pq3m4c4497gjCzwbEJE1ay85h98qa1keHa6aqnhLeKXK9UHDwW3GahkcUmvLG type=SELL address=DvgGZQba...
+2026-07-06 10:39:16,022 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:39:16,022 - app.services.trade_processor - INFO - ① 庄家判定: status=unknown, is_dealer=False, conditions=['C006']
+2026-07-06 10:39:16,022 - app.services.trade_processor - INFO - ② 交易前用户持仓: holdingQty=3306.293910  holdingCost=0.002139  avgPrice=0.000000646943
+2026-07-06 10:39:16,023 - app.services.trade_processor - INFO -    totalBuyAmount=0.002139  totalSellAmount=0.000000  totalSellPrincipal=0.000000
+2026-07-06 10:39:16,023 - app.services.trade_processor - INFO -    old_holding_cost=0.002139  old_realized=0.000000
+2026-07-06 10:39:16,023 - app.services.trade_processor - INFO - ③ 用户指数 [SELL]: sell_qty=3306.293910  sell_amount=0.002137 SOL  sell_principal=0.002139(=sell_qty×avgPrice)
+2026-07-06 10:39:16,023 - app.services.trade_processor - INFO -    落袋收益(realized)=-0.000002 SOL
+2026-07-06 10:39:16,023 - app.services.trade_processor - INFO -    holdingQty:   3306.293910 → 0.000000
+2026-07-06 10:39:16,024 - app.services.trade_processor - INFO -    holdingCost:  0.002139 → 0.000000
+2026-07-06 10:39:16,024 - app.services.trade_processor - INFO -    avgPrice:     0.000000646943 → 0.000000000000
+2026-07-06 10:39:16,028 - app.services.trade_processor - INFO - ⑥ 全局 total_holdingQty(含庄家): 36564423.252821 → 36561116.958911
+2026-07-06 10:39:16,028 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:39:16,028 - app.services.trade_processor - INFO - ④ delta: delta_bet=-0.002139 (=new_holding_cost 0.000000 - old 0.002139)
+2026-07-06 10:39:16,029 - app.services.trade_processor - INFO -    delta_profit=-0.000002 (=new_realized -0.000002 - old 0.000000)
+2026-07-06 10:39:16,031 - app.services.trade_processor - INFO - ⑤ 全局散户指数 [更新]: total_bet 0.983842 → 0.981703, realized_profit 0.000000 → -0.000002
+2026-07-06 10:39:16,035 - app.services.trade_processor - INFO - [全量计算] 完成 mint=75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump
+2026-07-06 10:39:16,039 - app.services.trade_processor - INFO - [消费者] 已启动 mint=75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump（单例已初始化）
+2026-07-06 10:39:16,040 - app.services.trade_processor - INFO - [消费者] 开始消化队列 mint=75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump
+2026-07-06 10:39:16,688 - app.services.trade_stream - INFO - [实时流] 已发送订阅请求: 75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump
+2026-07-06 10:39:16,894 - app.services.trade_stream - INFO - [实时流] 订阅确认: {"jsonrpc":"2.0","id":1,"result":14610277}
+2026-07-06 10:39:43,050 - app.services.trade_backfill - INFO - [回填] 收到停止信号
+2026-07-06 10:39:43,217 - app.services.trade_stream - WARNING - [实时流] 连接断开，尝试重连...
+2026-07-06 10:39:43,218 - app.services.trade_stream - INFO - [实时流] 停止: 75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump
+2026-07-06 10:39:43,223 - main - INFO - [清理] metrics:75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump + 4 个 user key 已清除
+2026-07-06 10:39:43,226 - app.websocket.manager - INFO - [WS] 断开连接: mint=75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump
+2026-07-06 10:40:26,995 - app.services.trade_stream - INFO - [实时流] 启动: 75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump
+2026-07-06 10:40:26,997 - app.services.trade_backfill - INFO - [回填] 模式2：从 Redis 读取已有交易，不调 API
+2026-07-06 10:40:27,013 - app.websocket.manager - INFO - [WS] 新连接: mint=75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump, 当前连接数=1
+2026-07-06 10:40:27,017 - app.services.trade_processor - INFO - [全量计算] 开始计算 mint=75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump
+2026-07-06 10:40:27,030 - app.services.trade_processor - INFO - [全量计算] 共 6 条历史交易待处理 (ws 实时由消费者处理)
+2026-07-06 10:40:27,034 - app.services.trade_processor - INFO - ======================================================
+2026-07-06 10:40:27,034 - app.services.trade_processor - INFO - 📊 [指数计算] mint=75ckspwx... sig=5hxndyJdkBmviCbB63DqEij37FKFCJQGbvrxMRDvAABCio2mzzXbx12k83VdYCsh5cdjCaPchKQCT1cxbrxpps1U type=BUY address=4PH34Vb4...
+2026-07-06 10:40:27,034 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:40:27,034 - app.services.trade_processor - INFO - ① 庄家判定: status=retail, is_dealer=False, conditions=['C006']
+2026-07-06 10:40:27,035 - app.services.trade_processor - INFO - ② 交易前用户持仓: holdingQty=0.000000  holdingCost=0.000000  avgPrice=0.000000000000
+2026-07-06 10:40:27,035 - app.services.trade_processor - INFO -    totalBuyAmount=0.000000  totalSellAmount=0.000000  totalSellPrincipal=0.000000
+2026-07-06 10:40:27,035 - app.services.trade_processor - INFO -    old_holding_cost=0.000000  old_realized=0.000000
+2026-07-06 10:40:27,035 - app.services.trade_processor - INFO - ③ 用户指数 [BUY]: buy_qty=30877697.777999  buy_amount=0.910203 SOL
+2026-07-06 10:40:27,036 - app.services.trade_processor - INFO -    holdingQty:   0.000000 → 30877697.777999
+2026-07-06 10:40:27,036 - app.services.trade_processor - INFO -    holdingCost:  0.000000 → 0.910203
+2026-07-06 10:40:27,037 - app.services.trade_processor - INFO -    avgPrice:     0.000000000000 → 0.000000029478
+2026-07-06 10:40:27,041 - app.services.trade_processor - INFO - ⑥ 全局 total_holdingQty(含庄家): 0.000000 → 30877697.777999
+2026-07-06 10:40:27,041 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:40:27,042 - app.services.trade_processor - INFO - ④ delta: delta_bet=0.910203 (=new_holding_cost 0.910203 - old 0.000000)
+2026-07-06 10:40:27,042 - app.services.trade_processor - INFO -    delta_profit=0.000000 (=new_realized 0.000000 - old 0.000000)
+2026-07-06 10:40:27,045 - app.services.trade_processor - INFO - ⑤ 全局散户指数 [更新]: total_bet 0.000000 → 0.910203, realized_profit 0.000000 → 0.000000
+2026-07-06 10:40:27,053 - app.services.trade_processor - INFO - ======================================================
+2026-07-06 10:40:27,053 - app.services.trade_processor - INFO - 📊 [指数计算] mint=75ckspwx... sig=4EYVV6FZPSP9AGWrvr9Tfx8dfu93yyCTiXUL8KZQT49c6gxAMucxyDd61bfgiW6LfRpnc5UqgyYK6VH2jzYYVpLu type=BUY address=2YUAXALq...
+2026-07-06 10:40:27,054 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:40:27,054 - app.services.trade_processor - INFO - ① 庄家判定: status=retail, is_dealer=False, conditions=['C006']
+2026-07-06 10:40:27,054 - app.services.trade_processor - INFO - ② 交易前用户持仓: holdingQty=0.000000  holdingCost=0.000000  avgPrice=0.000000000000
+2026-07-06 10:40:27,055 - app.services.trade_processor - INFO -    totalBuyAmount=0.000000  totalSellAmount=0.000000  totalSellPrincipal=0.000000
+2026-07-06 10:40:27,055 - app.services.trade_processor - INFO -    old_holding_cost=0.000000  old_realized=0.000000
+2026-07-06 10:40:27,055 - app.services.trade_processor - INFO - ③ 用户指数 [BUY]: buy_qty=4032865.404634  buy_amount=0.123475 SOL
+2026-07-06 10:40:27,056 - app.services.trade_processor - INFO -    holdingQty:   0.000000 → 4032865.404634
+2026-07-06 10:40:27,056 - app.services.trade_processor - INFO -    holdingCost:  0.000000 → 0.123475
+2026-07-06 10:40:27,056 - app.services.trade_processor - INFO -    avgPrice:     0.000000000000 → 0.000000030617
+2026-07-06 10:40:27,059 - app.services.trade_processor - INFO - ⑥ 全局 total_holdingQty(含庄家): 30877697.777999 → 34910563.182633
+2026-07-06 10:40:27,059 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:40:27,059 - app.services.trade_processor - INFO - ④ delta: delta_bet=0.123475 (=new_holding_cost 0.123475 - old 0.000000)
+2026-07-06 10:40:27,060 - app.services.trade_processor - INFO -    delta_profit=0.000000 (=new_realized 0.000000 - old 0.000000)
+2026-07-06 10:40:27,062 - app.services.trade_processor - INFO - ⑤ 全局散户指数 [更新]: total_bet 0.910203 → 1.033678, realized_profit 0.000000 → 0.000000
+2026-07-06 10:40:27,071 - app.services.trade_processor - INFO - ======================================================
+2026-07-06 10:40:27,071 - app.services.trade_processor - INFO - 📊 [指数计算] mint=75ckspwx... sig=8gcturi5CXfBqPuB8kFtwcmErCdhedFDFwXFFMxCBjTiqFZu48dRs21JyGfi13oXLTgea9c7pZaKXudQ5vLifx9 type=BUY address=DvgGZQba...
+2026-07-06 10:40:27,071 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:40:27,071 - app.services.trade_processor - INFO - ① 庄家判定: status=unknown, is_dealer=False, conditions=['C006']
+2026-07-06 10:40:27,072 - app.services.trade_processor - INFO - ② 交易前用户持仓: holdingQty=0.000000  holdingCost=0.000000  avgPrice=0.000000000000
+2026-07-06 10:40:27,072 - app.services.trade_processor - INFO -    totalBuyAmount=0.000000  totalSellAmount=0.000000  totalSellPrincipal=0.000000
+2026-07-06 10:40:27,073 - app.services.trade_processor - INFO -    old_holding_cost=0.000000  old_realized=0.000000
+2026-07-06 10:40:27,073 - app.services.trade_processor - INFO - ③ 用户指数 [BUY]: buy_qty=3306.293910  buy_amount=0.002139 SOL
+2026-07-06 10:40:27,073 - app.services.trade_processor - INFO -    holdingQty:   0.000000 → 3306.293910
+2026-07-06 10:40:27,073 - app.services.trade_processor - INFO -    holdingCost:  0.000000 → 0.002139
+2026-07-06 10:40:27,074 - app.services.trade_processor - INFO -    avgPrice:     0.000000000000 → 0.000000646943
+2026-07-06 10:40:27,077 - app.services.trade_processor - INFO - ⑥ 全局 total_holdingQty(含庄家): 34910563.182633 → 34913869.476543
+2026-07-06 10:40:27,077 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:40:27,077 - app.services.trade_processor - INFO - ④ delta: delta_bet=0.002139 (=new_holding_cost 0.002139 - old 0.000000)
+2026-07-06 10:40:27,078 - app.services.trade_processor - INFO -    delta_profit=0.000000 (=new_realized 0.000000 - old 0.000000)
+2026-07-06 10:40:27,079 - app.services.trade_processor - INFO - ⑤ 全局散户指数 [更新]: total_bet 1.033678 → 1.035817, realized_profit 0.000000 → 0.000000
+2026-07-06 10:40:27,086 - app.services.trade_processor - INFO - ======================================================
+2026-07-06 10:40:27,086 - app.services.trade_processor - INFO - 📊 [指数计算] mint=75ckspwx... sig=3qh1fJkKPExqt56hpHSKbW5CszNqAs57uxvjtrF4Gb76M3i687v7swKJtAT99cXd58VLMLNjpiKNQAdV4hUhcnV8 type=BUY address=CMjRBjRW...
+2026-07-06 10:40:27,086 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:40:27,086 - app.services.trade_processor - INFO - ① 庄家判定: status=dealer, is_dealer=True, conditions=['C006']
+2026-07-06 10:40:27,087 - app.services.trade_processor - INFO - ② 交易前用户持仓: holdingQty=0.000000  holdingCost=0.000000  avgPrice=0.000000000000
+2026-07-06 10:40:27,087 - app.services.trade_processor - INFO -    totalBuyAmount=0.000000  totalSellAmount=0.000000  totalSellPrincipal=0.000000
+2026-07-06 10:40:27,087 - app.services.trade_processor - INFO -    old_holding_cost=0.000000  old_realized=0.000000
+2026-07-06 10:40:27,087 - app.services.trade_processor - INFO - ③ 用户指数 [BUY]: buy_qty=1650553.776278  buy_amount=0.051976 SOL
+2026-07-06 10:40:27,088 - app.services.trade_processor - INFO -    holdingQty:   0.000000 → 1650553.776278
+2026-07-06 10:40:27,088 - app.services.trade_processor - INFO -    holdingCost:  0.000000 → 0.051976
+2026-07-06 10:40:27,088 - app.services.trade_processor - INFO -    avgPrice:     0.000000000000 → 0.000000031490
+2026-07-06 10:40:27,092 - app.services.trade_processor - INFO - ⑥ 全局 total_holdingQty(含庄家): 34913869.476543 → 36564423.252821
+2026-07-06 10:40:27,092 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:40:27,092 - app.services.trade_processor - INFO - ④ delta: delta_bet=0.051976 (=new_holding_cost 0.051976 - old 0.000000)
+2026-07-06 10:40:27,093 - app.services.trade_processor - INFO -    delta_profit=0.000000 (=new_realized 0.000000 - old 0.000000)
+2026-07-06 10:40:27,094 - app.services.trade_processor - INFO - ⑤ 全局散户指数 [跳过-庄家]: total_bet=1.035817(不变), realized_profit=0.000000(不变), dealerExcluded=
+2026-07-06 10:40:27,097 - app.services.trade_processor - INFO - [指标调整] sign=-1 CMjRBjRW... holdingCost=0.051976 user_realized=0.000000
+2026-07-06 10:40:27,097 - app.services.trade_processor - INFO - [庄家排除] CMjRBjRW... 已从汇总中排除
+2026-07-06 10:40:27,097 - app.services.trade_processor - INFO -    ⚠ 首次排除庄家，执行 exclude_dealer()
+2026-07-06 10:40:27,104 - app.services.trade_processor - INFO - ======================================================
+2026-07-06 10:40:27,105 - app.services.trade_processor - INFO - 📊 [指数计算] mint=75ckspwx... sig=eELktS8wzAcZjgfUkuDzBskBY6pq3m4c4497gjCzwbEJE1ay85h98qa1keHa6aqnhLeKXK9UHDwW3GahkcUmvLG type=SELL address=DvgGZQba...
+2026-07-06 10:40:27,105 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:40:27,106 - app.services.trade_processor - INFO - ① 庄家判定: status=unknown, is_dealer=False, conditions=['C006']
+2026-07-06 10:40:27,106 - app.services.trade_processor - INFO - ② 交易前用户持仓: holdingQty=3306.293910  holdingCost=0.002139  avgPrice=0.000000646943
+2026-07-06 10:40:27,106 - app.services.trade_processor - INFO -    totalBuyAmount=0.002139  totalSellAmount=0.000000  totalSellPrincipal=0.000000
+2026-07-06 10:40:27,107 - app.services.trade_processor - INFO -    old_holding_cost=0.002139  old_realized=0.000000
+2026-07-06 10:40:27,107 - app.services.trade_processor - INFO - ③ 用户指数 [SELL]: sell_qty=3306.293910  sell_amount=0.002137 SOL  sell_principal=0.002139(=sell_qty×avgPrice)
+2026-07-06 10:40:27,107 - app.services.trade_processor - INFO -    落袋收益(realized)=-0.000002 SOL
+2026-07-06 10:40:27,107 - app.services.trade_processor - INFO -    holdingQty:   3306.293910 → 0.000000
+2026-07-06 10:40:27,107 - app.services.trade_processor - INFO -    holdingCost:  0.002139 → 0.000000
+2026-07-06 10:40:27,107 - app.services.trade_processor - INFO -    avgPrice:     0.000000646943 → 0.000000000000
+2026-07-06 10:40:27,111 - app.services.trade_processor - INFO - ⑥ 全局 total_holdingQty(含庄家): 36564423.252821 → 36561116.958911
+2026-07-06 10:40:27,111 - app.services.trade_processor - INFO - ------------------------------------------------------
+2026-07-06 10:40:27,112 - app.services.trade_processor - INFO - ④ delta: delta_bet=-0.002139 (=new_holding_cost 0.000000 - old 0.002139)
+2026-07-06 10:40:27,112 - app.services.trade_processor - INFO -    delta_profit=-0.000002 (=new_realized -0.000002 - old 0.000000)
+2026-07-06 10:40:27,115 - app.services.trade_processor - INFO - ⑤ 全局散户指数 [更新]: total_bet 0.983842 → 0.981703, realized_profit 0.000000 → -0.000002
+2026-07-06 10:40:27,119 - app.services.trade_processor - INFO - [全量计算] 完成 mint=75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump
+2026-07-06 10:40:27,124 - app.services.trade_processor - INFO - [消费者] 已启动 mint=75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump（单例已初始化）
+2026-07-06 10:40:27,125 - app.services.trade_processor - INFO - [消费者] 开始消化队列 mint=75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump
+2026-07-06 10:40:27,922 - app.services.trade_stream - INFO - [实时流] 已发送订阅请求: 75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump
+2026-07-06 10:40:28,087 - app.services.trade_stream - INFO - [实时流] 订阅确认: {"jsonrpc":"2.0","id":1,"result":12857632}
+2026-07-06 10:50:18,581 - app.services.trade_stream - WARNING - [实时流] 连接断开，尝试重连...
+2026-07-06 10:50:22,489 - app.services.trade_stream - INFO - [实时流] 已发送订阅请求: 75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump
+2026-07-06 10:50:22,651 - app.services.trade_stream - INFO - [实时流] 订阅确认: {"jsonrpc":"2.0","id":1,"result":14642701}
+2026-07-06 10:55:18,612 - app.services.trade_stream - WARNING - [实时流] 连接断开，尝试重连...
+2026-07-06 10:55:21,986 - app.services.trade_stream - INFO - [实时流] 已发送订阅请求: 75ckspwxGRmXT8iKJ2H98mdm8ndQ5RNnwYYPV5t2pump
+2026-07-06 10:55:22,044 - app.services.trade_stream - INFO - [实时流] 订阅确认: {"jsonrpc":"2.0","id":1,"result":12898967}
