@@ -275,14 +275,21 @@ async def save_trader_state(redis, mint: str, address: str, state: dict):
     
     try:
         # 全局信息 → user:{address}
+        user_status = state.get("status", "unknown")
         global_data = {
-            "status": state.get("status", "unknown"),
+            "status": user_status,
             "conditions": json.dumps(state.get("conditions", [])),
             "status_source": state.get("status_source", "system"),
             "cluster_name": state.get("cluster_name", ""),
         }
         # 庄家排除标记（per-mint）
-        if state.get(f"{mint}_dealerExcluded"):
+        # dealer 时设置标记；retail/unknown 时清空（防御性，防止标记残留）
+        if user_status == "dealer":
+            global_data[f"{mint}_dealerExcluded"] = "true"
+        elif user_status in ("retail", "unknown"):
+            global_data[f"{mint}_dealerExcluded"] = ""
+        # 兜底：调用方显式传入 dealerExcluded（如 _calculate_index 老分支）
+        elif state.get(f"{mint}_dealerExcluded"):
             global_data[f"{mint}_dealerExcluded"] = "true"
         await redis.hset(user_key(address), mapping=global_data)
         
@@ -792,50 +799,69 @@ async def _calculate_index(
         return {}
 
 
-async def exclude_dealer(mint: str, address: str):
-    """排除庄家：从汇总中减去该用户贡献（读取 per-mint 持仓数据）"""
+async def _adjust_metrics_for_user(mint: str, address: str, sign: int):
+    """
+    调整散户池指标（total_bet / realized_profit / dealer_count + 状态标记）
+
+    sign = -1: retail → dealer（排除该用户贡献）
+    sign = +1: dealer → retail（恢复该用户贡献）
+
+    A1 方案：现算 user.realized = totalSellAmount - totalSellPrincipal，
+    不新增 user_realized 字段，避免数据冗余漂移。
+    """
     redis = await _get_redis()
-    
     if not redis:
         return
-    
     try:
-        state = await get_trader_state(redis, mint, address)
-        
-        # 从汇总中减去持仓成本
-        await update_metrics_delta(redis, mint, -state.get("holdingCost", 0), 0)
-        
-        # 更新庄家计数
+        from app.services.cluster.redis_keys import user_mint_key
+        mint_data = await redis.hgetall(user_mint_key(mint, address))
+
+        # 现算用户对散户池的两个贡献
+        holding_cost = float(mint_data.get("holdingCost", "0") or 0)
+        sell_amt = float(mint_data.get("totalSellAmount", "0") or 0)
+        sell_prc = float(mint_data.get("totalSellPrincipal", "0") or 0)
+        user_realized = sell_amt - sell_prc
+
+        # 调整两个指数（total_bet / realized_profit）
+        await update_metrics_delta(redis, mint, sign * holding_cost, sign * user_realized)
+
+        # dealer_count 反向变化（sign=-1 时 +1，sign=+1 时 -1）
         metrics_key = await _get_metrics_key(mint)
-        await redis.hincrbyfloat(metrics_key, "dealer_count", 1)
-        
-        logger.info(f"[庄家排除] {address[:8]}... 已从汇总中排除")
+        await redis.hincrbyfloat(metrics_key, "dealer_count", -sign)
+
+        # 同步写 status + dealerExcluded 标记
+        global_key = user_key(address)
+        if sign == -1:
+            # 切走：标记 dealerExcluded + status=dealer
+            await redis.hset(global_key, mapping={
+                "status": "dealer",
+                f"{mint}_dealerExcluded": "true",
+            })
+        else:
+            # 切回：清 dealerExcluded + status=retail
+            await redis.hset(global_key, mapping={
+                "status": "retail",
+                f"{mint}_dealerExcluded": "",
+            })
+
+        logger.info(
+            f"[指标调整] sign={sign:+d} {address[:8]}... "
+            f"holdingCost={holding_cost:.6f} user_realized={user_realized:.6f}"
+        )
     except Exception as e:
-        logger.error(f"[庄家排除] 失败 address={address[:8]}...: {e}", exc_info=True)
+        logger.error(f"[指标调整] sign={sign} address={address[:8]}... 失败: {e}", exc_info=True)
+
+
+async def exclude_dealer(mint: str, address: str):
+    """retail → dealer：排除该用户对散户池的贡献"""
+    await _adjust_metrics_for_user(mint, address, sign=-1)
+    logger.info(f"[庄家排除] {address[:8]}... 已从汇总中排除")
 
 
 async def include_retail(mint: str, address: str):
-    """恢复散户：将庄家数据重新加入汇总（手动改回散户时调用）"""
-    redis = await _get_redis()
-    
-    if not redis:
-        return
-    
-    try:
-        state = await get_trader_state(redis, mint, address)
-        
-        # 将持仓成本加回汇总
-        await update_metrics_delta(redis, mint, state.get("holdingCost", 0), 0)
-        
-        # 减少庄家计数
-        metrics_key = await _get_metrics_key(mint)
-        dealer_count = await redis.hget(metrics_key, "dealer_count")
-        if dealer_count and int(dealer_count) > 0:
-            await redis.hincrbyfloat(metrics_key, "dealer_count", -1)
-        
-        logger.info(f"[散户恢复] {address[:8]}... 已重新加入汇总")
-    except Exception as e:
-        logger.error(f"[散户恢复] 失败 address={address[:8]}...: {e}", exc_info=True)
+    """dealer → retail：恢复该用户对散户池的贡献"""
+    await _adjust_metrics_for_user(mint, address, sign=+1)
+    logger.info(f"[散户恢复] {address[:8]}... 已重新加入汇总")
 
 
 # ──────────────────────────────────────────────────────────

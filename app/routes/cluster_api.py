@@ -427,25 +427,33 @@ async def propagate_cluster_type_to_users(
                 # 推 user_status 给前端
                 if ws_broadcast:
                     from app.services.trade_processor import user_key
+                    from app.services.cluster.redis_keys import user_mint_key
                     redis_async = await _get_redis()
-                    new_state = await redis_async.hgetall(user_key(address))
+                    new_state = await redis_async.hgetall(user_key(address)) if redis_async else {}
+                    mint_data = await redis_async.hgetall(user_mint_key(mint, address)) if redis_async else {}
                     if new_state:
+                        # conditions 是 JSON 字符串，需反序列化为列表
+                        try:
+                            conditions_list = json.loads(new_state.get("conditions", "[]"))
+                        except Exception:
+                            conditions_list = []
+                        # 持仓字段在 per-mint key 里，要从 mint_data 取
                         await ws_manager.broadcast(mint, {
                             "type": "user_status",
                             "data": {
                                 "address": address,
                                 "status": new_state.get("status", "unknown"),
                                 "status_source": new_state.get("status_source", "system"),
-                                "conditions": new_state.get("conditions", "[]"),
+                                "conditions": conditions_list,
                                 "cluster_name": cluster_name,
                                 "cluster_type": new_type,
                                 "cluster_tx_count": 0,
                                 "cluster_user_count": 0,
-                                "holding_qty": new_state.get("holdingQty", "0"),
-                                "holding_cost": new_state.get("holdingCost", "0"),
-                                "total_buy_amount": new_state.get("totalBuyAmount", "0"),
-                                "total_sell_amount": new_state.get("totalSellAmount", "0"),
-                                "total_sell_principal": new_state.get("totalSellPrincipal", "0"),
+                                "holding_qty": float(mint_data.get("holdingQty", "0") or 0),
+                                "holding_cost": float(mint_data.get("holdingCost", "0") or 0),
+                                "total_buy_amount": float(mint_data.get("totalBuyAmount", "0") or 0),
+                                "total_sell_amount": float(mint_data.get("totalSellAmount", "0") or 0),
+                                "total_sell_principal": float(mint_data.get("totalSellPrincipal", "0") or 0),
                             }
                         })
 
