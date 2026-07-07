@@ -785,11 +785,12 @@ function _flushTrades() {
   if (batch.length === 0) return;
   // 取最后一条的 metrics（最新指标）
   const lastMetrics = batch[batch.length - 1];
-  // 批量插入
+  // 批量插入：倒序遍历，让最新 trade 在 fragment 最前
+  // （否则 frag.appendChild 顺序 + insertBefore(frag) 会导致最早的 trade 在最上面）
   const tbody = document.getElementById('tradeBody');
   const frag = document.createDocumentFragment();
-  for (const data of batch) {
-    const tr = _buildTradeRow(data);
+  for (let i = batch.length - 1; i >= 0; i--) {
+    const tr = _buildTradeRow(batch[i]);
     if (tr) frag.appendChild(tr);
   }
   tbody.insertBefore(frag, tbody.firstChild);
