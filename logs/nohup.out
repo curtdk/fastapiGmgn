@@ -1,0 +1,22 @@
+2026-07-08 23:21:55,453 - main - INFO - Admin user already exists
+2026-07-08 23:21:55,465 - app.services.settings_service - INFO - 默认设置初始化完成
+INFO:     Started server process [104553]
+INFO:     Waiting for application startup.
+2026-07-08 23:21:55,541 - app.services.dealer_detector - INFO - [庄家判定] Redis 连接成功
+2026-07-08 23:21:55,541 - app.services.dealer_detector - INFO - [庄家判定] 队列已就绪，等待首次触发
+2026-07-08 23:21:55,543 - app.services.cluster.redis_keys - INFO - [cluster:redis] Redis 连接成功
+2026-07-08 23:21:55,543 - main - INFO - 服务已启动
+2026-07-08 23:21:55,553 - app.services.settings_service - INFO - 默认设置初始化完成
+2026-07-08 23:21:55,560 - app.services.settings_service - INFO - 默认设置初始化完成
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:2000 (Press CTRL+C to quit)
+2026-07-08 23:22:36,322 - main - INFO - Root endpoint accessed
+INFO:     127.0.0.1:38294 - "GET / HTTP/1.1" 307 Temporary Redirect
+2026-07-08 23:23:12,204 - app.services.tx_redis - INFO - [tx_redis] Redis 连接成功
+INFO:     127.0.0.1:47230 - "GET /api/trades/Wyj7EDdQLuWJk9igtmttigCHZ42eQVRp2HcWvHupump HTTP/1.1" 200 OK
+2026-07-08 23:23:12,231 - app.services.trade_tracer - INFO - [流水追踪] 会话开始 mint=Wyj7EDdQLuWJ...
+INFO:     127.0.0.1:47234 - "POST /api/trades/Wyj7EDdQLuWJk9igtmttigCHZ42eQVRp2HcWvHupump/start HTTP/1.1" 200 OK
+2026-07-08 23:23:12,234 - app.services.trade_stream - INFO - [实时流] 启动: Wyj7EDdQLuWJk9igtmttigCHZ42eQVRp2HcWvHupump
+2026-07-08 23:23:12,236 - app.services.trade_backfill - INFO - [回填] 广播模式: 0 (正式模式-不广播)
+2026-07-08 23:23:12,415 - app.services.trade_stream - INFO - [实时流] 已发送订阅请求: Wyj7EDdQLuWJk9igtmttigCHZ42eQVRp2HcWvHupump
+2026-07-08 23:23:12,449 - app.services.trade_stream - INFO - [实时流] 订阅确认: {"jsonrpc":"2.0","id":1,"result":25221645}

@@ -572,43 +572,8 @@ class TradeStream:
 
         性能：双列表遍历 + 相等比较，<20μs/tx（pre+post 不超过 30 条记录）。
         返回 0.0 表示未找到；调用方要判断是否走兑底 signer。
-
-        补丁 v3（2026-07-09）：signer 优先 + 池子排除
-        - 场景：pump.fun SELL 全卖光时，trader 余额归零，postTokenBalances 里仍保留一行
-          （accountIndex 9、uiAmount=0）。原逻辑"先扫 post 谁先出现用谁"会把池子
-          （accountIndex 5，post 余额增加）当成 trader，delta=+3,312,912 → 错判 BUY。
-        - 修复：第一步先检查 signer 是不是 pre/post 任一边有这个 mint 余额，是就锁定 trader=signer。
-          第二步在原本的 post 优先遍历里，跳过"token 增 + SOL 不变"的池子型 owner。
         """
         try:
-            # ===== 补丁 v3：signer 优先 =====
-            # 思路：如果 signer 在 pre 或 post 里有 target_mint 余额，几乎一定是 trader
-            # （pump.fun 场景下 signer 就是出钱的那个，fee-payer 通常=signer）
-            signer_has_mint = False
-            for b in (pre_token_list or []) + (post_token_list or []):
-                if not isinstance(b, dict):
-                    continue
-                if b.get("mint") == target_mint and b.get("owner") == fallback_signer:
-                    signer_has_mint = True
-                    break
-            if signer_has_mint and fallback_signer:
-                pre_amt = 0.0
-                post_amt = 0.0
-                for bp in pre_token_list or []:
-                    if not isinstance(bp, dict):
-                        continue
-                    if bp.get("mint") == target_mint and bp.get("owner") == fallback_signer:
-                        pre_amt = (bp.get("uiTokenAmount") or {}).get("uiAmount") or 0.0
-                        break
-                for bp in post_token_list or []:
-                    if not isinstance(bp, dict):
-                        continue
-                    if bp.get("mint") == target_mint and bp.get("owner") == fallback_signer:
-                        post_amt = (bp.get("uiTokenAmount") or {}).get("uiAmount") or 0.0
-                        break
-                return fallback_signer, float(pre_amt), float(post_amt)
-
-            # ===== 原逻辑（fallback）：post 优先 =====
             # 先看 post：有post 一定动过这个 mint
             for b in post_token_list:
                 if not isinstance(b, dict):
@@ -892,7 +857,7 @@ class TradeStream:
                 "risk_score": risk_info["score"],
                 "risk_verdict": risk_info["verdict"],
                 "risk_indicators": json.dumps(risk_info["indicators"]),
-                # 2026-07-09 OOM 修复：raw_data 不再写进 Redis（见 trade_backfill.py 同步注释）。
+                "raw_data": str(tx_data)[:20000],
                 "source": "helius_ws",
             }
         except Exception as e:

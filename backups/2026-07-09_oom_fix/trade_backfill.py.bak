@@ -991,8 +991,7 @@ class TradeBackfill:
                 "risk_score": risk_info["score"],
                 "risk_verdict": risk_info["verdict"],
                 "risk_indicators": json.dumps(risk_info["indicators"]),
-                # 2026-07-09 OOM 修复：raw_data 不再写进 Redis。完整 tx 已被 _extract_trade_info
-                # 消费,后续没人读 raw_data 字段。关闭后每条 detail ~20KB → ~1KB，Redis 内存 -95%。
+                "raw_data": str(tx)[:20000],
                 "source": "rpc_fill",
             }
 

@@ -511,39 +511,8 @@ class TradeBackfill:
         target_mint: str,
         fallback_signer: str,
     ) -> Tuple[str, float, float]:
-        """与 trade_stream 同逻辑（补丁 v3）：signer 优先 → post 优先 → pre 优先。
-
-        补丁 v3（2026-07-09）：signer 优先分支
-        - 修复 pump.fun SELL 全卖光被错判为 BUY 的 bug。
-        - 当 signer 本身在 pre/post 上有 target_mint 余额时，锁定 trader=signer，
-          避免被池子（accountIndex 在前、post 余额增加）抢先匹配。
-        """
+        """与 trade_stream 同逻辑：返回首个动了本 mint 的 owner 及其 pre/post 余额。"""
         try:
-            # ===== 补丁 v3：signer 优先 =====
-            signer_has_mint = False
-            for b in (pre_token_list or []) + (post_token_list or []):
-                if not isinstance(b, dict):
-                    continue
-                if b.get("mint") == target_mint and b.get("owner") == fallback_signer:
-                    signer_has_mint = True
-                    break
-            if signer_has_mint and fallback_signer:
-                pre_amt = 0.0
-                post_amt = 0.0
-                for bp in pre_token_list or []:
-                    if not isinstance(bp, dict):
-                        continue
-                    if bp.get("mint") == target_mint and bp.get("owner") == fallback_signer:
-                        pre_amt = (bp.get("uiTokenAmount") or {}).get("uiAmount") or 0.0
-                        break
-                for bp in post_token_list or []:
-                    if not isinstance(bp, dict):
-                        continue
-                    if bp.get("mint") == target_mint and bp.get("owner") == fallback_signer:
-                        post_amt = (bp.get("uiTokenAmount") or {}).get("uiAmount") or 0.0
-                        break
-                return fallback_signer, float(pre_amt), float(post_amt)
-            # ===== 原逻辑：post 优先 → pre 优先 =====
             for b in post_token_list:
                 if not isinstance(b, dict):
                     continue
@@ -991,8 +960,7 @@ class TradeBackfill:
                 "risk_score": risk_info["score"],
                 "risk_verdict": risk_info["verdict"],
                 "risk_indicators": json.dumps(risk_info["indicators"]),
-                # 2026-07-09 OOM 修复：raw_data 不再写进 Redis。完整 tx 已被 _extract_trade_info
-                # 消费,后续没人读 raw_data 字段。关闭后每条 detail ~20KB → ~1KB，Redis 内存 -95%。
+                "raw_data": str(tx)[:20000],
                 "source": "rpc_fill",
             }
 

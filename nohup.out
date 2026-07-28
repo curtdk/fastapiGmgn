@@ -1,0 +1,34 @@
+2026-07-08 16:33:04,844 - main - INFO - Admin user created: admin / admin123
+2026-07-08 16:33:04,876 - app.services.settings_service - INFO - 默认设置初始化完成
+INFO:     Started server process [4117418]
+INFO:     Waiting for application startup.
+2026-07-08 16:33:04,999 - app.services.dealer_detector - INFO - [庄家判定] Redis 连接成功
+2026-07-08 16:33:04,999 - app.services.dealer_detector - INFO - [庄家判定] 队列已就绪，等待首次触发
+2026-07-08 16:33:05,001 - app.services.cluster.redis_keys - INFO - [cluster:redis] Redis 连接成功
+2026-07-08 16:33:05,002 - main - INFO - 服务已启动
+2026-07-08 16:33:05,012 - app.services.settings_service - INFO - 默认设置初始化完成
+2026-07-08 16:33:05,019 - app.services.settings_service - INFO - 默认设置初始化完成
+INFO:     Application startup complete.
+ERROR:    [Errno 98] error while attempting to bind on address ('0.0.0.0', 8000): address already in use
+INFO:     Waiting for application shutdown.
+2026-07-08 16:33:05,020 - app.services.dealer_detector - INFO - [庄家判定] 已关闭
+2026-07-08 16:33:05,021 - app.services.cluster.redis_keys - INFO - [cluster:redis] Redis 已关闭
+2026-07-08 16:33:05,021 - main - INFO - 服务已关闭
+INFO:     Application shutdown complete.
+2026-07-08 16:38:10,871 - main - INFO - Admin user already exists
+2026-07-08 16:38:10,886 - app.services.settings_service - INFO - 默认设置初始化完成
+INFO:     Started server process [4124943]
+INFO:     Waiting for application startup.
+2026-07-08 16:38:10,991 - app.services.dealer_detector - INFO - [庄家判定] Redis 连接成功
+2026-07-08 16:38:10,991 - app.services.dealer_detector - INFO - [庄家判定] 队列已就绪，等待首次触发
+2026-07-08 16:38:10,993 - app.services.cluster.redis_keys - INFO - [cluster:redis] Redis 连接成功
+2026-07-08 16:38:10,993 - main - INFO - 服务已启动
+2026-07-08 16:38:11,003 - app.services.settings_service - INFO - 默认设置初始化完成
+2026-07-08 16:38:11,011 - app.services.settings_service - INFO - 默认设置初始化完成
+INFO:     Application startup complete.
+ERROR:    [Errno 98] error while attempting to bind on address ('0.0.0.0', 8000): address already in use
+INFO:     Waiting for application shutdown.
+2026-07-08 16:38:11,013 - app.services.dealer_detector - INFO - [庄家判定] 已关闭
+2026-07-08 16:38:11,013 - app.services.cluster.redis_keys - INFO - [cluster:redis] Redis 已关闭
+2026-07-08 16:38:11,013 - main - INFO - 服务已关闭
+INFO:     Application shutdown complete.
