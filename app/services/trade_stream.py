@@ -36,6 +36,10 @@ class TradeStream:
 
     async def start(self):
         """启动实时流"""
+        # 幂等检查：避免重复调用产生多个 _stream_loop 并行任务
+        if self._task and not self._task.done():
+            logger.warning(f"[实时流] 已在运行: {self.mint}")
+            return
         try:
             self.running = True
             self._task = asyncio.create_task(self._stream_loop())
@@ -95,6 +99,28 @@ class TradeStream:
                     # 等待确认
                     resp = await asyncio.wait_for(ws.recv(), timeout=10)
                     logger.info(f"[实时流] 订阅确认: {resp}")
+
+                    # ===== 检查订阅是否被服务器拒绝（典型：免费套餐 / 套餐过期） =====
+                    try:
+                        resp_data = json.loads(resp)
+                        if "error" in resp_data:
+                            err_msg = resp_data["error"].get("message", "未知错误")
+                            err_code = resp_data["error"].get("code", "")
+                            logger.error(f"[实时流] 订阅被拒绝 code={err_code} msg={err_msg}")
+                            # 标记运行状态为 False，阻止后续重连死循环
+                            self.running = False
+                            await ws_manager.broadcast(self.mint, {
+                                "type": "error",
+                                "data": {
+                                    "mint": self.mint,
+                                    "message": f"订阅失败: {err_msg}",
+                                    "code": err_code,
+                                    "reason": "subscription_rejected",
+                                }
+                            })
+                            return  # 直接退出 _stream_loop，不要 sleep 重连
+                    except json.JSONDecodeError:
+                        pass
 
                     await ws_manager.broadcast(self.mint, {
                         "type": "status",

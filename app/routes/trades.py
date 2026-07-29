@@ -187,44 +187,6 @@ async def wallet_analysis(
     })
 
 
-@router.post("/{mint}/start")
-async def start_monitor(mint: str, db: Session = Depends(get_db)):
-    """启动监听（实时流 + 回填接力）"""
-    # 如果已在运行，先停止
-    if mint in active_monitors:
-        await stop_monitor(mint)
-
-    from app.services.settings_service import get_setting
-    from app.services.trade_tracer import start_session
-    start_session(mint)
-    api_key = get_setting(db, "helius_api_key") or ""
-
-    stream = TradeStream(mint=mint, api_key=api_key)
-    backfill = TradeBackfill(db=db, mint=mint, stream=stream)
-
-    active_monitors[mint] = {
-        "backfill": backfill,
-        "stream": stream,
-    }
-
-    import asyncio
-
-    # 先启动实时流
-    asyncio.create_task(stream.start())
-
-    # 实时流启动后立即启动回填（回填会等待 sync_point）
-    async def start_backfill_after_stream():
-        # 等待 stream 启动完成
-        while not stream.running:
-            await asyncio.sleep(0.2)
-        await backfill.run()
-
-    asyncio.create_task(start_backfill_after_stream())
-
-    return {"message": f"已开始监听 {mint}"}
-
-
-
 @router.post("/{mint}/stop")
 async def stop_monitor(mint: str, db: Session = Depends(get_db)):
     """停止监听"""

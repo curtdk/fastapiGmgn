@@ -119,8 +119,6 @@ class SettingAdmin(ModelView, model=Setting):
     can_edit = True
 
 # ========== 自定义 Admin 页面（含页面 + API） ==========
-active_monitors: dict = {}
-
 class TradeMonitorView(BaseView):
     """交易监控页面"""
     name = "交易监控"
