@@ -22,6 +22,12 @@ load_dotenv()
 HELIUS_WS_URL = os.getenv("HELIUS_WS_URL", "wss://mainnet.helius-rpc.com")
 HELIUS_RPC_URL = os.getenv("HELIUS_RPC_URL", "https://mainnet.helius-rpc.com")
 
+# 不可解析交易专用记录文件（每行一条 JSON，方便复盘）
+_UNPARSEABLE_LOG_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    "logs", "unparseable_txs.jsonl",
+)
+
 
 class TradeStream:
     """实时交易流引擎"""
@@ -215,16 +221,34 @@ class TradeStream:
                 "meta": meta,
             }
 
-            tx_detail = self._extract_trade_info(tx_data)
+            gate_decision = "BUY" if is_buy else "SELL" if is_sell else "UNKNOWN"
+            tx_detail = self._extract_trade_info(tx_data, gate_decision=gate_decision)
             if not tx_detail:
                 # 闸门过了 BUY/SELL 但解析还是失败——这条很关键，必须 log，不能再静默丢
                 logger.warning(
                     f"[实时流] BUY/SELL 闸门通过但解析失败 sig={sig[:8]} "
                     f"is_buy={is_buy} is_sell={is_sell}"
                 )
+                # 专用记录器已写文件 + 推 ws（_extract_trade_info 内部 except 已调）
                 # 顺手把这条脏数据也打一份，给 ding 复核
                 self._log_dirty_sample(sig, transaction, meta)
                 return
+
+            # 闸门判断 vs 内部判断 不一致 → 写专用文件
+            internal_tx_type = tx_detail.get("transaction_type", "")
+            if gate_decision in ("BUY", "SELL") and internal_tx_type != gate_decision:
+                self._log_unparseable_tx(
+                    sig=sig,
+                    gate_decision=gate_decision,
+                    internal_decision=internal_tx_type,
+                    reason="tx_type_mismatch",
+                    detail={
+                        "sol_spent": tx_detail.get("sol_spent"),
+                        "amount": tx_detail.get("amount"),
+                        "from_address": tx_detail.get("from_address", "")[:16],
+                    },
+                )
+                # 注意：仍然继续处理（mismatch 不阻塞，但要你知道）
 
             from app.services.trade_tracer import trace
 
@@ -406,6 +430,70 @@ class TradeStream:
         except Exception as e:
             # 这个函数本身不能引发异常——是诊断工具
             logger.debug(f"[脏样本] dump failed sig={sig[:8]}: {e}")
+
+    def _log_unparseable_tx(
+        self,
+        sig: str,
+        gate_decision: str,        # 闸门判断: "BUY" / "SELL" / "UNKNOWN"
+        internal_decision: str,    # _extract_trade_info 内部判断: "BUY" / "SELL" / "TRANSFER" / "EXCEPTION"
+        reason: str,                # 失败原因（异常类型 / "tx_type_mismatch" / "amount_overflow" 等）
+        detail: Dict[str, Any],     # 额外诊断数据（异常 msg / 阈值 / balance 摘要）
+    ) -> None:
+        """
+        [不可解析交易] 专用记录器
+        1. 写一行 JSON 到 logs/unparseable_txs.jsonl（所有上下文，方便复盘）
+        2. logger.error 打一行（带 = 号标记的重要性）
+        3. 推 ws 消息给前端（warning 级别）
+        4. mismatch 时（闸门说 BUY 内部说 SELL）变 ERROR，提示需要修复
+        """
+        record = {
+            "ts": datetime.utcnow().isoformat(),
+            "source": "helius_ws",  # 由调用方覆盖为 "rpc_fill"
+            "mint": self.mint,
+            "sig": sig,
+            "gate": gate_decision,
+            "internal": internal_decision,
+            "reason": reason,
+            "detail": detail,
+        }
+        # 1. 写专用文件
+        try:
+            os.makedirs(os.path.dirname(_UNPARSEABLE_LOG_PATH), exist_ok=True)
+            with open(_UNPARSEABLE_LOG_PATH, "a", encoding="utf-8") as f:
+                f.write(json.dumps(record, ensure_ascii=False, default=str) + "\n")
+        except Exception as e:
+            logger.debug(f"[不可解析] 写文件失败: {e}")
+
+        # 2. 日志告警（mismatch 升级）
+        mismatch = (gate_decision in ("BUY", "SELL")
+                    and internal_decision in ("BUY", "SELL", "TRANSFER")
+                    and gate_decision != internal_decision)
+        is_severe = (mismatch or internal_decision == "EXCEPTION")
+        log_fn = logger.error if is_severe else logger.warning
+        log_fn(
+            f"[不可解析] sig={sig[:8]} mint={self.mint[:8]}... "
+            f"gate={gate_decision} internal={internal_decision} reason={reason} "
+            f"detail={json.dumps(detail, ensure_ascii=False, default=str)[:200]}"
+        )
+
+        # 3. 异步推 ws 消息（同步函数里不能 await，用 try/except 包起来）
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                asyncio.create_task(ws_manager.broadcast(self.mint, {
+                    "type": "warning",
+                    "data": {
+                        "mint": self.mint,
+                        "sig": sig,
+                        "message": f"数据无法处理（{reason}），已写入日志",
+                        "gate": gate_decision,
+                        "internal": internal_decision,
+                        "mismatch": mismatch,
+                        "level": "error" if is_severe else "warning",
+                    }
+                }))
+        except Exception as e:
+            logger.debug(f"[不可解析] 推 ws 失败: {e}")
 
     def _decode_instruction_type(self, program_id: str, data: str) -> str:
         """尝试解码指令类型"""
@@ -671,7 +759,7 @@ class TradeStream:
         # fallback：返回空，调用方用 signer 兌底
         return fallback_signer, 0.0, 0.0
 
-    def _extract_trade_info(self, tx_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    def _extract_trade_info(self, tx_data: Dict[str, Any], gate_decision: str = "UNKNOWN") -> Optional[Dict[str, Any]]:
         """从 Helius WS 交易数据中提取交易信息（增强版）
 
         补丁 v2（2026-07-08）：
@@ -922,5 +1010,15 @@ class TradeStream:
                 "source": "helius_ws",
             }
         except Exception as e:
-            logger.warning(f"[实时流] 解析交易失败: {e}", exc_info=True)
+            # 解析异常 → 写专用文件 + 广播
+            self._log_unparseable_tx(
+                sig=sig,
+                gate_decision=gate_decision,
+                internal_decision="EXCEPTION",
+                reason=f"{type(e).__name__}: {str(e)[:200]}",
+                detail={
+                    "phase": "_extract_trade_info",
+                    "trace": "见 logger.exc_info",
+                },
+            )
             return None

@@ -22,6 +22,12 @@ from dotenv import load_dotenv
 load_dotenv()
 HELIUS_RPC_URL = os.getenv("HELIUS_RPC_URL", "https://mainnet.helius-rpc.com")
 
+# 不可解析交易专用记录文件（与 trade_stream 共享同一个文件）
+_UNPARSEABLE_LOG_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    "logs", "unparseable_txs.jsonl",
+)
+
 
 class TradeBackfill:
     """历史交易回填引擎（getTransactionsForAddress 一步到位）"""
@@ -269,13 +275,27 @@ class TradeBackfill:
                                 "meta": meta,
                             }
 
-                            detail = self._extract_trade_info(tx_data)
+                            gate_decision = "BUY" if is_buy else "SELL" if is_sell else "UNKNOWN"
+                            detail = self._extract_trade_info(tx_data, gate_decision=gate_decision)
                             if detail:
+                                # 闸门 vs 内部判断不一致 → 写专用文件
+                                internal_tx_type = detail.get("transaction_type", "")
+                                if gate_decision in ("BUY", "SELL") and internal_tx_type != gate_decision:
+                                    self._log_unparseable_tx(
+                                        sig=sig, gate_decision=gate_decision,
+                                        internal_decision=internal_tx_type,
+                                        reason="tx_type_mismatch",
+                                        detail={
+                                            "sol_spent": detail.get("sol_spent"),
+                                            "amount": detail.get("amount"),
+                                            "from_address": (detail.get("from_address") or "")[:16],
+                                        },
+                                    )
                                 # 检查是否已存在
                                 existing = await tx_redis.get_tx(sig)
                                 if existing:
                                     continue
-                                
+
                                 # 直接存入 Redis
                                 await tx_redis.save_tx(detail)
                                 # 添加到有序集合（seq 作为 score，保证从旧到新）
@@ -417,8 +437,22 @@ class TradeBackfill:
                                 "meta": meta,
                             }
 
-                            detail = self._extract_trade_info(tx_data)
+                            gate_decision = "BUY" if is_buy else "SELL" if is_sell else "UNKNOWN"
+                            detail = self._extract_trade_info(tx_data, gate_decision=gate_decision)
                             if detail:
+                                # 闸门 vs 内部判断不一致 → 写专用文件
+                                internal_tx_type = detail.get("transaction_type", "")
+                                if gate_decision in ("BUY", "SELL") and internal_tx_type != gate_decision:
+                                    self._log_unparseable_tx(
+                                        sig=sig, gate_decision=gate_decision,
+                                        internal_decision=internal_tx_type,
+                                        reason="tx_type_mismatch",
+                                        detail={
+                                            "sol_spent": detail.get("sol_spent"),
+                                            "amount": detail.get("amount"),
+                                            "from_address": (detail.get("from_address") or "")[:16],
+                                        },
+                                    )
                                 # 直接存入 Redis
                                 await tx_redis.save_tx(detail)
                                 # 添加到有序集合（seq 作为 score，保证从旧到新）
@@ -503,6 +537,61 @@ class TradeBackfill:
                 logger.info(f"[脏样本] sig={sig[:8]} logMessages头6条:\n  {head[:400]}")
         except Exception as e:
             logger.debug(f"[脏样本] dump failed sig={sig[:8]}: {e}")
+
+    def _log_unparseable_tx(
+        self,
+        sig: str,
+        gate_decision: str,
+        internal_decision: str,
+        reason: str,
+        detail: Dict[str, Any],
+    ) -> None:
+        """[不可解析交易] 专用记录器（与 trade_stream 版本镜像）"""
+        record = {
+            "ts": datetime.utcnow().isoformat(),
+            "source": "rpc_fill",
+            "mint": self.mint,
+            "sig": sig,
+            "gate": gate_decision,
+            "internal": internal_decision,
+            "reason": reason,
+            "detail": detail,
+        }
+        try:
+            os.makedirs(os.path.dirname(_UNPARSEABLE_LOG_PATH), exist_ok=True)
+            with open(_UNPARSEABLE_LOG_PATH, "a", encoding="utf-8") as f:
+                f.write(json.dumps(record, ensure_ascii=False, default=str) + "\n")
+        except Exception as e:
+            logger.debug(f"[不可解析] 写文件失败: {e}")
+
+        mismatch = (gate_decision in ("BUY", "SELL")
+                    and internal_decision in ("BUY", "SELL", "TRANSFER")
+                    and gate_decision != internal_decision)
+        is_severe = (mismatch or internal_decision == "EXCEPTION")
+        log_fn = logger.error if is_severe else logger.warning
+        log_fn(
+            f"[不可解析-rpc] sig={sig[:8]} mint={self.mint[:8]}... "
+            f"gate={gate_decision} internal={internal_decision} reason={reason} "
+            f"detail={json.dumps(detail, ensure_ascii=False, default=str)[:200]}"
+        )
+
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                asyncio.create_task(ws_manager.broadcast(self.mint, {
+                    "type": "warning",
+                    "data": {
+                        "mint": self.mint,
+                        "sig": sig,
+                        "message": f"[回填] 数据无法处理（{reason}），已写入日志",
+                        "gate": gate_decision,
+                        "internal": internal_decision,
+                        "mismatch": mismatch,
+                        "level": "error" if is_severe else "warning",
+                    }
+                }))
+        except Exception as e:
+            logger.debug(f"[不可解析] 推 ws 失败: {e}")
 
     def _resolve_trader_owner(
         self,
@@ -796,7 +885,7 @@ class TradeBackfill:
             logger.warning(f"[回填] Jito 小费检测失败: {e}")
             return 0
 
-    def _extract_trade_info(self, tx: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    def _extract_trade_info(self, tx: Dict[str, Any], gate_decision: str = "UNKNOWN") -> Optional[Dict[str, Any]]:
         """从标准 Solana RPC 交易数据中提取关键信息（资金流向优先协议 + 增强版）
         补丁 v2（2026-07-08）：同 stream 同步修改——trader_owner、sol_spent 双抽 fee+jito_tip、amount overflow。
         """
@@ -1007,7 +1096,14 @@ class TradeBackfill:
             
             return result_data
         except Exception as e:
-            logger.warning(f"[回填] 解析交易失败: {e}", exc_info=True)
+            # 解析异常 → 写专用文件 + 广播
+            self._log_unparseable_tx(
+                sig=sig,
+                gate_decision=gate_decision,
+                internal_decision="EXCEPTION",
+                reason=f"{type(e).__name__}: {str(e)[:200]}",
+                detail={"phase": "_extract_trade_info"},
+            )
             return None
 
     async def _trigger_full_calculation(self):
