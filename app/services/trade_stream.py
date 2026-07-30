@@ -94,7 +94,7 @@ class TradeStream:
                             {
                                 "commitment": "confirmed",
                                 "encoding": "jsonParsed",
-                                "transactionDetails": "full",
+                                "transactionDetails": "accounts",   # accounts    full  signatures
                                 "maxSupportedTransactionVersion": 0
                             }
                         ]

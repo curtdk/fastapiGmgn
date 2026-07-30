@@ -206,11 +206,12 @@ class TradeBackfill:
                     params = {
                         "limit": batch_size,
                         "commitment": "confirmed",
-                        "transactionDetails": "full",
+                        "transactionDetails": "full", #signatures
                         "encoding": "jsonParsed",
                         "maxSupportedTransactionVersion": 0,
                         "filters": {
                             "signature": {"lt": sync_point},
+                            "status": "succeeded",                            
                         },
                     }
                     if pagination_token:
