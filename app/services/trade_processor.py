@@ -244,7 +244,10 @@ async def get_trader_state_with_sig(redis, mint: str, address: str, sig: str) ->
                 latest = get_cluster_sync(stored_cluster_name)
                 if latest:
                     stored_cluster_type = latest.cluster_type
-                
+                # 防御：清理历史脏数据（"undefined" / 空值视为 unknown）
+                if stored_cluster_type not in ("dealer", "retail", "unknown"):
+                    stored_cluster_type = "unknown"
+
                 cluster_info = {
                     "address": address,
                     "sig": sig,
@@ -521,6 +524,13 @@ async def _calculate_index(
 
         if not address:
             return {}
+
+        # ── 计数器：回填/WS 各算一次（用于页面展示） ──
+        try:
+            field = "backfill_processed" if is_backfill else "ws_processed"
+            await redis.hincrby("metrics:stats:tx_processed", field, 1)
+        except Exception:
+            pass
 
         # ── TRANSFER 交易直接跳过 ──
         if tx_type == "TRANSFER":
@@ -1158,6 +1168,11 @@ async def calculate_metrics(db: Session, mint: str) -> Dict[str, float]:
         ws_count = await redis.zcard(f"txlist:ws:{mint}")
         trade_count = rpc_count + ws_count
         
+        # 计数器：实际跑过 _calculate_index 的数量
+        stats = await redis.hgetall("metrics:stats:tx_processed") or {}
+        backfill_processed = int(stats.get("backfill_processed", 0) or 0)
+        ws_processed = int(stats.get("ws_processed", 0) or 0)
+        
         total_bet = metrics.get("total_bet", 0)
         realized_profit = metrics.get("realized_profit", 0)
         
@@ -1165,7 +1180,11 @@ async def calculate_metrics(db: Session, mint: str) -> Dict[str, float]:
             "current_bet": total_bet,
             "realized_profit": realized_profit,
             "current_cost": total_bet - realized_profit,
-            "trade_count": trade_count
+            "trade_count": trade_count,
+            "rpc_count": rpc_count,
+            "ws_count": ws_count,
+            "backfill_processed": backfill_processed,
+            "ws_processed": ws_processed,
         }
     except Exception as e:
         logger.error(f"[指标计算] 失败 mint={mint[:8]}...: {e}", exc_info=True)

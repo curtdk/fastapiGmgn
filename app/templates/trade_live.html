@@ -178,6 +178,7 @@
       <div class="metric-card">
         <div class="label">交易笔数</div>
         <div class="value" id="metricCount">0</div>
+        <div class="value-sub" id="metricCountSub" style="font-size:11px; color:#888; margin-top:2px; line-height:1.4;">回填 0 / 0 · 实时 0 / 0</div>
       </div>
     </div>
 
@@ -370,7 +371,7 @@
             <div class="col-md-4">
               <label>类型：</label>
               <select id="cdmClusterTypeSelect" class="form-select form-select-sm">
-                <option value="undefined">未定义</option>
+                <option value="unknown">未定义</option>
                 <option value="retail">散户</option>
                 <option value="dealer">庄家</option>
               </select>
@@ -668,6 +669,15 @@ function updateMetrics(data) {
   document.getElementById('metricCost').textContent = fmtSolValue(data.current_cost, isUsdt ? 2 : 4);
   document.getElementById('metricProfit').textContent = fmtSolValue(data.realized_profit, isUsdt ? 2 : 4);
   document.getElementById('metricCount').textContent = data.trade_count || 0;
+  // 拆分：回填 拉取/已算 · 实时 拉取/已算
+  const rpc = data.rpc_count || 0;
+  const ws = data.ws_count || 0;
+  const rpcIdx = data.backfill_processed || 0;
+  const wsIdx = data.ws_processed || 0;
+  const subEl = document.getElementById('metricCountSub');
+  if (subEl) {
+    subEl.textContent = `回填 ${rpc} / ${rpcIdx} · 实时 ${ws} / ${wsIdx}`;
+  }
 }
 
 function updateStatus(data) {

@@ -401,6 +401,9 @@ async def api_update_cluster_type(name: str, request: Request):
     try:
         body = await request.json()
         new_cluster_type = body.get("cluster_type", "unknown")
+        # 只允许 dealer/retail/unknown，拒绝 undefined 等无效值
+        if new_cluster_type not in ("dealer", "retail", "unknown"):
+            return JSONResponse({"error": "无效簇组类型，可选: dealer/retail/unknown"}, status_code=400)
         judgment_type = body.get("judgment_type", "manual")
         mint = body.get("mint", "")  # 需要传入 mint 才能调用 include_retail
         
